@@ -55,11 +55,6 @@ const statusStyles: Record<string, string> = {
   Vencido: "bg-danger-subtle text-destructive",
 };
 
-/**
- * Panel principal — visible para los tres roles (ver MATRIZ_PERMISOS en
- * lib/permissions.ts). Datos de ejemplo: aún no hay endpoints de
- * KPIs/pagos en el backend.
- */
 export default function AdminPanelPage() {
   return (
     <div className="px-6 py-6">
@@ -67,7 +62,6 @@ export default function AdminPanelPage() {
         Resumen general de la operación del sistema.
       </p>
 
-      {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((kpi, intIndex) => (
           <div
@@ -97,7 +91,6 @@ export default function AdminPanelPage() {
         ))}
       </div>
 
-      {/* Tabla */}
       <div className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both delay-300 mt-6 rounded-2xl border border-border bg-card shadow-sm">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="font-subtitle text-[15px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">

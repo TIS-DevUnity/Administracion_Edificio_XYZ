@@ -66,26 +66,54 @@ model Copropietario {
   @@map("copropietarios")
 }
 
-enum TipoInmueble {
-  DEPARTAMENTO
-  PARQUEO
-  BAULERA
+model TipoInmueble {
+  id          String     @id @default(uuid())
+  nombre      String     @unique
+  montoBase   Decimal    @db.Decimal(10, 2)
+
+  inmuebles   Inmueble[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("tipos_inmueble")
 }
 
 model Inmueble {
-  id          String       @id @default(uuid())
-  codigo      String       @unique
-  tipo        TipoInmueble
-  piso        String?
-  areaM2      Decimal?     @db.Decimal(8, 2)
+  id             String       @id @default(uuid())
+  codigo         String       @unique
 
-  ocupaciones OcupanteInmueble[]
-  expensas    Expensa[]
+  tipoInmueble   TipoInmueble @relation(fields: [tipoInmuebleId], references: [id])
+  tipoInmuebleId String
 
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  piso           String?
+  areaM2         Decimal?     @db.Decimal(8, 2)
+  activo         Boolean      @default(true)
+
+  ocupaciones    OcupanteInmueble[]
+  expensas       Expensa[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@map("inmuebles")
+  @@index([tipoInmuebleId])
+}
+
+enum TipoValorMora {
+  PORCENTAJE
+  MONTO_FIJO
+}
+
+model ConfiguracionMora {
+  id            String        @id @default(uuid())
+  diaGeneracion Int           @default(1)
+  diasGracia    Int           @default(0)
+  tipoValor     TipoValorMora @default(PORCENTAJE)
+  valor         Decimal       @db.Decimal(10, 2)
+  vigenteDesde  DateTime      @default(now())
+
+  @@map("configuracion_mora")
 }
 
 // Historial de ocupantes por departamento (propietario o inquilino, con fechas)
@@ -166,6 +194,7 @@ model Expensa {
 
   periodo          String        // formato "YYYY-MM"
   montoTotal       Decimal       @db.Decimal(10, 2)
+  montoMora        Decimal       @default(0) @db.Decimal(10, 2)
   estado           EstadoExpensa @default(PENDIENTE)
   fechaVencimiento DateTime
 

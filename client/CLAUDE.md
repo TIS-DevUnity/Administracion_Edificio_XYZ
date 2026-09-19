@@ -119,3 +119,51 @@ Reglas para cualquier botón de crear/editar/eliminar nuevo:
 - No existe un mecanismo de "cambiar de rol en la misma sesión": los permisos se recalculan en
   cada render a partir de lo que haya en `localStorage`, así que un cambio de rol real requiere
   volver a iniciar sesión.
+
+## HU1 — Registro de inmuebles y asignación de residentes
+
+Implementado en [src/app/admin/inmuebles/page.tsx](src/app/admin/inmuebles/page.tsx) (alta de
+departamento + piso + parqueo/baulera opcionales) y
+[src/app/admin/residentes/page.tsx](src/app/admin/residentes/page.tsx) (asignar Propietario/
+Inquilino a un inmueble activo). Toda la lógica de negocio (duplicados, campos obligatorios,
+formato de correo/teléfono) vive en
+[src/lib/inmueblesStore.ts](src/lib/inmueblesStore.ts).
+
+**Sin backend real todavía:** el modelo de datos (`Copropietario`, `Inmueble`, `OcupanteInmueble`)
+ya está migrado en `schema.prisma`, pero el módulo `server/src/modules/operativo-seguridad/
+copropietarios/` sigue siendo un `.gitkeep` sin rutas montadas (confirmado incluso después del
+merge a `main` del 2026-09-19; el README del backend lo marca "pendiente, semana 21-sept"). Por
+eso `inmueblesStore.ts` guarda todo en `localStorage` en vez de llamar a `api`. Cuando exista el
+endpoint real, solo hace falta cambiar las funciones de ese archivo — las pantallas no deberían
+necesitar tocarse.
+
+**Diferencia de modelado a resolver con backend:** la HU registra departamento + piso + parqueo +
+baulera en un solo formulario/confirmación ("Inmueble registrado con éxito"), pero el schema real
+modela cada uno como una fila `Inmueble` independiente (`tipo`: `DEPARTAMENTO` / `PARQUEO` /
+`BAULERA`). Este store los agrupa en un solo registro tal como pide la HU; falta decidir con
+backend si al conectar la API real se manda como 1 alta o hasta 3.
+
+## HU2 — Historial de ocupantes por inmueble
+
+Implementado en [src/app/admin/inmuebles/\[id\]/page.tsx](src/app/admin/inmuebles/%5Bid%5D/page.tsx)
+— ficha del inmueble con pestañas "Datos generales" / "Historial de Ocupantes" (línea de tiempo,
+más reciente primero, estado vacío exacto, badge "Actual" para el ocupante vigente).
+
+La regla de negocio ("al asignar un nuevo ocupante, cerrar automáticamente al anterior con la
+fecha del día") vive en `registrarAsignacion` de
+[src/lib/inmueblesStore.ts](src/lib/inmueblesStore.ts) — no en la pantalla — así que se cumple sin
+importar si la asignación se hizo desde `/admin/residentes` o desde el botón "+ Asignar nuevo
+ocupante" de la propia ficha (ambos llaman a la misma función). `Asignacion` ahora tiene
+`fechaInicio` y `fechaFin: string | null` (`null` = ocupante activo); el historial nunca borra
+registros, solo les completa `fechaFin` al cerrarlos.
+
+`/admin/residentes` solo lista ocupantes **activos** del inmueble seleccionado (para eso está la
+sección "Residentes actuales"); el historial completo, incluyendo ocupantes pasados, se consulta
+en la ficha. Acepta `?inmuebleId=` por query string para preseleccionar el inmueble al llegar
+desde la ficha.
+
+Acceso: la pestaña de historial es de solo lectura (sin acciones destructivas propias), así que
+cualquier rol con "ver" en la sección `inmuebles` puede consultarla — la restricción real de HU2
+("acceso restringido... para quien no es Administrador") se cumple igual que en el resto del
+sistema: los botones de escritura (activar/desactivar el inmueble, asignar un ocupante) se ocultan
+y revalidan según `MATRIZ_PERMISOS`, no hay un caso especial nuevo para esta pantalla.

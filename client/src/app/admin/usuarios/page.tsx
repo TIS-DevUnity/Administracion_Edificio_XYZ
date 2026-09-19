@@ -5,7 +5,13 @@ import axios from "axios";
 import { api } from "@/lib/api";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
-import { MENSAJE_PERMISO_INSUFICIENTE, normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
+import {
+  MENSAJE_PERMISO_INSUFICIENTE,
+  ROLES_DISPONIBLES,
+  normalizarRol,
+  puedeEjecutar,
+  validarAccion,
+} from "@/lib/permissions";
 
 interface UsuarioApi {
   id: string;
@@ -16,7 +22,46 @@ interface UsuarioApi {
   activo: boolean;
 }
 
-const ROLES_DISPONIBLES = ["ADMINISTRADOR", "DIRECTORIO", "CONSULTA"] as const;
+const claseInput =
+  "h-9 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15";
+
+interface CamposUsuarioProps {
+  registro?: UsuarioApi;
+}
+
+function CamposUsuario({ registro }: CamposUsuarioProps) {
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <label className="text-[12px] font-medium text-foreground">Nombre</label>
+        <input name="nombre" defaultValue={registro?.nombre} autoComplete="off" required className={`w-40 ${claseInput}`} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-[12px] font-medium text-foreground">Apellido</label>
+        <input name="apellido" defaultValue={registro?.apellido} autoComplete="off" required className={`w-40 ${claseInput}`} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-[12px] font-medium text-foreground">Correo</label>
+        <input name="email" type="email" defaultValue={registro?.email} autoComplete="off" required className={`w-52 ${claseInput}`} />
+      </div>
+    </>
+  );
+}
+
+function CampoRol({ strDefault }: { strDefault?: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-[12px] font-medium text-foreground">Rol</label>
+      <select name="rol" defaultValue={strDefault ?? "CONSULTA"} required className={`w-36 ${claseInput}`}>
+        {ROLES_DISPONIBLES.map((strRol) => (
+          <option key={strRol} value={strRol}>
+            {strRol}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 
 export default function UsuariosPage() {
@@ -207,32 +252,12 @@ export default function UsuariosPage() {
               autoComplete="off"
               className="animate-in fade-in slide-in-from-top-1 duration-300 mt-3 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-card p-4"
             >
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-medium text-foreground">Nombre</label>
-                <input name="nombre" autoComplete="off" required className="h-9 w-40 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-medium text-foreground">Apellido</label>
-                <input name="apellido" autoComplete="off" required className="h-9 w-40 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-medium text-foreground">Correo</label>
-                <input name="email" type="email" autoComplete="off" required className="h-9 w-52 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
-              </div>
+              <CamposUsuario />
               <div className="flex flex-col gap-1">
                 <label className="text-[12px] font-medium text-foreground">Contraseña</label>
-                <input name="password" type="password" autoComplete="new-password" required className="h-9 w-40 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
+                <input name="password" type="password" autoComplete="new-password" required className={`w-40 ${claseInput}`} />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-medium text-foreground">Rol</label>
-                <select name="rol" required defaultValue="CONSULTA" className="h-9 w-36 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15">
-                  {ROLES_DISPONIBLES.map((strRol) => (
-                    <option key={strRol} value={strRol}>
-                      {strRol}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <CampoRol />
               <button type="submit" className="h-9 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90">
                 Guardar
               </button>
@@ -270,28 +295,8 @@ export default function UsuariosPage() {
                   <tr key={registro.id} className="border-b border-border last:border-0">
                     <td colSpan={bolHayAcciones ? 5 : 4} className="px-5 py-3">
                       <form onSubmit={(event) => guardarEdicion(registro.id, event)} autoComplete="off" className="flex flex-wrap items-end gap-3">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[12px] font-medium text-foreground">Nombre</label>
-                          <input name="nombre" defaultValue={registro.nombre} autoComplete="off" required className="h-9 w-40 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[12px] font-medium text-foreground">Apellido</label>
-                          <input name="apellido" defaultValue={registro.apellido} autoComplete="off" required className="h-9 w-40 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[12px] font-medium text-foreground">Correo</label>
-                          <input name="email" type="email" defaultValue={registro.email} autoComplete="off" required className="h-9 w-52 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15" />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[12px] font-medium text-foreground">Rol</label>
-                          <select name="rol" defaultValue={registro.rol} required className="h-9 w-36 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15">
-                            {ROLES_DISPONIBLES.map((strRol) => (
-                              <option key={strRol} value={strRol}>
-                                {strRol}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <CamposUsuario registro={registro} />
+                        <CampoRol strDefault={registro.rol} />
                         <button type="submit" className="h-9 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90">
                           Guardar
                         </button>

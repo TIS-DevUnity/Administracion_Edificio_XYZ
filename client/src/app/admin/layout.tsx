@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSesionActual, cerrarSesion } from "@/lib/session";
 import { normalizarRol, obtenerSeccionPorRuta, puedeAcceder, SECCIONES_NAV } from "@/lib/permissions";
 import { AccesoDenegado } from "@/components/AccesoDenegado";
+import { LogoMark } from "@/components/LogoMark";
 
 function formatRol(strRol: string) {
   switch (strRol) {
@@ -56,20 +57,17 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Sidebar */}
       <aside className="animate-in fade-in slide-in-from-left-4 duration-500 hidden w-60 shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar px-4 py-6 lg:flex">
         <div>
-          {/* Marca — placeholder animado, ver nota de logo/fondo en src/app/login/page.tsx */}
           <div className="mb-8 flex items-center gap-2.5 px-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary text-[13px] font-bold text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/30">
-              E
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary shadow-lg shadow-sidebar-primary/30">
+              <LogoMark className="h-5 w-5 text-sidebar-primary-foreground" />
             </div>
             <span className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-sidebar-foreground">
               Edificio Admin
             </span>
           </div>
 
-          {/* Navegación — solo muestra las secciones permitidas para el rol actual */}
           <nav className="flex flex-col gap-0.5">
             {seccionesVisibles.map((seccion) => (
               <Link
@@ -100,7 +98,6 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
             </div>
           </div>
 
-          {/* Cerrar sesión */}
           <button
             type="button"
             onClick={handleLogout}
@@ -111,15 +108,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
         </div>
       </aside>
 
-      {/* Contenido principal */}
       <div className="flex flex-1 flex-col">
-        {/* Topbar */}
-        {/*
-          Antes tenía backdrop-blur-md: con la cabecera "sticky" eso obliga
-          al navegador a recalcular el desenfoque del contenido de abajo en
-          cada frame de scroll (bug QA de lentitud al navegar/seleccionar).
-          bg-card/95 da un efecto casi idéntico sin ese costo.
-        */}
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border bg-card/95 px-6">
           <h1 className="font-title text-[20px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
             {SECCIONES_NAV.find((seccion) => seccion.id === seccionActual)?.label ?? "Panel principal"}

@@ -1,6 +1,7 @@
 const FILAS = [
   { seccion: "Panel principal", administrador: "Ver", directorio: "Ver", consulta: "Ver" },
   { seccion: "Edificios", administrador: "Ver, crear, editar, eliminar", directorio: "Ver, crear, editar", consulta: "Ver" },
+  { seccion: "Inmuebles", administrador: "Ver, crear, editar, eliminar", directorio: "Ver, crear, editar", consulta: "Ver" },
   { seccion: "Residentes", administrador: "Ver, crear, editar, eliminar", directorio: "Ver, crear, editar", consulta: "Ver" },
   { seccion: "Pagos", administrador: "Ver, crear, editar, eliminar", directorio: "Ver, crear, editar", consulta: "Ver" },
   { seccion: "Mantenimiento", administrador: "Ver, crear, editar, eliminar", directorio: "Ver, crear, editar", consulta: "Ver" },

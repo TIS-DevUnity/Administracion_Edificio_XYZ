@@ -22,18 +22,6 @@ interface GestorSeccionProps {
   registrosIniciales: RegistroBase[];
 }
 
-/**
- * Tabla CRUD genérica de referencia visual (sin backend real detrás — el
- * módulo aún no tiene endpoints, ver nota en lib/permissions.ts). Se usa en
- * edificios, residentes y mantenimiento para no repetir la misma lógica de
- * permisos tres veces.
- *
- * Los botones de crear/editar/eliminar solo se muestran si el rol actual
- * tiene esa acción permitida (MATRIZ_PERMISOS). Además, cada acción vuelve a
- * validar el permiso justo antes de ejecutarse — así, aunque alguien fuerce
- * la aparición de un botón que no debería estar (p. ej. editando el DOM),
- * la operación se rechaza y los datos no cambian.
- */
 export function GestorSeccion({ rol, seccion, campos, registrosIniciales }: GestorSeccionProps) {
   const [registros, setRegistros] = useState<RegistroBase[]>(registrosIniciales);
   const [strIdEnEdicion, setStrIdEnEdicion] = useState<string | null>(null);

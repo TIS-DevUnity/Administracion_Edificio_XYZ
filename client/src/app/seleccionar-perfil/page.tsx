@@ -1,5 +1,5 @@
-
 import Link from "next/link";
+import { LogoMark } from "@/components/LogoMark";
 
 const arrPerfiles = [
   {
@@ -23,10 +23,9 @@ export default function SeleccionarPerfilPage() {
   return (
     <div className="flex min-h-screen flex-1 items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
-        {/* Marca */}
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-primary-foreground">
-            E
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
+            <LogoMark className="h-6 w-6 text-primary-foreground" />
           </div>
           <div>
             <h1 className="font-title text-[22px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
@@ -38,7 +37,6 @@ export default function SeleccionarPerfilPage() {
           </div>
         </div>
 
-        {/* Lista de perfiles */}
         <div className="flex flex-col gap-3">
           {arrPerfiles.map((objPerfil) => (
             <Link

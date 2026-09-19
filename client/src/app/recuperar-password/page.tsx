@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
+import { LogoMark } from "@/components/LogoMark";
 
 export default function RecuperarPasswordPage() {
   const [strEmail, setStrEmail] = useState("");
@@ -15,10 +16,9 @@ export default function RecuperarPasswordPage() {
   return (
     <div className="flex min-h-screen flex-1 items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-sm">
-        {/* Marca */}
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-primary-foreground">
-            E
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary">
+            <LogoMark className="h-6 w-6 text-primary-foreground" />
           </div>
           <div>
             <h1 className="font-title text-[22px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
@@ -30,7 +30,6 @@ export default function RecuperarPasswordPage() {
           </div>
         </div>
 
-        {/* Card */}
         <div className="rounded-2xl border border-border bg-card p-8">
           {bolEnviado ? (
             <div className="flex flex-col items-center gap-4 text-center">
@@ -62,7 +61,7 @@ export default function RecuperarPasswordPage() {
                 <input
                   id="email"
                   type="email"
-                  placeholder="nombre@empresa.com"
+                  placeholder="Ingresa tu correo electrónico"
                   value={strEmail}
                   onChange={(event) => setStrEmail(event.target.value)}
                   required
