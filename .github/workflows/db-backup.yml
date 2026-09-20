@@ -2,8 +2,8 @@ name: Respaldo Automático Supabase
 
 on:
   schedule:
-    # Se ejecuta todos los días a las 7:00 AM UTC (3:00 AM hora local)
-    - cron: '0 7 * * *'
+    # Se ejecuta cada 3 días a las 7:00 AM UTC (3:00 AM hora local)
+    - cron: '0 7 */3 * *'
   workflow_dispatch: # Permite ejecutar el respaldo con un botón manual si hay emergencia
 
 jobs:
