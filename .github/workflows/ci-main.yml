@@ -1,38 +1,80 @@
-name: CI Pipeline - Main
+name: CI - Code Quality & Build
 
 on:
   pull_request:
     branches: [ "main" ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-verify:
+  code-quality:
+    name: "Quality: Linting & Typecheck"
     runs-on: ubuntu-latest
     steps:
-      - name: Clonar el repositorio
-        uses: actions/checkout@v4
-
-      - name: Configurar Node.js 20
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Instalar todas las dependencias
-        run: npm install
-        
-      - name: Revisar calidad de código y sintaxis (Linter)
+      - name: Instalar dependencias exactas
+        run: npm ci
+
+      - name: Validar sintaxis y reglas de estilo
+        run: npm run lint --workspaces --if-present
+
+      - name: Validar tipos de TypeScript
         run: |
-          npm run lint --workspace=client --if-present
-          npm run lint --workspace=server --if-present
+          npm run typecheck --workspace=client --if-present
+          npm run typecheck --workspace=server --if-present
 
-      - name: Verificar compilación del Frontend
-        run: npm run build --workspace=client
+  test:
+    name: "Testing: Unit & Integration"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Pruebas unitarias del Backend
-        run: npm test --workspace=server --if-present
+      - name: Instalar dependencias exactas
+        run: npm ci
 
-      - name: Pruebas unitarias del Frontend
-        run: npm test --workspace=client --if-present
+      - name: Pruebas unitarias (Backend)
+        run: npm test --workspace=server --if-present -- --ci --coverage
 
-      - name: Ejecutar pruebas automáticas de QA
+      - name: Pruebas unitarias (Frontend)
+        run: npm test --workspace=client --if-present -- --ci --coverage
+
+      - name: Pruebas de QA / E2E ligeras
         run: npm test --workspace=qa --if-present
+
+  build-frontend:
+    name: "Build: Next.js Client"
+    runs-on: ubuntu-latest
+    needs: [code-quality]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Restaurar caché de compilación de Next.js
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/client/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('client/**/*.[jt]s*', 'client/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+
+      - name: Instalar dependencias exactas
+        run: npm ci
+
+      - name: Compilar Frontend (Next.js)
+        run: npm run build --workspace=client
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
