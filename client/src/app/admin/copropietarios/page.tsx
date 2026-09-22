@@ -51,6 +51,13 @@ interface CopropietariosResponse {
   copropietarios: Copropietario[];
 }
 
+const CLASE_HEADER_TABLA =
+  "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CLASE_LABEL_CAMPO =
+  "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CLASE_TITULO_DIALOGO =
+  "font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground";
+
 export default function CopropietariosPage() {
   const [arrCopropietarios, setArrCopropietarios] = useState<
     Copropietario[]
@@ -155,25 +162,17 @@ export default function CopropietariosPage() {
   }
 
   return (
-    <div className="min-h-screen space-y-6 p-6 text-white">
+    <div className="px-6 py-6">
       {/* Encabezado */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50">
-              <Users className="h-5 w-5 text-primary-600" />
-            </div>
-
-            <div>
-              <h1 className="text-2xl font-semibold text-white">
-                Copropietarios
-              </h1>
-
-              <p className="text-sm text-gray-400">
-                Consulta y visualización de copropietarios registrados
-              </p>
-            </div>
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+            <Users className="h-5 w-5 text-primary" />
           </div>
+
+          <p className="max-w-md text-[13px] leading-[1.45] text-muted-foreground">
+            Consulta y visualización de copropietarios registrados.
+          </p>
         </div>
 
         <Button
@@ -193,16 +192,16 @@ export default function CopropietariosPage() {
       </div>
 
       {/* Tarjeta principal */}
-      <Card className="border-neutral-200 shadow-sm">
+      <Card className="shadow-sm">
         <CardHeader className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <CardTitle className="text-lg text-white">
+              <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
                 Lista de copropietarios
               </CardTitle>
 
               {!bolLoading && !strError && (
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="font-caption mt-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
                   {arrCopropietariosFiltrados.length}{" "}
                   {arrCopropietariosFiltrados.length === 1
                     ? "resultado"
@@ -212,7 +211,7 @@ export default function CopropietariosPage() {
             </div>
 
             <div className="relative w-full md:w-[360px]">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
               <Input
                 value={strSearch}
@@ -244,15 +243,15 @@ export default function CopropietariosPage() {
           {/* Estado de error */}
           {!bolLoading && strError && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
-                <AlertCircle className="h-6 w-6 text-red-500" />
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-danger-subtle">
+                <AlertCircle className="h-6 w-6 text-destructive" />
               </div>
 
-              <h3 className="font-medium text-neutral-900">
+              <h3 className="text-[14px] font-medium text-foreground">
                 No se pudo cargar la información
               </h3>
 
-              <p className="mt-1 text-sm text-neutral-500">
+              <p className="mt-1 text-[13px] text-muted-foreground">
                 {strError}
               </p>
 
@@ -271,15 +270,15 @@ export default function CopropietariosPage() {
             !strError &&
             arrCopropietariosFiltrados.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100">
-                  <Users className="h-6 w-6 text-neutral-400" />
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                  <Users className="h-6 w-6 text-muted-foreground" />
                 </div>
 
-                <h3 className="font-medium text-neutral-900">
+                <h3 className="text-[14px] font-medium text-foreground">
                   No se encontraron copropietarios
                 </h3>
 
-                <p className="mt-1 text-sm text-neutral-500">
+                <p className="mt-1 text-[13px] text-muted-foreground">
                   {strSearch
                     ? "Prueba con otro nombre, apellido o CI."
                     : "Todavía no existen copropietarios registrados."}
@@ -291,16 +290,16 @@ export default function CopropietariosPage() {
           {!bolLoading &&
             !strError &&
             arrCopropietariosFiltrados.length > 0 && (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Copropietario</TableHead>
-                      <TableHead>CI</TableHead>
-                      <TableHead>Correo</TableHead>
-                      <TableHead>Teléfono</TableHead>
-                      <TableHead>Registrado</TableHead>
-                      <TableHead className="text-right">
+                      <TableHead className={CLASE_HEADER_TABLA}>Copropietario</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>CI</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Correo</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Teléfono</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Registrado</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>
                         Acción
                       </TableHead>
                     </TableRow>
@@ -312,33 +311,33 @@ export default function CopropietariosPage() {
                         <TableRow key={objCopropietario.id}>
                           <TableCell>
                             <div>
-                              <p className="font-medium text-white">
+                              <p className="text-[13px] font-medium text-foreground">
                                 {objCopropietario.nombre}{" "}
                                 {objCopropietario.apellido}
                               </p>
 
                               <Badge
                                 variant="secondary"
-                                className="mt-1 text-xs"
+                                className="font-caption mt-1 text-[11px]"
                               >
                                 Copropietario
                               </Badge>
                             </div>
                           </TableCell>
 
-                          <TableCell className="font-medium text-gray-200">
+                          <TableCell className="text-[13px] font-medium text-foreground tabular-nums">
                             {objCopropietario.ci}
                           </TableCell>
 
-                          <TableCell className="text-gray-300">
+                          <TableCell className="text-[13px] text-muted-foreground">
                             {objCopropietario.email || "—"}
                           </TableCell>
 
-                          <TableCell className="text-gray-300">
+                          <TableCell className="text-[13px] text-muted-foreground tabular-nums">
                             {objCopropietario.telefono || "—"}
                           </TableCell>
 
-                          <TableCell className="text-gray-300">
+                          <TableCell className="text-[13px] text-muted-foreground">
                             {formatFecha(objCopropietario.createdAt)}
                           </TableCell>
 
@@ -373,19 +372,19 @@ export default function CopropietariosPage() {
       >
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>
               Información del copropietario
             </DialogTitle>
           </DialogHeader>
 
           {objCopropietarioSeleccionado && (
             <div className="space-y-5">
-              <div className="rounded-lg bg-neutral-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+              <div className="rounded-lg bg-muted/30 p-4">
+                <p className={CLASE_LABEL_CAMPO}>
                   Nombre completo
                 </p>
 
-                <p className="mt-1 text-lg font-semibold text-neutral-900">
+                <p className="mt-1 text-[16px] font-semibold text-foreground">
                   {objCopropietarioSeleccionado.nombre}{" "}
                   {objCopropietarioSeleccionado.apellido}
                 </p>
@@ -393,43 +392,43 @@ export default function CopropietariosPage() {
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <p className="text-xs font-medium text-neutral-500">
+                  <p className={CLASE_LABEL_CAMPO}>
                     CI
                   </p>
 
-                  <p className="mt-1 text-sm text-gray-200">
+                  <p className="mt-1 text-[13px] text-foreground">
                     {objCopropietarioSeleccionado.ci}
                   </p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-neutral-500">
+                  <p className={CLASE_LABEL_CAMPO}>
                     Teléfono
                   </p>
 
-                  <p className="mt-1 text-sm text-gray-200">
+                  <p className="mt-1 text-[13px] text-foreground">
                     {objCopropietarioSeleccionado.telefono ||
                       "No registrado"}
                   </p>
                 </div>
 
                 <div className="sm:col-span-2">
-                  <p className="text-xs font-medium text-neutral-500">
+                  <p className={CLASE_LABEL_CAMPO}>
                     Correo electrónico
                   </p>
 
-                  <p className="mt-1 break-all text-sm text-gray-200">
+                  <p className="mt-1 break-all text-[13px] text-foreground">
                     {objCopropietarioSeleccionado.email ||
                       "No registrado"}
                   </p>
                 </div>
 
                 <div>
-                  <p className="text-xs font-medium text-neutral-500">
+                  <p className={CLASE_LABEL_CAMPO}>
                     Fecha de registro
                   </p>
 
-                  <p className="mt-1 text-sm text-gray-200">
+                  <p className="mt-1 text-[13px] text-foreground">
                     {formatFecha(
                       objCopropietarioSeleccionado.createdAt
                     )}
