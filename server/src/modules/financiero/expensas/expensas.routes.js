@@ -58,4 +58,34 @@ router.post('/', autenticar, GESTION, controller.generar)
  */
 router.post('/:id/aplicar-mora', autenticar, GESTION, controller.aplicarMora)
 
+/**
+ * @openapi
+ * /api/financiero/expensas/{id}/pagos:
+ *   post:
+ *     summary: Registra un pago sobre una expensa (permite pagos parciales) y actualiza su estado
+ *     tags: [Financiero]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               monto: { type: number, example: 350 }
+ *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
+ *               referencia: { type: string, example: "Comprobante 00123" }
+ *     responses:
+ *       201: { description: Pago registrado, estado de la expensa actualizado }
+ *       400: { description: monto y metodoPago son requeridos }
+ *       404: { description: Expensa no encontrada }
+ *       409: { description: La expensa ya esta pagada }
+ */
+router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
+
 module.exports = router

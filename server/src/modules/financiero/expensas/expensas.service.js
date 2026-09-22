@@ -98,4 +98,49 @@ async function aplicarMora(expensaId) {
   })
 }
 
-module.exports = { generar, listar, aplicarMora }
+async function registrarPago({ expensaId, monto, metodoPago, referencia, usuarioId }) {
+  const expensa = await prisma.expensa.findUnique({
+    where: { id: expensaId },
+    include: { pagos: true }
+  })
+
+  if (!expensa) {
+    throw Object.assign(new Error('Expensa no encontrada'), { status: 404 })
+  }
+
+  if (expensa.estado === 'PAGADA') {
+    throw Object.assign(new Error('La expensa ya esta pagada, no se pueden registrar mas pagos'), {
+      status: 409
+    })
+  }
+
+  const pago = await prisma.pago.create({
+    data: {
+      expensaId,
+      monto,
+      metodoPago,
+      referencia,
+      registradoPorId: usuarioId
+    }
+  })
+
+  const totalPagado = expensa.pagos.reduce((acc, p) => acc + Number(p.monto), 0) + Number(monto)
+  const totalAdeudado = Number(expensa.montoTotal) + Number(expensa.montoMora)
+
+  let nuevoEstado = expensa.estado
+  if (totalPagado >= totalAdeudado) {
+    nuevoEstado = 'PAGADA'
+  } else if (totalPagado > 0) {
+    nuevoEstado = 'PARCIAL'
+  }
+
+  const expensaActualizada = await prisma.expensa.update({
+    where: { id: expensaId },
+    data: { estado: nuevoEstado },
+    include: { pagos: true, inmueble: { include: { tipoInmueble: true } } }
+  })
+
+  return { pago, expensa: expensaActualizada }
+}
+
+module.exports = { generar, listar, aplicarMora, registrarPago }

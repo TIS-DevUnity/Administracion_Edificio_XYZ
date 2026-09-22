@@ -14,6 +14,7 @@ const inmueblesRoutes = require('./modules/operativo-seguridad/inmuebles/inmuebl
 const tiposInmuebleRoutes = require('./modules/operativo-seguridad/tipos-inmueble/tipos-inmueble.routes')
 const financieroTestAuthRoutes = require('./modules/financiero/test-auth/test-auth.routes')
 const expensasRoutes = require('./modules/financiero/expensas/expensas.routes')
+const configuracionMoraRoutes = require('./modules/financiero/configuracion-mora/configuracion-mora.routes')
 
 const app = express()
 
@@ -33,6 +34,7 @@ app.use('/api/inmuebles', inmueblesRoutes)
 app.use('/api/tipos-inmueble', tiposInmuebleRoutes)
 app.use('/api/financiero', financieroTestAuthRoutes)
 app.use('/api/financiero/expensas', expensasRoutes)
+app.use('/api/financiero/configuracion-mora', configuracionMoraRoutes)
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 app.use(manejarErrores)
