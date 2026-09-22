@@ -176,7 +176,7 @@ async function asignarOcupante(inmuebleId, { copropietarioId, esPropietario, fec
   return nuevo;
 }
 
-async function darDeBajaOcupante(inmuebleId, ocupanteId, { actorId, ip }) {
+async function darDeBajaOcupante(inmuebleId, ocupanteId, { fechaFin: fechaFinInput, actorId, ip }) {
   const ocupante = await prisma.ocupanteInmueble.findUnique({ where: { id: ocupanteId } });
   if (!ocupante || ocupante.inmuebleId !== inmuebleId) {
     throw Object.assign(new Error("Ocupante no encontrado para este inmueble"), { status: 404 });
@@ -185,7 +185,14 @@ async function darDeBajaOcupante(inmuebleId, ocupanteId, { actorId, ip }) {
     throw Object.assign(new Error("El ocupante ya fue dado de baja"), { status: 409 });
   }
 
-  const fechaFin = new Date();
+  let fechaFin = new Date();
+  if (fechaFinInput) {
+    fechaFin = new Date(fechaFinInput);
+    if (Number.isNaN(fechaFin.getTime())) {
+      throw Object.assign(new Error("fechaFin invalida"), { status: 400 });
+    }
+  }
+
   if (fechaFin < ocupante.fechaInicio) {
     throw Object.assign(
       new Error("La fecha de finalizacion no puede ser anterior a la fecha de inicio"),
