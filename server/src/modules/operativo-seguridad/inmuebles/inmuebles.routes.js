@@ -142,8 +142,17 @@ router.post("/:id/ocupantes", autenticar, GESTION, controller.asignarOcupante);
  *         name: ocupanteId
  *         required: true
  *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fechaFin: { type: string, format: date-time, description: "Fecha de desocupacion. Si no se envia, se usa la fecha actual." }
  *     responses:
  *       200: { description: Ocupante dado de baja }
+ *       400: { description: fechaFin invalida o anterior a la fecha de inicio }
  *       404: { description: Ocupante no encontrado }
  *       409: { description: El ocupante ya fue dado de baja }
  */
