@@ -1,0 +1,26 @@
+name: Validar Pull Request
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  validar_descripcion_y_checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar checkboxes sin marcar
+        run: |
+          if echo "${{ github.event.pull_request.body }}" | grep -q "\[ \]"; then
+            echo "::error::Tienes checkboxes sin marcar. Debes cumplir con el checklist y marcar todo con [x]."
+            exit 1
+          fi
+
+      - name: Comprobar si llenaron la descripción
+        run: |
+          if echo "${{ github.event.pull_request.body }}" | grep -q "<!-- Explica de forma clara y detallada"; then
+            echo "::error::No has llenado la 'Descripción del Cambio'. Borra el comentario oculto y explica qué hace este PR."
+            exit 1
+          fi
+          
+      - name: Éxito
+        run: echo "PR validado correctamente."

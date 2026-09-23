@@ -34,4 +34,26 @@ async function aplicarMora(req, res, next) {
   }
 }
 
-module.exports = { generar, listar, aplicarMora }
+async function registrarPago(req, res, next) {
+  try {
+    const { id } = req.params
+    const { monto, metodoPago, referencia } = req.body
+    if (!monto || !metodoPago) {
+      return res.status(400).json({
+        error: 'monto y metodoPago son requeridos'
+      })
+    }
+    const resultado = await service.registrarPago({
+      expensaId: id,
+      monto,
+      metodoPago,
+      referencia,
+      usuarioId: req.usuario.id
+    })
+    res.status(201).json(resultado)
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { generar, listar, aplicarMora, registrarPago }

@@ -83,10 +83,11 @@ async function asignarOcupante(req, res, next) {
 
 async function darDeBajaOcupante(req, res, next) {
   try {
+    const { fechaFin } = req.body;
     const ocupante = await inmueblesService.darDeBajaOcupante(
       req.params.id,
       req.params.ocupanteId,
-      { actorId: req.usuario.id, ip: req.ip }
+      { fechaFin, actorId: req.usuario.id, ip: req.ip }
     );
     res.json({ ocupante });
   } catch (err) {
