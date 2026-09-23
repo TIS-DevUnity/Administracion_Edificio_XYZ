@@ -1,15 +1,19 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { format } from "date-fns";
+import React, { FormEvent, useEffect, useState } from "react";
+import axios from "axios";
 import {
   Building2,
   CalendarClock,
   Search,
   SlidersHorizontal,
   Save,
+  Wallet,
 } from "lucide-react";
 
+import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { useSesionActual } from "@/lib/session";
+import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -27,6 +31,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -42,29 +47,76 @@ import {
 import { financeService } from "@/services/finance.service";
 import {
   ConfiguracionMoraDTO,
+  EstadoExpensa,
   ExpensaDTO,
+  MetodoPago,
   TipoValorMora,
 } from "@/types/finance";
 
-const formatCurrency = (amount: number) => {
+const CLASE_HEADER_TABLA =
+  "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CLASE_LABEL_CAMPO =
+  "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CLASE_TITULO_DIALOGO =
+  "font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground";
+
+const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
+  EFECTIVO: "Efectivo",
+  TRANSFERENCIA: "Transferencia",
+  TARJETA: "Tarjeta",
+  CHEQUE: "Cheque",
+};
+
+const CLASE_BADGE_ESTADO: Record<EstadoExpensa, string> = {
+  PAGADA: "bg-success-subtle text-success",
+  VENCIDA: "bg-danger-subtle text-destructive",
+  PENDIENTE: "bg-muted text-muted-foreground",
+  PARCIAL: "bg-muted text-muted-foreground",
+};
+
+function formatCurrency(amount: number) {
   return new Intl.NumberFormat("es-BO", {
     style: "currency",
     currency: "BOB",
   }).format(amount);
-};
+}
+
+function formatearFecha(strFechaISO: string) {
+  return new Intl.DateTimeFormat("es-BO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(
+    new Date(strFechaISO)
+  );
+}
+
+function calcularSaldoPendiente(exp: ExpensaDTO): number {
+  const totalPagado = exp.pagos.reduce((acc, pago) => acc + Number(pago.monto), 0);
+  const totalAdeudado = Number(exp.montoTotal) + Number(exp.montoMora || 0);
+  return Math.max(totalAdeudado - totalPagado, 0);
+}
+
+function obtenerMensajeError(error: unknown, strFallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const strMensaje = (error.response?.data as { error?: string } | undefined)?.error;
+    if (strMensaje) return strMensaje;
+  }
+  return strFallback;
+}
 
 export default function GeneracionExpensasAdminPage() {
+  const { usuario } = useSesionActual();
+  const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
+  const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
+
   const [expensas, setExpensas] = useState<ExpensaDTO[]>([]);
-  const [configMora, setConfigMora] =
-    useState<ConfiguracionMoraDTO | null>(null);
+  const [configMora, setConfigMora] = useState<ConfiguracionMoraDTO | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [strMensajePermiso, setStrMensajePermiso] = useState("");
 
-  // Estados para el formulario de configuración
+  // Configuración de mora
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-
+  const [strErrorConfig, setStrErrorConfig] = useState("");
   const [formData, setFormData] = useState<{
     diaGeneracion: number;
     diasGracia: number;
@@ -77,42 +129,18 @@ export default function GeneracionExpensasAdminPage() {
     valor: 2,
   });
 
-  // Carga inicial de datos
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [configData, expensasData] = await Promise.all([
-          financeService.getConfiguracionVigente(),
-          financeService.getExpensas(),
-        ]);
+  // Registro de pago
+  const [expensaParaPago, setExpensaParaPago] = useState<ExpensaDTO | null>(null);
+  const [strMontoPago, setStrMontoPago] = useState("");
+  const [metodoPago, setMetodoPago] = useState<MetodoPago>("EFECTIVO");
+  const [strReferenciaPago, setStrReferenciaPago] = useState("");
+  const [strErrorPago, setStrErrorPago] = useState("");
+  const [bolGuardandoPago, setBolGuardandoPago] = useState(false);
+  const [strExito, setStrExito] = useState("");
 
-        setConfigMora(configData);
-        setExpensas(expensasData);
-
-        // Pre-cargar el formulario con los datos actuales
-        setFormData({
-          diaGeneracion: configData.diaGeneracion,
-          diasGracia: configData.diasGracia,
-          tipoValor: configData.tipoValor,
-          valor: configData.valor,
-        });
-      } catch (error) {
-        console.error("Error al cargar datos:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadData();
-  }, []);
-
-  const handleSaveConfig = async () => {
-    setIsSaving(true);
-
+  async function cargarDatos() {
     try {
-      await financeService.actualizarConfiguracion(formData);
-
-      // Recargar datos después de guardar
+      setIsLoading(true);
       const [configData, expensasData] = await Promise.all([
         financeService.getConfiguracionVigente(),
         financeService.getExpensas(),
@@ -127,401 +155,463 @@ export default function GeneracionExpensasAdminPage() {
         tipoValor: configData.tipoValor,
         valor: configData.valor,
       });
-
-      setIsConfigOpen(false);
-
-      alert("Configuración actualizada correctamente");
     } catch (error) {
-      console.error("Error al guardar:", error);
-      alert("Hubo un error al guardar la configuración");
+      console.error("Error al cargar datos:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargarDatos();
+  }, []);
+
+  async function handleSaveConfig() {
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+
+    if (formData.diaGeneracion < 1 || formData.diaGeneracion > 28) {
+      setStrErrorConfig("El día de generación debe estar entre 1 y 28.");
+      return;
+    }
+    if (formData.diasGracia < 0) {
+      setStrErrorConfig("Los días de gracia no pueden ser negativos.");
+      return;
+    }
+    if (formData.valor < 0) {
+      setStrErrorConfig("El valor de la mora no puede ser negativo.");
+      return;
+    }
+
+    setIsSaving(true);
+    setStrErrorConfig("");
+
+    try {
+      await financeService.actualizarConfiguracion(formData);
+      await cargarDatos();
+      setIsConfigOpen(false);
+      setStrExito("Configuración de mora actualizada correctamente.");
+    } catch (error) {
+      setStrErrorConfig(obtenerMensajeError(error, "Ocurrió un error al guardar la configuración."));
     } finally {
       setIsSaving(false);
     }
-  };
+  }
+
+  function abrirDialogoPago(exp: ExpensaDTO) {
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setStrExito("");
+    setExpensaParaPago(exp);
+    setStrMontoPago(calcularSaldoPendiente(exp).toFixed(2));
+    setMetodoPago("EFECTIVO");
+    setStrReferenciaPago("");
+    setStrErrorPago("");
+  }
+
+  function cerrarDialogoPago() {
+    setExpensaParaPago(null);
+    setStrErrorPago("");
+  }
+
+  async function handleConfirmarPago(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!expensaParaPago) return;
+
+    const monto = Number(strMontoPago);
+    if (!strMontoPago || Number.isNaN(monto) || monto <= 0) {
+      setStrErrorPago("Ingresa un monto válido, mayor a cero.");
+      return;
+    }
+
+    setBolGuardandoPago(true);
+    setStrErrorPago("");
+
+    try {
+      await financeService.registrarPago(expensaParaPago.id, {
+        monto,
+        metodoPago,
+        referencia: strReferenciaPago.trim() || undefined,
+      });
+
+      setExpensaParaPago(null);
+      setStrExito("Pago registrado correctamente.");
+      await cargarDatos();
+    } catch (error) {
+      setStrErrorPago(obtenerMensajeError(error, "Ocurrió un error al registrar el pago."));
+    } finally {
+      setBolGuardandoPago(false);
+    }
+  }
 
   const filteredExpensas = expensas.filter(
     (exp) =>
-      exp.inmueble.codigo
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      exp.periodo.includes(searchTerm),
+      exp.inmueble.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      exp.periodo.includes(searchTerm)
   );
 
-  const expensasVencidas = expensas.filter(
-    (e) => e.estado === "VENCIDA",
-  );
+  const expensasVencidas = expensas.filter((e) => e.estado === "VENCIDA");
 
-  const totalMoraAcumulada = expensasVencidas.reduce(
-    (acc, curr) => acc + Number(curr.montoMora || 0),
-    0,
-  );
-
-  const totalCapitalVencido = expensasVencidas.reduce(
-    (acc, curr) => acc + Number(curr.montoTotal),
-    0,
-  );
+  const totalMoraAcumulada = expensasVencidas.reduce((acc, curr) => acc + Number(curr.montoMora || 0), 0);
+  const totalCapitalVencido = expensasVencidas.reduce((acc, curr) => acc + Number(curr.montoTotal), 0);
 
   return (
-    <div className="min-h-screen bg-[#09090B] p-6 md:p-8">
-      <div className="mx-auto max-w-[1400px] space-y-6">
-        {/* HEADER */}
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">
-              Monitor de Expensas y Mora
-            </h1>
+    <div className="px-6 py-6">
+      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+        <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
+          Supervisión de expensas generadas por el job automático y aplicación de recargos por mora.
+        </p>
 
-            <p className="mt-1 text-sm text-slate-400">
-              Supervisión de expensas generadas por el job automático y
-              aplicación de recargos.
-            </p>
-          </div>
+        {bolPuedeGestionar && (
+          <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                Configurar reglas de mora
+              </Button>
+            </DialogTrigger>
 
-          <div className="flex items-center gap-3">
-            {/* MODAL DE CONFIGURACIÓN */}
-            <Dialog
-              open={isConfigOpen}
-              onOpenChange={setIsConfigOpen}
-            >
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="border-slate-700 bg-slate-800 font-medium text-slate-300 hover:bg-slate-700"
-                >
-                  <SlidersHorizontal className="mr-2 h-4 w-4" />
-                  Configurar Reglas de Mora
-                </Button>
-              </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className={CLASE_TITULO_DIALOGO}>Configuración de mora</DialogTitle>
+                <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+                  Ajusta los parámetros para la generación automática de expensas y recargos.
+                </DialogDescription>
+              </DialogHeader>
 
-              <DialogContent className="border-slate-800 bg-[#18181B] text-white sm:max-w-[425px]">
-                <DialogHeader>
-                  <DialogTitle>
-                    Configuración del Cron Job
-                  </DialogTitle>
+              <div className="grid gap-4 py-2">
+                <div className="grid gap-1">
+                  <label className={CLASE_LABEL_CAMPO}>Día de generación (1-28)</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="28"
+                    value={formData.diaGeneracion}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, diaGeneracion: Number(e.target.value) }))
+                    }
+                  />
+                </div>
 
-                  <DialogDescription className="text-slate-400">
-                    Ajusta los parámetros para la generación automática
-                    de expensas y recargos.
-                  </DialogDescription>
-                </DialogHeader>
+                <div className="grid gap-1">
+                  <label className={CLASE_LABEL_CAMPO}>Días de gracia</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.diasGracia}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, diasGracia: Number(e.target.value) }))}
+                  />
+                </div>
 
-                <div className="grid gap-4 py-4">
-                  {/* DÍA DE GENERACIÓN */}
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium text-slate-300">
-                      Día de Generación (1-28)
-                    </label>
-
-                    <Input
-                      type="number"
-                      min="1"
-                      max="28"
-                      value={formData.diaGeneracion}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          diaGeneracion: Number(e.target.value),
-                        }))
-                      }
-                      className="border-slate-700 bg-[#27272A]"
-                    />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-1">
+                    <label className={CLASE_LABEL_CAMPO}>Tipo de valor</label>
+                    <Select
+                      value={formData.tipoValor}
+                      onValueChange={(val: TipoValorMora) => setFormData((prev) => ({ ...prev, tipoValor: val }))}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PORCENTAJE">Porcentaje (%)</SelectItem>
+                        <SelectItem value="MONTO_FIJO">Monto fijo (Bs)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  {/* DÍAS DE GRACIA */}
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium text-slate-300">
-                      Días de Gracia
-                    </label>
-
+                  <div className="grid gap-1">
+                    <label className={CLASE_LABEL_CAMPO}>Valor</label>
                     <Input
                       type="number"
                       min="0"
-                      value={formData.diasGracia}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          diasGracia: Number(e.target.value),
-                        }))
-                      }
-                      className="border-slate-700 bg-[#27272A]"
+                      step="0.1"
+                      value={formData.valor}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, valor: Number(e.target.value) }))}
                     />
                   </div>
-
-                  {/* TIPO Y VALOR */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <label className="text-sm font-medium text-slate-300">
-                        Tipo de Valor
-                      </label>
-
-                      <Select
-                        value={formData.tipoValor}
-                        onValueChange={(val: TipoValorMora) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            tipoValor: val,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="border-slate-700 bg-[#27272A] text-white">
-                          <SelectValue />
-                        </SelectTrigger>
-
-                        <SelectContent className="border-slate-800 bg-[#18181B] text-white">
-                          <SelectItem value="PORCENTAJE">
-                            Porcentaje (%)
-                          </SelectItem>
-
-                          <SelectItem value="MONTO_FIJO">
-                            Monto Fijo (Bs)
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* VALOR */}
-                    <div className="grid gap-2">
-                      <label className="text-sm font-medium text-slate-300">
-                        Valor
-                      </label>
-
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={formData.valor}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            valor: Number(e.target.value),
-                          }))
-                        }
-                        className="border-slate-700 bg-[#27272A]"
-                      />
-                    </div>
-                  </div>
                 </div>
-
-                <Button
-                  onClick={handleSaveConfig}
-                  disabled={isSaving}
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                >
-                  <Save className="mr-2 h-4 w-4" />
-
-                  {isSaving
-                    ? "Guardando..."
-                    : "Guardar Configuración"}
-                </Button>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-
-        {/* REGLAS ACTUALES DE MORA */}
-        {!isLoading && configMora && (
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-primary">
-              <CalendarClock className="h-5 w-5" />
-
-              <h4 className="font-semibold">
-                Configuración Vigente del Cron Job
-              </h4>
-            </div>
-
-            <p className="mt-1 text-sm text-primary/80">
-              Las expensas se generan automáticamente el día{" "}
-              <strong className="font-bold text-primary">
-                {configMora.diaGeneracion}
-              </strong>{" "}
-              de cada mes. El recargo por mora es del{" "}
-              <strong className="font-bold text-primary">
-                {configMora.valor}
-                {configMora.tipoValor === "PORCENTAJE"
-                  ? "%"
-                  : " Bs"}
-              </strong>{" "}
-              aplicable tras{" "}
-              <strong className="font-bold text-primary">
-                {configMora.diasGracia} días
-              </strong>{" "}
-              de gracia desde el vencimiento.
-            </p>
-          </div>
-        )}
-
-        {/* KPIs */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <Card className="border-slate-800 bg-[#18181B] shadow-md">
-            <CardContent className="p-5">
-              <p className="text-sm font-medium text-slate-400">
-                Total Expensas Vencidas
-              </p>
-
-              <h3 className="mt-2 text-2xl font-bold text-white">
-                {expensasVencidas.length} Unidades
-              </h3>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-800 bg-[#18181B] shadow-md">
-            <CardContent className="p-5">
-              <p className="text-sm font-medium text-slate-400">
-                Capital Vencido
-              </p>
-
-              <h3 className="mt-2 text-2xl font-bold text-primary">
-                {formatCurrency(totalCapitalVencido)}
-              </h3>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-800 bg-[#18181B] shadow-md">
-            <CardContent className="p-5">
-              <p className="text-sm font-medium text-slate-400">
-                Mora Aplicada (Intereses)
-              </p>
-
-              <h3 className="mt-2 text-2xl font-bold text-red-500">
-                {formatCurrency(totalMoraAcumulada)}
-              </h3>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Calculado por el scheduler automático
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* TABLA PRINCIPAL */}
-        <Card className="border-slate-800 bg-[#18181B] shadow-md">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-800 pb-4">
-            <div>
-              <CardTitle className="text-lg text-white">
-                Registro General de Expensas
-              </CardTitle>
-            </div>
-
-            <div className="relative w-[300px]">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
-
-              <Input
-                placeholder="Buscar por departamento o periodo..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="border-slate-700 bg-[#27272A] pl-9 text-white placeholder:text-slate-500"
-              />
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="space-y-4 p-5">
-                <Skeleton className="h-10 w-full bg-slate-800" />
-                <Skeleton className="h-10 w-full bg-slate-800" />
               </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-800 hover:bg-transparent">
-                    <TableHead className="text-slate-400">
-                      Periodo
-                    </TableHead>
 
-                    <TableHead className="text-slate-400">
-                      Inmueble
-                    </TableHead>
+              {strErrorConfig && (
+                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
+                  {strErrorConfig}
+                </p>
+              )}
 
-                    <TableHead className="text-slate-400">
-                      Vencimiento
-                    </TableHead>
+              <DialogFooter>
+                <Button onClick={handleSaveConfig} disabled={isSaving} className="w-full">
+                  <Save className="mr-2 h-4 w-4" />
+                  {isSaving ? "Guardando..." : "Guardar configuración"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
 
-                    <TableHead className="text-right text-slate-400">
-                      Monto Base
-                    </TableHead>
+      {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
+      {strExito && (
+        <div className="animate-in fade-in slide-in-from-top-1 duration-300 mb-4 rounded-lg border border-success/20 bg-success-subtle px-3.5 py-2.5 text-[13px] text-success">
+          {strExito}
+        </div>
+      )}
 
-                    <TableHead className="text-right text-slate-400">
-                      Mora
-                    </TableHead>
+      {/* Reglas actuales de mora */}
+      {!isLoading && configMora && (
+        <div className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-primary">
+            <CalendarClock className="h-5 w-5" />
+            <h4 className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em]">
+              Configuración vigente del cron job
+            </h4>
+          </div>
 
-                    <TableHead className="text-right text-slate-400">
-                      Total
-                    </TableHead>
+          <p className="mt-1 text-[13px] leading-[1.45] text-primary/80">
+            Las expensas se generan automáticamente el día{" "}
+            <strong className="font-bold text-primary">{configMora.diaGeneracion}</strong> de cada mes. El
+            recargo por mora es del{" "}
+            <strong className="font-bold text-primary">
+              {configMora.valor}
+              {configMora.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
+            </strong>{" "}
+            aplicable tras <strong className="font-bold text-primary">{configMora.diasGracia} días</strong> de
+            gracia desde el vencimiento.
+          </p>
+        </div>
+      )}
 
-                    <TableHead className="text-center text-slate-400">
-                      Estado
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
+      {/* KPIs */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <Card className="shadow-sm">
+          <CardContent className="p-5">
+            <p className={CLASE_LABEL_CAMPO}>Total expensas vencidas</p>
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+              {expensasVencidas.length} {expensasVencidas.length === 1 ? "unidad" : "unidades"}
+            </h3>
+          </CardContent>
+        </Card>
 
-                <TableBody>
-                  {filteredExpensas.map((exp) => {
-                    const montoTotal =
-                      Number(exp.montoTotal) +
-                      Number(exp.montoMora || 0);
+        <Card className="shadow-sm">
+          <CardContent className="p-5">
+            <p className={CLASE_LABEL_CAMPO}>Capital vencido</p>
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-primary">
+              {formatCurrency(totalCapitalVencido)}
+            </h3>
+          </CardContent>
+        </Card>
 
-                    return (
-                      <TableRow
-                        key={exp.id}
-                        className="border-slate-800 hover:bg-slate-800/50"
-                      >
-                        <TableCell className="text-white">
-                          {exp.periodo}
-                        </TableCell>
-
-                        <TableCell className="text-slate-300">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-slate-500" />
-                            {exp.inmueble.codigo}
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-slate-400">
-                          {format(
-                            new Date(exp.fechaVencimiento),
-                            "dd/MM/yyyy",
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-right text-slate-300">
-                          {formatCurrency(Number(exp.montoTotal))}
-                        </TableCell>
-
-                        <TableCell className="text-right text-red-400">
-                          {exp.montoMora
-                            ? formatCurrency(Number(exp.montoMora))
-                            : "Bs 0,00"}
-                        </TableCell>
-
-                        <TableCell className="text-right font-bold text-primary">
-                          {formatCurrency(montoTotal)}
-                        </TableCell>
-
-                        <TableCell className="text-center">
-                          <Badge
-                            variant="outline"
-                            className={
-                              exp.estado === "VENCIDA"
-                                ? "border-red-500/20 bg-red-500/10 text-red-400"
-                                : exp.estado === "PAGADA"
-                                  ? "border-green-500/20 bg-green-500/10 text-green-400"
-                                  : exp.estado === "PARCIAL"
-                                    ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-400"
-                                    : "border-slate-700 bg-slate-800 text-slate-200"
-                            }
-                          >
-                            {exp.estado}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
+        <Card className="shadow-sm">
+          <CardContent className="p-5">
+            <p className={CLASE_LABEL_CAMPO}>Mora aplicada (recargos)</p>
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-destructive">
+              {formatCurrency(totalMoraAcumulada)}
+            </h3>
+            <p className="font-caption mt-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+              Calculado por el scheduler automático
+            </p>
           </CardContent>
         </Card>
       </div>
+
+      {/* Tabla principal */}
+      <Card className="shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border pb-4">
+          <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
+            Registro general de expensas
+          </CardTitle>
+
+          <div className="relative w-[300px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por departamento o periodo..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="space-y-4 p-5">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={CLASE_HEADER_TABLA}>Periodo</TableHead>
+                  <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
+                  <TableHead className={CLASE_HEADER_TABLA}>Generada</TableHead>
+                  <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
+                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Monto base</TableHead>
+                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
+                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total</TableHead>
+                  <TableHead className={`${CLASE_HEADER_TABLA} text-center`}>Estado</TableHead>
+                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>
+                    {bolPuedeGestionar ? "Acción" : ""}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {filteredExpensas.map((exp) => {
+                  const montoTotal = Number(exp.montoTotal) + Number(exp.montoMora || 0);
+
+                  return (
+                    <TableRow key={exp.id}>
+                      <TableCell className="text-[13px] text-foreground">{exp.periodo}</TableCell>
+
+                      <TableCell className="text-[13px] text-foreground">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4 text-muted-foreground" />
+                          {exp.inmueble.codigo}
+                        </div>
+                      </TableCell>
+
+                      <TableCell className="text-[13px] text-muted-foreground">
+                        {formatearFecha(exp.createdAt)}
+                      </TableCell>
+
+                      <TableCell className="text-[13px] text-muted-foreground">
+                        {formatearFecha(exp.fechaVencimiento)}
+                      </TableCell>
+
+                      <TableCell className="text-right text-[13px] text-foreground">
+                        {formatCurrency(Number(exp.montoTotal))}
+                      </TableCell>
+
+                      <TableCell className="text-right text-[13px] text-destructive">
+                        {exp.montoMora ? formatCurrency(Number(exp.montoMora)) : "Bs 0,00"}
+                      </TableCell>
+
+                      <TableCell className="text-right text-[13px] font-semibold text-foreground">
+                        {formatCurrency(montoTotal)}
+                      </TableCell>
+
+                      <TableCell className="text-center">
+                        <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
+                          {exp.estado}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        {bolPuedeGestionar && exp.estado !== "PAGADA" && (
+                          <Button variant="ghost" size="sm" onClick={() => abrirDialogoPago(exp)}>
+                            <Wallet className="mr-2 h-4 w-4" />
+                            Registrar pago
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {filteredExpensas.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="py-8 text-center text-[13px] text-muted-foreground">
+                      No hay expensas registradas.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Diálogo de registro de pago */}
+      <Dialog open={expensaParaPago !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoPago()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Registrar pago</DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {expensaParaPago &&
+                `Expensa ${expensaParaPago.periodo} · ${expensaParaPago.inmueble.codigo}`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {expensaParaPago && (
+            <form onSubmit={handleConfirmarPago} className="flex flex-col gap-3">
+              <div className="rounded-lg bg-muted/30 p-3">
+                <p className={CLASE_LABEL_CAMPO}>Saldo pendiente</p>
+                <p className="mt-1 text-[16px] font-semibold text-foreground">
+                  {formatCurrency(calcularSaldoPendiente(expensaParaPago))}
+                </p>
+              </div>
+
+              <div className="grid gap-1">
+                <label htmlFor="montoPago" className="text-[12px] font-medium text-foreground">
+                  Monto
+                </label>
+                <Input
+                  id="montoPago"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={strMontoPago}
+                  onChange={(event) => setStrMontoPago(event.target.value)}
+                />
+              </div>
+
+              <div className="grid gap-1">
+                <label htmlFor="metodoPago" className="text-[12px] font-medium text-foreground">
+                  Método de pago
+                </label>
+                <Select value={metodoPago} onValueChange={(val: MetodoPago) => setMetodoPago(val)}>
+                  <SelectTrigger id="metodoPago" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(ETIQUETA_METODO_PAGO) as MetodoPago[]).map((metodo) => (
+                      <SelectItem key={metodo} value={metodo}>
+                        {ETIQUETA_METODO_PAGO[metodo]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-1">
+                <label htmlFor="referenciaPago" className="text-[12px] font-medium text-foreground">
+                  Referencia <span className="text-muted-foreground">(opcional)</span>
+                </label>
+                <Input
+                  id="referenciaPago"
+                  placeholder="Comprobante 00123"
+                  value={strReferenciaPago}
+                  onChange={(event) => setStrReferenciaPago(event.target.value)}
+                />
+              </div>
+
+              {strErrorPago && (
+                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
+                  {strErrorPago}
+                </p>
+              )}
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={cerrarDialogoPago} disabled={bolGuardandoPago}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={bolGuardandoPago}>
+                  {bolGuardandoPago ? "Guardando..." : "Confirmar pago"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
