@@ -1,27 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
-  RolOcupante,
-  alternarActivoInmueble,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Inmueble,
+  Ocupante,
+  actualizarInmueble,
+  darDeBajaOcupante,
   esOcupanteActivo,
+  etiquetaRol,
   formatearFecha,
-  ordenarHistorial,
-  useAsignaciones,
-  useInmuebles,
-} from "@/lib/inmueblesStore";
+  listarOcupantes,
+  obtenerInmueble,
+  obtenerMensajeError,
+} from "@/lib/inmuebles";
 
 type Tab = "datos" | "historial";
 
-const ETIQUETA_ROL: Record<RolOcupante, string> = {
-  PROPIETARIO: "Propietario",
-  INQUILINO: "Inquilino",
-};
+function fechaHoyISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function FichaInmueblePage() {
   const params = useParams<{ id: string }>();
@@ -30,39 +41,107 @@ export default function FichaInmueblePage() {
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
 
-  const inmuebles = useInmuebles();
-  const asignaciones = useAsignaciones();
+  const [inmueble, setInmueble] = useState<Inmueble | null>(null);
+  const [historial, setHistorial] = useState<Ocupante[]>([]);
+  const [bolLoading, setBolLoading] = useState(true);
+  const [strErrorCarga, setStrErrorCarga] = useState("");
   const [strTab, setStrTab] = useState<Tab>("datos");
   const [strMensajePermiso, setStrMensajePermiso] = useState("");
 
-  const inmueble = inmuebles.find((item) => item.id === strId);
-
-  if (!inmueble) {
-    return (
-      <div className="px-6 py-6">
-        <p className="text-[13px] text-muted-foreground">
-          Este inmueble no existe o fue eliminado.{" "}
-          <Link href="/admin/inmuebles" className="text-primary hover:text-primary/80">
-            Volver a Inmuebles
-          </Link>
-        </p>
-      </div>
-    );
-  }
+  const [ocupanteParaBaja, setOcupanteParaBaja] = useState<Ocupante | null>(null);
+  const [strFechaFin, setStrFechaFin] = useState("");
+  const [strErrorBaja, setStrErrorBaja] = useState("");
+  const [bolGuardandoBaja, setBolGuardandoBaja] = useState(false);
 
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
-  const strInmuebleId = inmueble.id;
+  const bolPuedeDarBaja = puedeEjecutar(rol, "residentes", "editar");
 
-  const historial = ordenarHistorial(asignaciones.filter((asignacion) => asignacion.inmuebleId === strId));
+  async function cargarInmueble() {
+    if (!strId) return;
+    try {
+      setBolLoading(true);
+      setStrErrorCarga("");
+      const [objInmueble, arrHistorial] = await Promise.all([obtenerInmueble(strId), listarOcupantes(strId)]);
+      setInmueble(objInmueble);
+      setHistorial(arrHistorial);
+    } catch (error: unknown) {
+      console.error("Error al cargar el inmueble:", error);
+      setStrErrorCarga("Este inmueble no existe o no se pudo cargar.");
+    } finally {
+      setBolLoading(false);
+    }
+  }
 
-  function handleAlternarEstado() {
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    cargarInmueble();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strId]);
+
+  async function handleAlternarEstado() {
+    if (!inmueble) return;
     const objValidacion = validarAccion(rol, "inmuebles", "eliminar");
     if (!objValidacion.permitido) {
       setStrMensajePermiso(objValidacion.mensaje);
       return;
     }
     setStrMensajePermiso("");
-    alternarActivoInmueble(strInmuebleId);
+
+    try {
+      await actualizarInmueble(inmueble.id, { activo: !inmueble.activo });
+      await cargarInmueble();
+    } catch (error: unknown) {
+      setStrMensajePermiso(obtenerMensajeError(error, "Ocurrió un error al cambiar el estado del inmueble."));
+    }
+  }
+
+  function abrirDialogoBaja(registro: Ocupante) {
+    setOcupanteParaBaja(registro);
+    setStrFechaFin(fechaHoyISO());
+    setStrErrorBaja("");
+  }
+
+  function cerrarDialogoBaja() {
+    setOcupanteParaBaja(null);
+    setStrErrorBaja("");
+  }
+
+  async function handleConfirmarBaja() {
+    if (!inmueble || !ocupanteParaBaja) return;
+
+    setBolGuardandoBaja(true);
+    setStrErrorBaja("");
+
+    try {
+      await darDeBajaOcupante(inmueble.id, ocupanteParaBaja.id, { fechaFin: strFechaFin || undefined });
+      setOcupanteParaBaja(null);
+      await cargarInmueble();
+    } catch (error: unknown) {
+      setStrErrorBaja(obtenerMensajeError(error, "Ocurrió un error al dar de baja al ocupante."));
+    } finally {
+      setBolGuardandoBaja(false);
+    }
+  }
+
+  if (bolLoading) {
+    return (
+      <div className="px-6 py-6">
+        <p className="text-[13px] text-muted-foreground">Cargando inmueble...</p>
+      </div>
+    );
+  }
+
+  if (strErrorCarga || !inmueble) {
+    return (
+      <div className="px-6 py-6">
+        <p className="text-[13px] text-muted-foreground">
+          {strErrorCarga || "Este inmueble no existe o fue eliminado."}{" "}
+          <Link href="/admin/inmuebles" className="text-primary hover:text-primary/80">
+            Volver a Inmuebles
+          </Link>
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -76,7 +155,7 @@ export default function FichaInmueblePage() {
 
       <div className="mb-4 mt-1 flex items-center justify-between">
         <h1 className="font-title text-[20px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
-          Depto. {inmueble.numeroDepartamento} · Piso {inmueble.piso}
+          {inmueble.codigo} · {inmueble.tipoInmueble.nombre}
         </h1>
         <span
           className={`font-caption inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -119,27 +198,27 @@ export default function FichaInmueblePage() {
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Departamento
+                Código
               </dt>
-              <dd className="mt-1 text-[14px] text-foreground">{inmueble.numeroDepartamento}</dd>
+              <dd className="mt-1 text-[14px] text-foreground">{inmueble.codigo}</dd>
+            </div>
+            <div>
+              <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
+                Tipo
+              </dt>
+              <dd className="mt-1 text-[14px] text-foreground">{inmueble.tipoInmueble.nombre}</dd>
             </div>
             <div>
               <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
                 Piso
               </dt>
-              <dd className="mt-1 text-[14px] text-foreground">{inmueble.piso}</dd>
+              <dd className="mt-1 text-[14px] text-foreground">{inmueble.piso || "—"}</dd>
             </div>
             <div>
               <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Parqueo
+                Área m²
               </dt>
-              <dd className="mt-1 text-[14px] text-foreground">{inmueble.numeroParqueo || "—"}</dd>
-            </div>
-            <div>
-              <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Baulera
-              </dt>
-              <dd className="mt-1 text-[14px] text-foreground">{inmueble.numeroBaulera || "—"}</dd>
+              <dd className="mt-1 text-[14px] text-foreground">{inmueble.areaM2 || "—"}</dd>
             </div>
           </dl>
 
@@ -185,15 +264,17 @@ export default function FichaInmueblePage() {
                     />
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[14px] font-medium text-foreground">{registro.nombreCompleto}</p>
+                      <p className="text-[14px] font-medium text-foreground">
+                        {registro.copropietario.nombre} {registro.copropietario.apellido}
+                      </p>
                       <span
                         className={`font-caption inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          registro.rol === "PROPIETARIO"
+                          registro.esPropietario
                             ? "bg-success-subtle text-success"
                             : "bg-muted text-muted-foreground"
                         }`}
                       >
-                        {ETIQUETA_ROL[registro.rol]}
+                        {etiquetaRol(registro.esPropietario)}
                       </span>
                       {bolActivo && (
                         <span className="font-caption inline-flex rounded-full bg-accent-secondary/10 px-2 py-0.5 text-[11px] font-medium text-accent-secondary">
@@ -203,12 +284,23 @@ export default function FichaInmueblePage() {
                     </div>
 
                     <p className="font-caption mt-1 text-[12px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                      {formatearFecha(registro.fechaInicio)} — {bolActivo ? "Actual" : formatearFecha(registro.fechaFin as string)}
+                      {formatearFecha(registro.fechaInicio)} —{" "}
+                      {bolActivo ? "Actual" : formatearFecha(registro.fechaFin as string)}
                     </p>
 
-                    <p className="mt-1 text-[12px] leading-[1.4] text-muted-foreground">
-                      {registro.telefono} · {registro.correo}
+                    <p className="font-caption mt-1 text-[12px] leading-[1.4] tracking-[0.01em] text-muted-foreground">
+                      CI: {registro.copropietario.ci}
                     </p>
+
+                    {bolActivo && bolPuedeDarBaja && (
+                      <button
+                        type="button"
+                        onClick={() => abrirDialogoBaja(registro)}
+                        className="font-caption mt-2 text-[12px] font-medium text-destructive hover:text-destructive/80"
+                      >
+                        Dar de baja
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -216,6 +308,49 @@ export default function FichaInmueblePage() {
           )}
         </div>
       )}
+
+      <Dialog open={ocupanteParaBaja !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoBaja()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+              Dar de baja a ocupante
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {ocupanteParaBaja &&
+                `¿Confirmas dar de baja a ${ocupanteParaBaja.copropietario.nombre} ${ocupanteParaBaja.copropietario.apellido}? Se registrará la fecha de finalización de su ocupación.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-1">
+            <label htmlFor="fechaFin" className="text-[12px] font-medium text-foreground">
+              Fecha de finalización
+            </label>
+            <input
+              id="fechaFin"
+              type="date"
+              value={strFechaFin}
+              min={ocupanteParaBaja?.fechaInicio.slice(0, 10)}
+              onChange={(event) => setStrFechaFin(event.target.value)}
+              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15"
+            />
+          </div>
+
+          {strErrorBaja && (
+            <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
+              {strErrorBaja}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={cerrarDialogoBaja} disabled={bolGuardandoBaja}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmarBaja} disabled={bolGuardandoBaja}>
+              {bolGuardandoBaja ? "Guardando..." : "Confirmar baja"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
