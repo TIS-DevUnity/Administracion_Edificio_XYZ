@@ -11,8 +11,8 @@ export type SeccionId =
   | "mantenimiento"
   | "copropietarios"
   | "usuarios"
-  | "roles";
-
+  | "roles"
+  | "morosidad";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -43,6 +43,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     copropietarios: ["ver"],
     usuarios: ["ver", "crear", "editar", "eliminar"],
     roles: ["ver", "editar"],
+    morosidad: ["ver", "crear", "editar", "eliminar"],
   },
   DIRECTORIO: {
     panel: ["ver"],
@@ -53,6 +54,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver", "crear", "editar"],
     copropietarios: ["ver"],
     usuarios: ["ver"],
+    morosidad: ["ver"],
   },
   CONSULTA: {
     panel: ["ver"],
@@ -62,6 +64,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     pagos: ["ver"],
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
+    morosidad: ["ver"],
     // "usuarios" y "roles" no aparecen: quedan ocultas y bloqueadas para Consulta.
   },
 };
@@ -99,6 +102,7 @@ export const SECCIONES_NAV: SeccionNav[] = [
   { id: "residentes", label: "Residentes", href: "/admin/residentes" },
   { id: "copropietarios", label: "Copropietarios", href: "/admin/copropietarios" },
   { id: "pagos", label: "Pagos", href: "/admin/pagos" },
+  { id: "morosidad", label: "Morosidad y Expensas", href: "/admin/morosidad" },
   { id: "mantenimiento", label: "Mantenimiento", href: "/admin/mantenimiento" },
   { id: "usuarios", label: "Usuarios", href: "/admin/usuarios" },
   { id: "roles", label: "Configurar roles", href: "/admin/roles" },
