@@ -1,5 +1,5 @@
-import { api } from "@/lib/api"; 
-import { ConfiguracionMoraDTO, ExpensaDTO } from "@/types/finance";
+import { api } from "@/lib/api";
+import { ConfiguracionMoraDTO, ExpensaDTO, MetodoPago, PagoDTO } from "@/types/finance";
 
 export const financeService = {
   async getConfiguracionVigente(): Promise<ConfiguracionMoraDTO> {
@@ -25,6 +25,17 @@ export const financeService = {
   // 👇 ESTA ES LA FUNCIÓN QUE HACE FUNCIONAR EL BOTÓN MANUAL
   async generarExpensaManual(data: { inmuebleId: string; periodo: string; fechaVencimiento: string }): Promise<ExpensaDTO> {
     const response = await api.post<ExpensaDTO>("/financiero/expensas", data);
+    return response.data;
+  },
+
+  async registrarPago(
+    expensaId: string,
+    data: { monto: number; metodoPago: MetodoPago; referencia?: string }
+  ): Promise<{ pago: PagoDTO; expensa: ExpensaDTO }> {
+    const response = await api.post<{ pago: PagoDTO; expensa: ExpensaDTO }>(
+      `/financiero/expensas/${expensaId}/pagos`,
+      data
+    );
     return response.data;
   }
 };
