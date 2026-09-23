@@ -8,6 +8,20 @@ export type TipoValorMora =
   | "PORCENTAJE"
   | "MONTO_FIJO";
 
+export type MetodoPago =
+  | "EFECTIVO"
+  | "TRANSFERENCIA"
+  | "TARJETA"
+  | "CHEQUE";
+
+export interface PagoDTO {
+  id: string;
+  monto: number;
+  metodoPago: MetodoPago;
+  referencia?: string | null;
+  fechaPago: string;
+}
+
 export interface ConfiguracionMoraDTO {
   id: string;
   diaGeneracion: number;
@@ -33,6 +47,7 @@ export interface ExpensaDTO {
   montoMora?: number;
   estado: EstadoExpensa;
   fechaVencimiento: string;
+  createdAt: string;
   inmueble: InmuebleResumen;
-  pagos: unknown[];
+  pagos: PagoDTO[];
 }
