@@ -36,6 +36,7 @@ model Usuario {
   pagosRegistrados       Pago[]
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
+  documentosSubidos      Documento[]
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -133,6 +134,42 @@ model OcupanteInmueble {
   @@map("ocupante_inmueble")
   @@index([inmuebleId])
   @@index([copropietarioId])
+}
+
+// ---------------------------------------------------------------------------
+// Gestion documental (Requisito 8 del documento de requerimientos)
+// Almacena metadata de archivos; el binario vive en Supabase Storage.
+// ---------------------------------------------------------------------------
+
+enum CategoriaDocumento {
+  ACTA
+  REGLAMENTO
+  CONTRATO
+  FACTURA
+  FOTOGRAFIA
+  COTIZACION
+  OTRO
+}
+
+model Documento {
+  id             String             @id @default(uuid())
+  nombre         String
+  categoria      CategoriaDocumento
+  mimeType       String
+  tamanioBytes   Int
+  storagePath    String             @unique
+
+  entidad        String?            // nombre de la entidad relacionada (Personal, Inmueble, etc.)
+  entidadId      String?
+
+  subidoPor      Usuario?           @relation(fields: [subidoPorId], references: [id])
+  subidoPorId    String?
+
+  createdAt      DateTime           @default(now())
+
+  @@map("documentos")
+  @@index([categoria])
+  @@index([entidad, entidadId])
 }
 
 // ---------------------------------------------------------------------------
