@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import axios from "axios";
+import { Search } from "lucide-react";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
@@ -32,6 +33,7 @@ export default function InmueblesPage() {
   const [tiposInmueble, setTiposInmueble] = useState<TipoInmueble[]>([]);
   const [bolLoading, setBolLoading] = useState(true);
   const [strErrorCarga, setStrErrorCarga] = useState("");
+  const [strBusqueda, setStrBusqueda] = useState("");
 
   const bolPuedeCrear = puedeEjecutar(rol, "inmuebles", "crear");
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
@@ -64,7 +66,22 @@ export default function InmueblesPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cargarDatos();
+
+    const strQuery = new URLSearchParams(window.location.search).get("q");
+    if (strQuery) setStrBusqueda(strQuery);
   }, []);
+
+  const inmueblesVisibles = useMemo(() => {
+    const strBusquedaNormalizada = strBusqueda.trim().toLowerCase();
+    if (!strBusquedaNormalizada) return inmuebles;
+
+    return inmuebles.filter(
+      (inmueble) =>
+        inmueble.codigo.toLowerCase().includes(strBusquedaNormalizada) ||
+        (inmueble.piso ?? "").toLowerCase().includes(strBusquedaNormalizada) ||
+        inmueble.tipoInmueble.nombre.toLowerCase().includes(strBusquedaNormalizada)
+    );
+  }, [inmuebles, strBusqueda]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -282,6 +299,18 @@ export default function InmueblesPage() {
         </div>
       )}
 
+      <div className="mb-4 flex justify-end">
+        <div className="relative w-full sm:w-[280px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            placeholder="Buscar por código, piso o tipo..."
+            value={strBusqueda}
+            onChange={(event) => setStrBusqueda(event.target.value)}
+            className={claseCampo(false) + " pl-9"}
+          />
+        </div>
+      </div>
+
       <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
         <table className="w-full border-collapse">
           <thead>
@@ -313,7 +342,7 @@ export default function InmueblesPage() {
             )}
             {!bolLoading &&
               !strErrorCarga &&
-              inmuebles.map((inmueble) => (
+              inmueblesVisibles.map((inmueble) => (
                 <tr key={inmueble.id} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
                   <td className="px-5 py-3 text-[13px] text-foreground">{inmueble.codigo}</td>
                   <td className="px-5 py-3 text-[13px] text-foreground">{inmueble.tipoInmueble.nombre}</td>
@@ -353,6 +382,13 @@ export default function InmueblesPage() {
               <tr>
                 <td colSpan={6} className="px-5 py-8 text-center text-[13px] text-muted-foreground">
                   Todavía no hay inmuebles registrados.
+                </td>
+              </tr>
+            )}
+            {!bolLoading && !strErrorCarga && inmuebles.length > 0 && inmueblesVisibles.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-5 py-8 text-center text-[13px] text-muted-foreground">
+                  Ningún inmueble coincide con la búsqueda.
                 </td>
               </tr>
             )}

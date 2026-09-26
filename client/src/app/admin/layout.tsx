@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSesionActual, cerrarSesion } from "@/lib/session";
 import { normalizarRol, obtenerSeccionPorRuta, puedeAcceder, SECCIONES_NAV } from "@/lib/permissions";
 import { AccesoDenegado } from "@/components/AccesoDenegado";
+import { BusquedaGlobal } from "@/components/BusquedaGlobal";
 import { LogoMark } from "@/components/LogoMark";
 
 function formatRol(strRol: string) {
@@ -115,11 +116,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
           </h1>
 
           <div className="flex items-center gap-3">
-            <input
-              type="search"
-              placeholder="Buscar..."
-              className="hidden h-9 w-56 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-primary focus:ring-4 focus:ring-primary/15 sm:block"
-            />
+            <BusquedaGlobal />
 
             <button
               type="button"

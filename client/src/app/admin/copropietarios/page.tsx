@@ -103,6 +103,9 @@ export default function CopropietariosPage() {
      // La carga inicial consulta la API y actualiza el estado de la página.
      // eslint-disable-next-line react-hooks/set-state-in-effect
     cargarCopropietarios();
+
+    const strQuery = new URLSearchParams(window.location.search).get("q");
+    if (strQuery) setStrSearch(strQuery);
     }, []);
   /**
    * Filtra la lista por nombre, apellido o CI.

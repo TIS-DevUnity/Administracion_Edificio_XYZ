@@ -165,6 +165,9 @@ export default function GeneracionExpensasAdminPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cargarDatos();
+
+    const strQuery = new URLSearchParams(window.location.search).get("q");
+    if (strQuery) setSearchTerm(strQuery);
   }, []);
 
   async function handleSaveConfig() {
