@@ -12,13 +12,14 @@ const FILAS = [
 
 export default function ConfigurarRolesPage() {
   return (
-    <div className="px-6 py-6">
+    <div className="px-4 py-6 sm:px-6">
       <p className="mb-6 max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
         Matriz de permisos por rol aplicada actualmente en el sistema. Todavía no existe un módulo de
         backend para editar roles y permisos de forma dinámica, así que esta tabla es de referencia.
       </p>
 
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
+      {/* Vista tabla (md en adelante) */}
+      <div className="hidden overflow-x-auto rounded-2xl border border-border bg-card shadow-sm md:block">
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border">
@@ -36,7 +37,7 @@ export default function ConfigurarRolesPage() {
               </th>
             </tr>
           </thead>
-
+          
           <tbody>
             {FILAS.map((fila) => (
               <tr key={fila.seccion} className="border-b border-border transition-colors last:border-0 hover:bg-muted/50">
@@ -50,6 +51,49 @@ export default function ConfigurarRolesPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Vista tarjetas (mobile, hasta md) */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {FILAS.map((fila) => (
+          <div
+            key={fila.seccion}
+            className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+          >
+            <p className="font-subtitle mb-3 text-[14px] font-semibold leading-[1.4] text-foreground">
+              {fila.seccion}
+            </p>
+
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                  Administrador
+                </span>
+                <span className="text-right text-[13px] leading-[1.45] text-foreground">
+                  {fila.administrador}
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                  Directorio
+                </span>
+                <span className="text-right text-[13px] leading-[1.45] text-foreground">
+                  {fila.directorio}
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                  Consulta
+                </span>
+                <span className="text-right text-[13px] leading-[1.45] text-muted-foreground">
+                  {fila.consulta}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
