@@ -268,7 +268,7 @@ export default function GeneracionExpensasAdminPage() {
   const totalCapitalVencido = expensasVencidas.reduce((acc, curr) => acc + Number(curr.montoTotal), 0);
 
   return (
-    <div className="px-6 py-6">
+    <div className="px-4 py-6 sm:px-6">
       <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
           Supervisión de expensas generadas por el job automático y aplicación de recargos por mora.
@@ -277,7 +277,7 @@ export default function GeneracionExpensasAdminPage() {
         {bolPuedeGestionar && (
           <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="w-full md:w-auto">
                 <SlidersHorizontal className="mr-2 h-4 w-4" />
                 Configurar reglas de mora
               </Button>
@@ -426,14 +426,14 @@ export default function GeneracionExpensasAdminPage() {
         </Card>
       </div>
 
-      {/* Tabla principal */}
+      {/* Registro general */}
       <Card className="shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-border pb-4">
+        <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
             Registro general de expensas
           </CardTitle>
 
-          <div className="relative w-[300px]">
+          <div className="relative w-full sm:w-[300px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar por departamento o periodo..."
@@ -451,84 +451,159 @@ export default function GeneracionExpensasAdminPage() {
               <Skeleton className="h-10 w-full" />
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className={CLASE_HEADER_TABLA}>Periodo</TableHead>
-                  <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
-                  <TableHead className={CLASE_HEADER_TABLA}>Generada</TableHead>
-                  <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
-                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Monto base</TableHead>
-                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
-                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total</TableHead>
-                  <TableHead className={`${CLASE_HEADER_TABLA} text-center`}>Estado</TableHead>
-                  <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>
-                    {bolPuedeGestionar ? "Acción" : ""}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
+            <>
+              {/* Vista tabla (md en adelante) */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className={CLASE_HEADER_TABLA}>Periodo</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Generada</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Monto base</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-center`}>Estado</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>
+                        {bolPuedeGestionar ? "Acción" : ""}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
 
-              <TableBody>
+                  <TableBody>
+                    {filteredExpensas.map((exp) => {
+                      const montoTotal = Number(exp.montoTotal) + Number(exp.montoMora || 0);
+
+                      return (
+                        <TableRow key={exp.id}>
+                          <TableCell className="text-[13px] text-foreground">{exp.periodo}</TableCell>
+
+                          <TableCell className="text-[13px] text-foreground">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
+                              {exp.inmueble.codigo}
+                            </div>
+                          </TableCell>
+
+                          <TableCell className="text-[13px] text-muted-foreground">
+                            {formatearFecha(exp.createdAt)}
+                          </TableCell>
+
+                          <TableCell className="text-[13px] text-muted-foreground">
+                            {formatearFecha(exp.fechaVencimiento)}
+                          </TableCell>
+
+                          <TableCell className="text-right text-[13px] text-foreground">
+                            {formatCurrency(Number(exp.montoTotal))}
+                          </TableCell>
+
+                          <TableCell className="text-right text-[13px] text-destructive">
+                            {exp.montoMora ? formatCurrency(Number(exp.montoMora)) : "Bs 0,00"}
+                          </TableCell>
+
+                          <TableCell className="text-right text-[13px] font-semibold text-foreground">
+                            {formatCurrency(montoTotal)}
+                          </TableCell>
+
+                          <TableCell className="text-center">
+                            <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
+                              {exp.estado}
+                            </Badge>
+                          </TableCell>
+
+                          <TableCell className="text-right">
+                            {bolPuedeGestionar && exp.estado !== "PAGADA" && (
+                              <Button variant="ghost" size="sm" onClick={() => abrirDialogoPago(exp)}>
+                                <Wallet className="mr-2 h-4 w-4" />
+                                Registrar pago
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {filteredExpensas.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={9} className="py-8 text-center text-[13px] text-muted-foreground">
+                          No hay expensas registradas.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Vista tarjetas (mobile) */}
+              <div className="flex flex-col gap-3 p-4 md:hidden">
                 {filteredExpensas.map((exp) => {
                   const montoTotal = Number(exp.montoTotal) + Number(exp.montoMora || 0);
 
                   return (
-                    <TableRow key={exp.id}>
-                      <TableCell className="text-[13px] text-foreground">{exp.periodo}</TableCell>
-
-                      <TableCell className="text-[13px] text-foreground">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          {exp.inmueble.codigo}
+                    <div
+                      key={exp.id}
+                      className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+                    >
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-subtitle text-[14px] font-semibold leading-[1.4] text-foreground">
+                            {exp.periodo}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                            <Building2 className="h-3.5 w-3.5" />
+                            {exp.inmueble.codigo}
+                          </div>
                         </div>
-                      </TableCell>
-
-                      <TableCell className="text-[13px] text-muted-foreground">
-                        {formatearFecha(exp.createdAt)}
-                      </TableCell>
-
-                      <TableCell className="text-[13px] text-muted-foreground">
-                        {formatearFecha(exp.fechaVencimiento)}
-                      </TableCell>
-
-                      <TableCell className="text-right text-[13px] text-foreground">
-                        {formatCurrency(Number(exp.montoTotal))}
-                      </TableCell>
-
-                      <TableCell className="text-right text-[13px] text-destructive">
-                        {exp.montoMora ? formatCurrency(Number(exp.montoMora)) : "Bs 0,00"}
-                      </TableCell>
-
-                      <TableCell className="text-right text-[13px] font-semibold text-foreground">
-                        {formatCurrency(montoTotal)}
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
+                        <Badge className={`font-caption shrink-0 text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
                           {exp.estado}
                         </Badge>
-                      </TableCell>
+                      </div>
 
-                      <TableCell className="text-right">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                        <div>
+                          <p className={CLASE_LABEL_CAMPO}>Generada</p>
+                          <p className="text-[13px] text-foreground">{formatearFecha(exp.createdAt)}</p>
+                        </div>
+                        <div>
+                          <p className={CLASE_LABEL_CAMPO}>Vencimiento</p>
+                          <p className="text-[13px] text-foreground">{formatearFecha(exp.fechaVencimiento)}</p>
+                        </div>
+                        <div>
+                          <p className={CLASE_LABEL_CAMPO}>Monto base</p>
+                          <p className="text-[13px] text-foreground">{formatCurrency(Number(exp.montoTotal))}</p>
+                        </div>
+                        <div>
+                          <p className={CLASE_LABEL_CAMPO}>Mora</p>
+                          <p className="text-[13px] text-destructive">
+                            {exp.montoMora ? formatCurrency(Number(exp.montoMora)) : "Bs 0,00"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                        <div>
+                          <p className={CLASE_LABEL_CAMPO}>Total</p>
+                          <p className="text-[15px] font-semibold text-foreground">{formatCurrency(montoTotal)}</p>
+                        </div>
+
                         {bolPuedeGestionar && exp.estado !== "PAGADA" && (
-                          <Button variant="ghost" size="sm" onClick={() => abrirDialogoPago(exp)}>
+                          <Button variant="outline" size="sm" onClick={() => abrirDialogoPago(exp)}>
                             <Wallet className="mr-2 h-4 w-4" />
                             Registrar pago
                           </Button>
                         )}
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                    </div>
                   );
                 })}
+
                 {filteredExpensas.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center text-[13px] text-muted-foreground">
-                      No hay expensas registradas.
-                    </TableCell>
-                  </TableRow>
+                  <p className="py-8 text-center text-[13px] text-muted-foreground">
+                    No hay expensas registradas.
+                  </p>
                 )}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

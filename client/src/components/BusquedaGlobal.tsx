@@ -9,20 +9,25 @@ import { normalizarRol, puedeAcceder } from "@/lib/permissions";
 import { Documento, ETIQUETA_CATEGORIA, listarDocumentos } from "@/lib/documentos";
 import {
   Inmueble,
-  Ocupante,
-  esOcupanteActivo,
-  etiquetaRol,
   listarInmuebles,
-  listarOcupantes,
+  // Ocupante,
+  // esOcupanteActivo,
+  // etiquetaRol,
+  // listarOcupantes,
 } from "@/lib/inmuebles";
 import { Copropietario, listarCopropietarios } from "@/lib/copropietarios";
 import { financeService } from "@/services/finance.service";
 import { ExpensaDTO } from "@/types/finance";
 
-type TipoResultado = "documento" | "inmueble" | "copropietario" | "residente" | "pago";
+type TipoResultado =
+  | "documento"
+  | "inmueble"
+  | "copropietario"
+  | "pago";
+  // | "residente"; // TODO: Descomentar al optimizar backend
 
 interface ResultadoBusqueda {
-  tipo: TipoResultado;
+  tipo: TipoResultado | "residente"; // Se mantiene el tipo string para evitar errores si se descomenta parcialmente
   id: string;
   titulo: string;
   subtitulo: string;
@@ -34,25 +39,31 @@ interface DatosCacheados {
   inmuebles: Inmueble[];
   copropietarios: Copropietario[];
   expensas: ExpensaDTO[];
-  residentes: { ocupante: Ocupante; inmueble: Inmueble }[];
+  // residentes: { ocupante: Ocupante; inmueble: Inmueble }[];
 }
 
-const TIPOS_ORDEN: TipoResultado[] = ["documento", "inmueble", "copropietario", "residente", "pago"];
+const TIPOS_ORDEN: (TipoResultado | "residente")[] = [
+  "documento",
+  "inmueble",
+  "copropietario",
+  "pago",
+  // "residente",
+];
 
-const ICONOS: Record<TipoResultado, typeof FileText> = {
+const ICONOS: Record<TipoResultado | "residente", typeof FileText> = {
   documento: FileText,
   inmueble: Building2,
   copropietario: Users,
-  residente: Users,
   pago: Wallet,
+  residente: Users, // Se deja activo en el objeto para evitar errores de tipado
 };
 
-const ETIQUETAS_GRUPO: Record<TipoResultado, string> = {
+const ETIQUETAS_GRUPO: Record<TipoResultado | "residente", string> = {
   documento: "Documentos",
   inmueble: "Propiedades",
   copropietario: "Copropietarios",
-  residente: "Residentes",
   pago: "Pagos",
+  residente: "Residentes",
 };
 
 export function BusquedaGlobal() {
@@ -69,21 +80,32 @@ export function BusquedaGlobal() {
   const refContenedor = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setStrQueryDebounced(strQuery), 300);
+    const timer = setTimeout(() => {
+      setStrQueryDebounced(strQuery);
+    }, 300);
+
     return () => clearTimeout(timer);
   }, [strQuery]);
 
   useEffect(() => {
     function handleClickFuera(event: MouseEvent) {
-      if (refContenedor.current && !refContenedor.current.contains(event.target as Node)) {
+      if (
+        refContenedor.current &&
+        !refContenedor.current.contains(event.target as Node)
+      ) {
         setBolAbierto(false);
       }
     }
+
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setBolAbierto(false);
+      if (event.key === "Escape") {
+        setBolAbierto(false);
+      }
     }
+
     document.addEventListener("mousedown", handleClickFuera);
     document.addEventListener("keydown", handleEscape);
+
     return () => {
       document.removeEventListener("mousedown", handleClickFuera);
       document.removeEventListener("keydown", handleEscape);
@@ -92,32 +114,66 @@ export function BusquedaGlobal() {
 
   async function asegurarDatosCargados() {
     if (datosCache) return;
+
     setBolCargando(true);
 
     try {
-      const [documentos, inmuebles, copropietarios, expensas] = await Promise.all([
-        puedeAcceder(rol, "documentos") ? listarDocumentos() : Promise.resolve([]),
-        puedeAcceder(rol, "inmuebles") ? listarInmuebles() : Promise.resolve([]),
-        puedeAcceder(rol, "copropietarios") ? listarCopropietarios() : Promise.resolve([]),
-        puedeAcceder(rol, "morosidad") ? financeService.getExpensas() : Promise.resolve([]),
-      ]);
+      const [documentos, inmuebles, copropietarios, expensas] =
+        await Promise.all([
+          puedeAcceder(rol, "documentos")
+            ? listarDocumentos()
+            : Promise.resolve([]),
 
-      let residentes: { ocupante: Ocupante; inmueble: Inmueble }[] = [];
-      if (puedeAcceder(rol, "residentes") && inmuebles.length > 0) {
-        const listas = await Promise.all(
-          inmuebles.map((inmueble) =>
-            listarOcupantes(inmueble.id)
-              .then((ocupantes) => ocupantes.filter(esOcupanteActivo).map((ocupante) => ({ ocupante, inmueble })))
-              .catch(() => [])
-          )
-        );
-        residentes = listas.flat();
-      }
+          puedeAcceder(rol, "inmuebles")
+            ? listarInmuebles()
+            : Promise.resolve([]),
 
-      setDatosCache({ documentos, inmuebles, copropietarios, expensas, residentes });
+          puedeAcceder(rol, "copropietarios")
+            ? listarCopropietarios()
+            : Promise.resolve([]),
+
+          puedeAcceder(rol, "morosidad")
+            ? financeService.getExpensas()
+            : Promise.resolve([]),
+        ]);
+
+      /*
+       * LÓGICA DE RESIDENTES COMENTADA POR RENDIMIENTO (N+1)
+       * Descomentar cuando el backend provea un endpoint global como:
+       * listarTodosLosOcupantesActivos()
+       */
+      // let residentes: { ocupante: Ocupante; inmueble: Inmueble }[] = [];
+      // if (puedeAcceder(rol, "residentes") && inmuebles.length > 0) {
+      //   const listas = await Promise.all(
+      //     inmuebles.map((inmueble) =>
+      //       listarOcupantes(inmueble.id)
+      //         .then((ocupantes) => ocupantes.filter(esOcupanteActivo).map((ocupante) => ({ ocupante, inmueble })))
+      //         .catch(() => [])
+      //     )
+      //   );
+      //   residentes = listas.flat();
+      // }
+
+      setDatosCache({
+        documentos,
+        inmuebles,
+        copropietarios,
+        expensas,
+        // residentes,
+      });
     } catch (error) {
-      console.error("Error al cargar datos para la búsqueda global:", error);
-      setDatosCache({ documentos: [], inmuebles: [], copropietarios: [], expensas: [], residentes: [] });
+      console.error(
+        "Error al cargar datos para la búsqueda global:",
+        error
+      );
+
+      setDatosCache({
+        documentos: [],
+        inmuebles: [],
+        copropietarios: [],
+        expensas: [],
+        // residentes: [],
+      });
     } finally {
       setBolCargando(false);
     }
@@ -130,7 +186,10 @@ export function BusquedaGlobal() {
 
   function handleChange(valor: string) {
     setStrQuery(valor);
-    if (!bolAbierto) setBolAbierto(true);
+
+    if (!bolAbierto) {
+      setBolAbierto(true);
+    }
   }
 
   function handleClickResultado(resultado: ResultadoBusqueda) {
@@ -141,101 +200,154 @@ export function BusquedaGlobal() {
 
   const resultados = useMemo<ResultadoBusqueda[]>(() => {
     const strTermino = strQueryDebounced.trim().toLowerCase();
-    if (!strTermino || !datosCache) return [];
+
+    if (!strTermino || !datosCache) {
+      return [];
+    }
 
     const datos = datosCache;
     const arr: ResultadoBusqueda[] = [];
 
+    /*
+     * DOCUMENTOS
+     */
     datos.documentos
-      .filter((doc) => doc.nombre.toLowerCase().includes(strTermino))
-      .forEach((doc) =>
+      .filter((doc) =>
+        doc.nombre.toLowerCase().includes(strTermino)
+      )
+      .forEach((doc) => {
         arr.push({
           tipo: "documento",
           id: doc.id,
           titulo: doc.nombre,
           subtitulo: ETIQUETA_CATEGORIA[doc.categoria],
           href: `/admin/documentos?q=${encodeURIComponent(doc.nombre)}`,
-        })
-      );
+        });
+      });
 
+    /*
+     * INMUEBLES
+     */
     datos.inmuebles
       .filter(
         (inmueble) =>
-          inmueble.codigo.toLowerCase().includes(strTermino) ||
-          (inmueble.piso ?? "").toLowerCase().includes(strTermino) ||
-          inmueble.tipoInmueble.nombre.toLowerCase().includes(strTermino)
+          inmueble.codigo
+            .toLowerCase()
+            .includes(strTermino) ||
+          (inmueble.piso ?? "")
+            .toLowerCase()
+            .includes(strTermino) ||
+          inmueble.tipoInmueble.nombre
+            .toLowerCase()
+            .includes(strTermino)
       )
-      .forEach((inmueble) =>
+      .forEach((inmueble) => {
         arr.push({
           tipo: "inmueble",
           id: inmueble.id,
           titulo: inmueble.codigo,
-          subtitulo: `${inmueble.tipoInmueble.nombre}${inmueble.piso ? ` · Piso ${inmueble.piso}` : ""}`,
-          href: `/admin/inmuebles?q=${encodeURIComponent(inmueble.codigo)}`,
-        })
-      );
+          subtitulo: `${inmueble.tipoInmueble.nombre}${
+            inmueble.piso
+              ? ` · Piso ${inmueble.piso}`
+              : ""
+          }`,
+          href: `/admin/inmuebles?q=${encodeURIComponent(
+            inmueble.codigo
+          )}`,
+        });
+      });
 
+    /*
+     * COPROPIETARIOS
+     */
     datos.copropietarios
       .filter(
         (c) =>
-          `${c.nombre} ${c.apellido}`.toLowerCase().includes(strTermino) ||
+          `${c.nombre} ${c.apellido}`
+            .toLowerCase()
+            .includes(strTermino) ||
           c.ci.toLowerCase().includes(strTermino) ||
-          (c.email ?? "").toLowerCase().includes(strTermino)
+          (c.email ?? "")
+            .toLowerCase()
+            .includes(strTermino)
       )
-      .forEach((c) =>
+      .forEach((c) => {
         arr.push({
           tipo: "copropietario",
           id: c.id,
           titulo: `${c.nombre} ${c.apellido}`,
           subtitulo: `CI ${c.ci}`,
-          href: `/admin/copropietarios?q=${encodeURIComponent(`${c.nombre} ${c.apellido}`)}`,
-        })
-      );
+          href: `/admin/copropietarios?q=${encodeURIComponent(
+            `${c.nombre}${c.apellido}`
+          )}`,
+        });
+      });
 
-    datos.residentes
-      .filter(
-        ({ ocupante }) =>
-          `${ocupante.copropietario.nombre} ${ocupante.copropietario.apellido}`.toLowerCase().includes(strTermino) ||
-          ocupante.copropietario.ci.toLowerCase().includes(strTermino)
-      )
-      .forEach(({ ocupante, inmueble }) =>
-        arr.push({
-          tipo: "residente",
-          id: ocupante.id,
-          titulo: `${ocupante.copropietario.nombre} ${ocupante.copropietario.apellido}`,
-          subtitulo: `${etiquetaRol(ocupante.esPropietario)} en ${inmueble.codigo}`,
-          href: `/admin/residentes?inmuebleId=${inmueble.id}`,
-        })
-      );
+    /*
+     * RESIDENTES (Comentado por N+1)
+     */
+    // if (datos.residentes) {
+    //   datos.residentes
+    //     .filter(
+    //       ({ ocupante }) =>
+    //         `${ocupante.copropietario.nombre} ${ocupante.copropietario.apellido}`.toLowerCase().includes(strTermino) ||
+    //         ocupante.copropietario.ci.toLowerCase().includes(strTermino)
+    //     )
+    //     .forEach(({ ocupante, inmueble }) =>
+    //       arr.push({
+    //         tipo: "residente",
+    //         id: ocupante.id,
+    //         titulo: `${ocupante.copropietario.nombre} ${ocupante.copropietario.apellido}`,
+    //         subtitulo: `${etiquetaRol(ocupante.esPropietario)} en ${inmueble.codigo}`,
+    //         href: `/admin/residentes?inmuebleId=${inmueble.id}`,
+    //       })
+    //     );
+    // }
 
+    /*
+     * PAGOS
+     */
     datos.expensas
       .filter(
         (exp) =>
-          exp.inmueble.codigo.toLowerCase().includes(strTermino) || exp.periodo.toLowerCase().includes(strTermino)
+          exp.inmueble.codigo
+            .toLowerCase()
+            .includes(strTermino) ||
+          exp.periodo
+            .toLowerCase()
+            .includes(strTermino)
       )
-      .forEach((exp) =>
+      .forEach((exp) => {
         arr.push({
           tipo: "pago",
           id: exp.id,
           titulo: `${exp.inmueble.codigo} · ${exp.periodo}`,
           subtitulo: `Estado: ${exp.estado}`,
-          href: `/admin/morosidad?q=${encodeURIComponent(exp.inmueble.codigo)}`,
-        })
-      );
+          href: `/admin/morosidad?q=${encodeURIComponent(
+            exp.inmueble.codigo
+          )}`,
+        });
+      });
 
     return arr;
   }, [strQueryDebounced, datosCache]);
 
   return (
-    <div ref={refContenedor} className="relative hidden sm:block">
+    <div
+      ref={refContenedor}
+      className="relative hidden sm:block"
+    >
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
         <input
           type="search"
           placeholder="Buscar..."
           value={strQuery}
           onFocus={handleFocus}
-          onChange={(event) => handleChange(event.target.value)}
+          onChange={(event) =>
+            handleChange(event.target.value)
+          }
           className="h-9 w-56 rounded-lg border border-input bg-background pl-9 pr-3 text-[13px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-primary focus:ring-4 focus:ring-primary/15"
         />
       </div>
@@ -253,25 +365,41 @@ export function BusquedaGlobal() {
             </p>
           ) : (
             TIPOS_ORDEN.map((tipo) => {
-              const items = resultados.filter((r) => r.tipo === tipo).slice(0, 5);
-              if (items.length === 0) return null;
+              const items = resultados
+                .filter((r) => r.tipo === tipo)
+                .slice(0, 5);
+
+              if (items.length === 0) {
+                return null;
+              }
+
               const Icono = ICONOS[tipo];
 
               return (
-                <div key={tipo} className="border-b border-border py-1.5 last:border-0">
+                <div
+                  key={tipo}
+                  className="border-b border-border py-1.5 last:border-0"
+                >
                   <p className="font-caption px-3 py-1 text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
                     {ETIQUETAS_GRUPO[tipo]}
                   </p>
+
                   {items.map((resultado) => (
                     <button
                       key={`${resultado.tipo}-${resultado.id}`}
                       type="button"
-                      onClick={() => handleClickResultado(resultado)}
+                      onClick={() =>
+                        handleClickResultado(resultado)
+                      }
                       className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted"
                     >
                       <Icono className="h-4 w-4 shrink-0 text-muted-foreground" />
+
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] text-foreground">{resultado.titulo}</span>
+                        <span className="block truncate text-[13px] text-foreground">
+                          {resultado.titulo}
+                        </span>
+
                         <span className="block truncate text-[11px] text-muted-foreground">
                           {resultado.subtitulo}
                         </span>

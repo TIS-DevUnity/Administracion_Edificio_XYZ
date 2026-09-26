@@ -59,9 +59,7 @@ const CLASE_TITULO_DIALOGO =
   "font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground";
 
 export default function CopropietariosPage() {
-  const [arrCopropietarios, setArrCopropietarios] = useState<
-    Copropietario[]
-  >([]);
+  const [arrCopropietarios, setArrCopropietarios] = useState<Copropietario[]>([]);
 
   const [strSearch, setStrSearch] = useState("");
   const [bolLoading, setBolLoading] = useState(true);
@@ -165,7 +163,7 @@ export default function CopropietariosPage() {
   }
 
   return (
-    <div className="px-6 py-6">
+    <div className="px-4 py-6 sm:px-6">
       {/* Encabezado */}
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
@@ -289,11 +287,11 @@ export default function CopropietariosPage() {
               </div>
             )}
 
-          {/* Tabla */}
+          {/* Vista tabla (md en adelante) */}
           {!bolLoading &&
             !strError &&
             arrCopropietariosFiltrados.length > 0 && (
-              <div className="overflow-x-auto rounded-lg border border-border">
+              <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -363,6 +361,71 @@ export default function CopropietariosPage() {
                     )}
                   </TableBody>
                 </Table>
+              </div>
+            )}
+
+          {/* Vista tarjetas (mobile) — estilo tarjeta de usuario */}
+          {!bolLoading &&
+            !strError &&
+            arrCopropietariosFiltrados.length > 0 && (
+              <div className="flex flex-col gap-3 md:hidden">
+                {arrCopropietariosFiltrados.map((objCopropietario) => (
+                  <div
+                    key={objCopropietario.id}
+                    className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+                  >
+                    {/* Encabezado: nombre + badge de rol */}
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-subtitle text-[15px] font-semibold leading-[1.4] text-foreground">
+                        {objCopropietario.nombre} {objCopropietario.apellido}
+                      </p>
+
+                      <Badge
+                        variant="secondary"
+                        className="font-caption shrink-0 text-[11px]"
+                      >
+                        Copropietario
+                      </Badge>
+                    </div>
+
+                    {/* Subtítulo: correo */}
+                    <p className="mt-1 truncate text-[13px] text-muted-foreground">
+                      {objCopropietario.email || "Sin correo registrado"}
+                    </p>
+
+                    {/* Divisoria */}
+                    <div className="my-3 border-t border-border" />
+
+                    {/* Datos: CI / Teléfono */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className={CLASE_LABEL_CAMPO}>CI</p>
+                        <p className="mt-0.5 text-[14px] font-medium tabular-nums text-foreground">
+                          {objCopropietario.ci}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={CLASE_LABEL_CAMPO}>Teléfono</p>
+                        <p className="mt-0.5 text-[14px] font-medium tabular-nums text-foreground">
+                          {objCopropietario.telefono || "—"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Divisoria */}
+                    <div className="my-3 border-t border-border" />
+
+                    {/* Acción: botón de ancho completo */}
+                    <button
+                      type="button"
+                      onClick={() => handleVerCopropietario(objCopropietario)}
+                      className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border text-[13px] font-medium text-primary transition-colors hover:bg-primary/5"
+                    >
+                      <Eye className="h-4 w-4" />
+                      Ver detalle
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
         </CardContent>
