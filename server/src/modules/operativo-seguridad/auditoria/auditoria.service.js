@@ -14,4 +14,45 @@ async function registrarAuditoria({ usuarioId, accion, entidad, entidadId, detal
   }
 }
 
-module.exports = { registrarAuditoria };
+const LIMITE_POR_PAGINA = 50;
+
+async function listar({ usuarioId, entidad, accion, desde, hasta, pagina = 1 }) {
+  const numeroPagina = Math.max(1, Number(pagina) || 1);
+
+  const where = {
+    ...(usuarioId ? { usuarioId } : {}),
+    ...(entidad ? { entidad } : {}),
+    ...(accion ? { accion } : {}),
+    ...(desde || hasta
+      ? {
+          createdAt: {
+            ...(desde ? { gte: new Date(desde) } : {}),
+            ...(hasta ? { lte: new Date(hasta) } : {}),
+          },
+        }
+      : {}),
+  };
+
+  const [registros, total] = await Promise.all([
+    prisma.historialAuditoria.findMany({
+      where,
+      include: { usuario: { select: { id: true, nombre: true, apellido: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+      skip: (numeroPagina - 1) * LIMITE_POR_PAGINA,
+      take: LIMITE_POR_PAGINA,
+    }),
+    prisma.historialAuditoria.count({ where }),
+  ]);
+
+  return {
+    registros,
+    paginacion: {
+      pagina: numeroPagina,
+      porPagina: LIMITE_POR_PAGINA,
+      total,
+      totalPaginas: Math.ceil(total / LIMITE_POR_PAGINA),
+    },
+  };
+}
+
+module.exports = { registrarAuditoria, listar };
