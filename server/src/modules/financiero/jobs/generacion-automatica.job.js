@@ -14,19 +14,20 @@ function ultimoDiaDelMes(fecha = new Date()) {
 }
 
 /**
- * Si hoy coincide con el dia de generacion configurado, genera la expensa del
- * periodo actual para cada inmueble activo que todavia no la tenga, y notifica
- * por correo a sus ocupantes. Un inmueble que ya tiene expensa (o falla por
- * cualquier otro motivo) no debe frenar a los demas.
+ * Si hoy coincide con el dia de generacion configurado (o si se pasa
+ * { forzar: true }, usado por el endpoint manual de administracion), genera
+ * la expensa del periodo actual para cada inmueble activo que todavia no la
+ * tenga, y notifica por correo a sus ocupantes. Un inmueble que ya tiene
+ * expensa (o falla por cualquier otro motivo) no debe frenar a los demas.
  */
-async function ejecutarGeneracionAutomatica(fecha = new Date()) {
+async function ejecutarGeneracionAutomatica(fecha = new Date(), { forzar = false } = {}) {
   const config = await configuracionMoraService.obtenerVigente().catch(() => null)
   if (!config) {
     console.warn('[cron:expensas] No hay configuracion de mora vigente, se omite la generacion')
     return { generadas: 0, omitidas: 0 }
   }
 
-  if (fecha.getDate() !== config.diaGeneracion) {
+  if (!forzar && fecha.getDate() !== config.diaGeneracion) {
     return { generadas: 0, omitidas: 0, motivo: 'no es el dia de generacion' }
   }
 

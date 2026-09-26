@@ -17,6 +17,7 @@ const auditoriaRoutes = require('./modules/operativo-seguridad/auditoria/auditor
 const financieroTestAuthRoutes = require('./modules/financiero/test-auth/test-auth.routes')
 const expensasRoutes = require('./modules/financiero/expensas/expensas.routes')
 const configuracionMoraRoutes = require('./modules/financiero/configuracion-mora/configuracion-mora.routes')
+const jobsRoutes = require('./modules/financiero/jobs/jobs.routes')
 
 const app = express()
 
@@ -39,6 +40,7 @@ app.use('/api/auditoria', auditoriaRoutes)
 app.use('/api/financiero', financieroTestAuthRoutes)
 app.use('/api/financiero/expensas', expensasRoutes)
 app.use('/api/financiero/configuracion-mora', configuracionMoraRoutes)
+app.use('/api/financiero/jobs', jobsRoutes)
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 app.use(manejarErrores)
