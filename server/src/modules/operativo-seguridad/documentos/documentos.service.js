@@ -128,6 +128,91 @@ async function crear({ archivo, categoria, entidad, entidadId, actorId, ip }) {
   return documento;
 }
 
+async function actualizar(id, { nombre, categoria, archivo, actorId, ip }) {
+  const documento = await prisma.documento.findUnique({ where: { id } });
+  if (!documento) {
+    throw Object.assign(new Error("Documento no encontrado"), { status: 404 });
+  }
+
+  if (nombre === undefined && categoria === undefined && !archivo) {
+    throw Object.assign(new Error("Debe enviar al menos un campo a modificar (nombre, categoria o archivo)"), {
+      status: 400,
+    });
+  }
+
+  if (categoria !== undefined && !CATEGORIAS_VALIDAS.includes(categoria)) {
+    throw Object.assign(
+      new Error(`categoria invalida. Valores permitidos: ${CATEGORIAS_VALIDAS.join(", ")}`),
+      { status: 400 }
+    );
+  }
+
+  const data = {};
+  const cambios = {};
+
+  if (nombre !== undefined && nombre !== documento.nombre) {
+    data.nombre = nombre;
+    cambios.nombre = { antes: documento.nombre, despues: nombre };
+  }
+  if (categoria !== undefined && categoria !== documento.categoria) {
+    data.categoria = categoria;
+    cambios.categoria = { antes: documento.categoria, despues: categoria };
+  }
+
+  let storagePathAnterior = null;
+  if (archivo) {
+    const nuevoStoragePath = construirStoragePath(categoria || documento.categoria, archivo.originalname);
+
+    const { error: errorSubida } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(nuevoStoragePath, archivo.buffer, {
+        contentType: archivo.mimetype,
+        upsert: false,
+      });
+
+    if (errorSubida) {
+      throw Object.assign(new Error(`No se pudo subir el archivo: ${errorSubida.message}`), {
+        status: 502,
+      });
+    }
+
+    data.storagePath = nuevoStoragePath;
+    data.mimeType = archivo.mimetype;
+    data.tamanioBytes = archivo.size;
+    storagePathAnterior = documento.storagePath;
+    cambios.archivo = { antes: documento.storagePath, despues: nuevoStoragePath };
+  }
+
+  let documentoActualizado;
+  try {
+    documentoActualizado = await prisma.documento.update({
+      where: { id },
+      data,
+      select: CAMPOS_PUBLICOS,
+    });
+  } catch (err) {
+    if (data.storagePath) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([data.storagePath]);
+    }
+    throw err;
+  }
+
+  if (storagePathAnterior) {
+    await supabase.storage.from(STORAGE_BUCKET).remove([storagePathAnterior]);
+  }
+
+  await registrarAuditoria({
+    usuarioId: actorId,
+    accion: "UPDATE",
+    entidad: "Documento",
+    entidadId: id,
+    detalle: cambios,
+    ip,
+  });
+
+  return documentoActualizado;
+}
+
 async function eliminar(id, { actorId, ip }) {
   const documento = await prisma.documento.findUnique({ where: { id } });
   if (!documento) {
@@ -147,4 +232,4 @@ async function eliminar(id, { actorId, ip }) {
   });
 }
 
-module.exports = { listar, obtenerPorId, obtenerUrlDescarga, crear, eliminar, CATEGORIAS_VALIDAS };
+module.exports = { listar, obtenerPorId, obtenerUrlDescarga, crear, actualizar, eliminar, CATEGORIAS_VALIDAS };
