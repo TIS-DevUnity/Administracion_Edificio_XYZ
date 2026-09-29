@@ -36,6 +36,22 @@ async function crear(req, res, next) {
   }
 }
 
+async function actualizar(req, res, next) {
+  try {
+    const { nombre, categoria } = req.body;
+    const documento = await documentosService.actualizar(req.params.id, {
+      nombre,
+      categoria,
+      archivo: req.file,
+      actorId: req.usuario.id,
+      ip: req.ip,
+    });
+    res.json({ documento });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function eliminar(req, res, next) {
   try {
     await documentosService.eliminar(req.params.id, { actorId: req.usuario.id, ip: req.ip });
@@ -45,4 +61,4 @@ async function eliminar(req, res, next) {
   }
 }
 
-module.exports = { listar, obtener, crear, eliminar };
+module.exports = { listar, obtener, crear, actualizar, eliminar };

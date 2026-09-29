@@ -67,6 +67,29 @@ router.post("/", autenticar, GESTION, upload.single("archivo"), controller.crear
  *     responses:
  *       200: { description: OK }
  *       404: { description: Documento no encontrado }
+ *   patch:
+ *     summary: Modifica nombre, categoria y/o reemplaza el archivo de un documento (solo ADMINISTRADOR/DIRECTORIO)
+ *     tags: [Documentos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre: { type: string }
+ *               categoria: { type: string, enum: [ACTA, REGLAMENTO, CONTRATO, FACTURA, FOTOGRAFIA, COTIZACION, OTRO] }
+ *               archivo: { type: string, format: binary }
+ *     responses:
+ *       200: { description: Documento actualizado }
+ *       400: { description: Datos invalidos }
+ *       404: { description: Documento no encontrado }
  *   delete:
  *     summary: Elimina un documento (solo ADMINISTRADOR)
  *     tags: [Documentos]
@@ -81,6 +104,7 @@ router.post("/", autenticar, GESTION, upload.single("archivo"), controller.crear
  *       404: { description: Documento no encontrado }
  */
 router.get("/:id", autenticar, LECTURA, controller.obtener);
+router.patch("/:id", autenticar, GESTION, upload.single("archivo"), controller.actualizar);
 router.delete("/:id", autenticar, ELIMINAR, controller.eliminar);
 
 module.exports = router;
