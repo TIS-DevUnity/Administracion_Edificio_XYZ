@@ -66,6 +66,13 @@ export async function subirDocumento(formData: FormData): Promise<Documento> {
   return response.data.documento;
 }
 
+export async function actualizarDocumento(id: string, formData: FormData): Promise<Documento> {
+  const response = await api.patch<{ documento: Documento }>(`/documentos/${id}`, formData, {
+    headers: { "Content-Type": undefined },
+  });
+  return response.data.documento;
+}
+
 export async function eliminarDocumento(id: string): Promise<void> {
   await api.delete(`/documentos/${id}`);
 }

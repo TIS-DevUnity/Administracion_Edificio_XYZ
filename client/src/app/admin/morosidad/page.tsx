@@ -5,6 +5,9 @@ import axios from "axios";
 import {
   Building2,
   CalendarClock,
+  CalendarPlus,
+  Info,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   Save,
@@ -14,6 +17,7 @@ import {
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
+import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -87,6 +91,31 @@ function formatearFecha(strFechaISO: string) {
   );
 }
 
+function estaEnPeriodoGracia(exp: ExpensaDTO, configMora: ConfiguracionMoraDTO | null): boolean {
+  if (!configMora) return false;
+  if (exp.estado !== "PENDIENTE" && exp.estado !== "PARCIAL") return false;
+
+  const fechaLimiteConGracia = new Date(exp.fechaVencimiento);
+  fechaLimiteConGracia.setDate(fechaLimiteConGracia.getDate() + configMora.diasGracia);
+
+  return new Date() <= fechaLimiteConGracia;
+}
+
+function periodoActual(): string {
+  const fecha = new Date();
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function ultimoDiaDelMesISO(): string {
+  const fecha = new Date();
+  const ultimoDia = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
+  return ultimoDia.toISOString().slice(0, 10);
+}
+
+function tieneMoraAplicada(exp: ExpensaDTO): boolean {
+  return exp.estado === "VENCIDA" && Number(exp.montoMora || 0) > 0;
+}
+
 function calcularSaldoPendiente(exp: ExpensaDTO): number {
   const totalPagado = exp.pagos.reduce((acc, pago) => acc + Number(pago.monto), 0);
   const totalAdeudado = Number(exp.montoTotal) + Number(exp.montoMora || 0);
@@ -108,10 +137,17 @@ export default function GeneracionExpensasAdminPage() {
 
   const [expensas, setExpensas] = useState<ExpensaDTO[]>([]);
   const [configMora, setConfigMora] = useState<ConfiguracionMoraDTO | null>(null);
+  const [inmuebles, setInmuebles] = useState<Inmueble[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filtroInmuebleId, setFiltroInmuebleId] = useState("");
   const [strMensajePermiso, setStrMensajePermiso] = useState("");
+
+  // Revisión manual de mora / generación manual del mes
+  const [bolRevisandoMora, setBolRevisandoMora] = useState(false);
+  const [bolGenerandoMes, setBolGenerandoMes] = useState(false);
+  const [strErrorAccion, setStrErrorAccion] = useState("");
 
   // Configuración de mora
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -129,6 +165,9 @@ export default function GeneracionExpensasAdminPage() {
     valor: 2,
   });
 
+  // Detalle de expensa
+  const [expensaDetalle, setExpensaDetalle] = useState<ExpensaDTO | null>(null);
+
   // Registro de pago
   const [expensaParaPago, setExpensaParaPago] = useState<ExpensaDTO | null>(null);
   const [strMontoPago, setStrMontoPago] = useState("");
@@ -141,13 +180,15 @@ export default function GeneracionExpensasAdminPage() {
   async function cargarDatos() {
     try {
       setIsLoading(true);
-      const [configData, expensasData] = await Promise.all([
+      const [configData, expensasData, inmueblesData] = await Promise.all([
         financeService.getConfiguracionVigente(),
         financeService.getExpensas(),
+        listarInmuebles(),
       ]);
 
       setConfigMora(configData);
       setExpensas(expensasData);
+      setInmuebles(inmueblesData);
 
       setFormData({
         diaGeneracion: configData.diaGeneracion,
@@ -256,10 +297,94 @@ export default function GeneracionExpensasAdminPage() {
     }
   }
 
+  async function handleRevisarMora() {
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setStrErrorAccion("");
+    setStrExito("");
+    setBolRevisandoMora(true);
+
+    try {
+      const candidatas = expensas.filter((exp) => exp.estado === "PENDIENTE" || exp.estado === "PARCIAL");
+
+      const resultados = await Promise.all(
+        candidatas.map((exp) =>
+          financeService.aplicarMoraManual(exp.id).catch((error) => {
+            console.error(`No se pudo revisar la expensa ${exp.id}:`, error);
+            return null;
+          })
+        )
+      );
+
+      const intAplicadas = resultados.filter((resultado) => resultado?.estado === "VENCIDA").length;
+
+      setStrExito(
+        intAplicadas > 0
+          ? `Revisión completa: se aplicó mora a ${intAplicadas} expensa${intAplicadas === 1 ? "" : "s"}.`
+          : "Revisión completa: ninguna expensa superó el período de gracia todavía."
+      );
+      await cargarDatos();
+    } catch (error) {
+      setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al revisar las deudas pendientes."));
+    } finally {
+      setBolRevisandoMora(false);
+    }
+  }
+
+  async function handleGenerarMes() {
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setStrErrorAccion("");
+    setStrExito("");
+    setBolGenerandoMes(true);
+
+    try {
+      const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
+      const strPeriodo = periodoActual();
+      const strFechaVencimiento = ultimoDiaDelMesISO();
+
+      let intGeneradas = 0;
+      let intOmitidas = 0;
+
+      for (const inmueble of inmueblesActivos) {
+        try {
+          await financeService.generarExpensaManual({
+            inmuebleId: inmueble.id,
+            periodo: strPeriodo,
+            fechaVencimiento: strFechaVencimiento,
+          });
+          intGeneradas += 1;
+        } catch (error) {
+          intOmitidas += 1;
+          console.warn(`Inmueble ${inmueble.codigo}: no se generó la expensa de ${strPeriodo}.`, error);
+        }
+      }
+
+      setStrExito(
+        `Generación del período ${strPeriodo}: ${intGeneradas} expensa${intGeneradas === 1 ? "" : "s"} nueva${
+          intGeneradas === 1 ? "" : "s"
+        }, ${intOmitidas} ya existía${intOmitidas === 1 ? "" : "n"} o no se pudo${intOmitidas === 1 ? "" : "ieron"} generar.`
+      );
+      await cargarDatos();
+    } catch (error) {
+      setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al generar las expensas del mes."));
+    } finally {
+      setBolGenerandoMes(false);
+    }
+  }
+
   const filteredExpensas = expensas.filter(
     (exp) =>
-      exp.inmueble.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      exp.periodo.includes(searchTerm)
+      (!filtroInmuebleId || exp.inmuebleId === filtroInmuebleId) &&
+      (exp.inmueble.codigo.toLowerCase().includes(searchTerm.toLowerCase()) || exp.periodo.includes(searchTerm))
   );
 
   const expensasVencidas = expensas.filter((e) => e.estado === "VENCIDA");
@@ -275,6 +400,27 @@ export default function GeneracionExpensasAdminPage() {
         </p>
 
         {bolPuedeGestionar && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              className="w-full md:w-auto"
+              onClick={handleGenerarMes}
+              disabled={bolGenerandoMes}
+            >
+              <CalendarPlus className="mr-2 h-4 w-4" />
+              {bolGenerandoMes ? "Generando..." : "Generar expensas del mes"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full md:w-auto"
+              onClick={handleRevisarMora}
+              disabled={bolRevisandoMora}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
+              {bolRevisandoMora ? "Revisando..." : "Revisar deudas ahora"}
+            </Button>
+
           <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="w-full md:w-auto">
@@ -359,6 +505,7 @@ export default function GeneracionExpensasAdminPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         )}
       </div>
 
@@ -366,6 +513,11 @@ export default function GeneracionExpensasAdminPage() {
       {strExito && (
         <div className="animate-in fade-in slide-in-from-top-1 duration-300 mb-4 rounded-lg border border-success/20 bg-success-subtle px-3.5 py-2.5 text-[13px] text-success">
           {strExito}
+        </div>
+      )}
+      {strErrorAccion && (
+        <div className="animate-in fade-in slide-in-from-top-1 duration-300 mb-4 rounded-lg border border-destructive/20 bg-danger-subtle px-3.5 py-2.5 text-[13px] text-destructive">
+          {strErrorAccion}
         </div>
       )}
 
@@ -433,14 +585,30 @@ export default function GeneracionExpensasAdminPage() {
             Registro general de expensas
           </CardTitle>
 
-          <div className="relative w-full sm:w-[300px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por departamento o periodo..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
-            />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Select value={filtroInmuebleId || "TODOS"} onValueChange={(val) => setFiltroInmuebleId(val === "TODOS" ? "" : val)}>
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Consultar por departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="TODOS">Todos los departamentos</SelectItem>
+                {inmuebles.map((inmueble) => (
+                  <SelectItem key={inmueble.id} value={inmueble.id}>
+                    {inmueble.codigo}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="relative w-full sm:w-[260px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por departamento o periodo..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9"
+              />
+            </div>
           </div>
         </CardHeader>
 
@@ -507,18 +675,36 @@ export default function GeneracionExpensasAdminPage() {
                           </TableCell>
 
                           <TableCell className="text-center">
-                            <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
-                              {exp.estado}
-                            </Badge>
+                            <div className="flex flex-col items-center gap-1">
+                              <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
+                                {exp.estado}
+                              </Badge>
+                              {estaEnPeriodoGracia(exp, configMora) && (
+                                <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
+                                  En período de gracia
+                                </Badge>
+                              )}
+                              {tieneMoraAplicada(exp) && (
+                                <Badge className="font-caption bg-danger-subtle text-[10px] text-destructive">
+                                  Mora aplicada
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
 
                           <TableCell className="text-right">
-                            {bolPuedeGestionar && exp.estado !== "PAGADA" && (
-                              <Button variant="ghost" size="sm" onClick={() => abrirDialogoPago(exp)}>
-                                <Wallet className="mr-2 h-4 w-4" />
-                                Registrar pago
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => setExpensaDetalle(exp)}>
+                                <Info className="mr-2 h-4 w-4" />
+                                Detalle
                               </Button>
-                            )}
+                              {bolPuedeGestionar && exp.estado !== "PAGADA" && (
+                                <Button variant="ghost" size="sm" onClick={() => abrirDialogoPago(exp)}>
+                                  <Wallet className="mr-2 h-4 w-4" />
+                                  Registrar pago
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -554,9 +740,21 @@ export default function GeneracionExpensasAdminPage() {
                             {exp.inmueble.codigo}
                           </div>
                         </div>
-                        <Badge className={`font-caption shrink-0 text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
-                          {exp.estado}
-                        </Badge>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
+                            {exp.estado}
+                          </Badge>
+                          {estaEnPeriodoGracia(exp, configMora) && (
+                            <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
+                              En gracia
+                            </Badge>
+                          )}
+                          {tieneMoraAplicada(exp) && (
+                            <Badge className="font-caption bg-danger-subtle text-[10px] text-destructive">
+                              Mora aplicada
+                            </Badge>
+                          )}
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-x-3 gap-y-2">
@@ -586,12 +784,18 @@ export default function GeneracionExpensasAdminPage() {
                           <p className="text-[15px] font-semibold text-foreground">{formatCurrency(montoTotal)}</p>
                         </div>
 
-                        {bolPuedeGestionar && exp.estado !== "PAGADA" && (
-                          <Button variant="outline" size="sm" onClick={() => abrirDialogoPago(exp)}>
-                            <Wallet className="mr-2 h-4 w-4" />
-                            Registrar pago
+                        <div className="flex gap-1">
+                          <Button variant="outline" size="sm" onClick={() => setExpensaDetalle(exp)}>
+                            <Info className="mr-2 h-4 w-4" />
+                            Detalle
                           </Button>
-                        )}
+                          {bolPuedeGestionar && exp.estado !== "PAGADA" && (
+                            <Button variant="outline" size="sm" onClick={() => abrirDialogoPago(exp)}>
+                              <Wallet className="mr-2 h-4 w-4" />
+                              Registrar pago
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -687,6 +891,103 @@ export default function GeneracionExpensasAdminPage() {
                 </Button>
               </DialogFooter>
             </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo de detalle de la expensa */}
+      <Dialog open={expensaDetalle !== null} onOpenChange={(bolOpen) => !bolOpen && setExpensaDetalle(null)}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Detalle de la expensa</DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {expensaDetalle && `${expensaDetalle.periodo} · ${expensaDetalle.inmueble.codigo}`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {expensaDetalle && (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-2">
+                <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[expensaDetalle.estado]}`}>
+                  {expensaDetalle.estado}
+                </Badge>
+                {estaEnPeriodoGracia(expensaDetalle, configMora) && (
+                  <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
+                    En período de gracia
+                  </Badge>
+                )}
+                {tieneMoraAplicada(expensaDetalle) && (
+                  <Badge className="font-caption bg-danger-subtle text-[10px] text-destructive">
+                    Mora aplicada
+                  </Badge>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Fecha de generación</p>
+                  <p className="mt-1 text-[13px] text-foreground">{formatearFecha(expensaDetalle.createdAt)}</p>
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Fecha de vencimiento</p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {formatearFecha(expensaDetalle.fechaVencimiento)}
+                  </p>
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Monto base</p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {formatCurrency(Number(expensaDetalle.montoTotal))}
+                  </p>
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Mora aplicada</p>
+                  <p className="mt-1 text-[13px] text-destructive">
+                    {expensaDetalle.montoMora ? formatCurrency(Number(expensaDetalle.montoMora)) : "Bs 0,00"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg bg-muted/30 p-3">
+                <p className={CLASE_LABEL_CAMPO}>Saldo pendiente</p>
+                <p className="mt-1 text-[16px] font-semibold text-foreground">
+                  {formatCurrency(calcularSaldoPendiente(expensaDetalle))}
+                </p>
+              </div>
+
+              <div>
+                <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Historial de pagos</p>
+                {expensaDetalle.pagos.length === 0 ? (
+                  <p className="text-[13px] text-muted-foreground">Todavía no se registraron pagos.</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {expensaDetalle.pagos.map((pago) => (
+                      <div
+                        key={pago.id}
+                        className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-[13px] text-foreground">{ETIQUETA_METODO_PAGO[pago.metodoPago]}</p>
+                          <p className="font-caption text-[11px] text-muted-foreground">
+                            {formatearFecha(pago.fechaPago)}
+                            {pago.referencia ? ` · ${pago.referencia}` : ""}
+                          </p>
+                        </div>
+                        <p className="text-[13px] font-semibold text-foreground">
+                          {formatCurrency(Number(pago.monto))}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setExpensaDetalle(null)}>
+                  Cerrar
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
