@@ -222,15 +222,24 @@ export default function FichaInmueblePage() {
             </div>
           </dl>
 
-          {bolPuedeCambiarEstado && (
-            <button
-              type="button"
-              onClick={handleAlternarEstado}
-              className="mt-5 flex h-9 items-center justify-center rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+          <div className="mt-5 flex flex-wrap gap-3">
+            {bolPuedeCambiarEstado && (
+              <button
+                type="button"
+                onClick={handleAlternarEstado}
+                className="flex h-9 items-center justify-center rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                {inmueble.activo ? "Desactivar inmueble" : "Activar inmueble"}
+              </button>
+            )}
+
+            <Link
+              href={`/admin/morosidad?q=${encodeURIComponent(inmueble.codigo)}`}
+              className="flex h-9 items-center justify-center rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
             >
-              {inmueble.activo ? "Desactivar inmueble" : "Activar inmueble"}
-            </button>
-          )}
+              Ver expensas de este inmueble
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
