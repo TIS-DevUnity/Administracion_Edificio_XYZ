@@ -12,7 +12,8 @@ export type SeccionId =
   | "copropietarios"
   | "usuarios"
   | "roles"
-  | "morosidad";
+  | "morosidad"
+  | "documentos";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -44,6 +45,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     usuarios: ["ver", "crear", "editar", "eliminar"],
     roles: ["ver", "editar"],
     morosidad: ["ver", "crear", "editar", "eliminar"],
+    documentos: ["ver", "crear", "eliminar"],
   },
   DIRECTORIO: {
     panel: ["ver"],
@@ -55,6 +57,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     copropietarios: ["ver"],
     usuarios: ["ver"],
     morosidad: ["ver"],
+    documentos: ["ver", "crear"],
   },
   CONSULTA: {
     panel: ["ver"],
@@ -65,7 +68,10 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
-    // "usuarios" y "roles" no aparecen: quedan ocultas y bloqueadas para Consulta.
+    // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
+    // para Consulta (documentos: el backend no distingue privado/público, así que
+    // hasta que exista ese campo se oculta el módulo entero en vez de fingir un
+    // filtro que la API no respalda).
   },
 };
 
@@ -103,6 +109,7 @@ export const SECCIONES_NAV: SeccionNav[] = [
   { id: "copropietarios", label: "Copropietarios", href: "/admin/copropietarios" },
   { id: "pagos", label: "Pagos", href: "/admin/pagos" },
   { id: "morosidad", label: "Morosidad y Expensas", href: "/admin/morosidad" },
+  { id: "documentos", label: "Gestión Documental", href: "/admin/documentos" },
   { id: "mantenimiento", label: "Mantenimiento", href: "/admin/mantenimiento" },
   { id: "usuarios", label: "Usuarios", href: "/admin/usuarios" },
   { id: "roles", label: "Configurar roles", href: "/admin/roles" },
