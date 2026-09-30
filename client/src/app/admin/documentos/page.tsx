@@ -1,12 +1,18 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Download, Eye, FileText, Info, Search, Trash2, Upload } from "lucide-react";
+import { ClipboardList, Download, Eye, FileText, Info, Replace, Search, Trash2, Upload } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
+import {
+  ETIQUETA_ACCION_AUDITORIA,
+  PaginacionAuditoria,
+  RegistroAuditoria,
+  listarAuditoria,
+} from "@/lib/auditoria";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -43,6 +49,7 @@ import {
   ETIQUETA_CATEGORIA,
   FORMATOS_PERMITIDOS,
   TAMANIO_MAXIMO_BYTES,
+  actualizarDocumento,
   eliminarDocumento,
   formatearFecha,
   formatearTamanio,
@@ -89,6 +96,24 @@ function sanitizarNombreArchivo(strTitulo: string, strNombreOriginal: string): s
   return `${strBase}${strExtension}`;
 }
 
+function resumirDetalleAuditoria(registro: RegistroAuditoria): string {
+  const detalle = registro.detalle as Record<string, unknown> | null;
+  if (!detalle || typeof detalle !== "object") return "—";
+
+  if (registro.accion === "CREATE") {
+    return `"${(detalle.nombre as string) ?? "Documento"}" cargado`;
+  }
+  if (registro.accion === "DELETE") {
+    return `"${(detalle.nombre as string) ?? "Documento"}" eliminado`;
+  }
+
+  const campos = Object.keys(detalle);
+  if (campos.length === 0) return "Sin cambios registrados";
+  return campos
+    .map((campo) => (campo === "archivo" ? "archivo reemplazado" : `${campo} actualizado`))
+    .join(", ");
+}
+
 export default function DocumentosPage() {
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
@@ -114,6 +139,7 @@ export default function DocumentosPage() {
   const [strErrorSubida, setStrErrorSubida] = useState("");
   const [bolSubiendo, setBolSubiendo] = useState(false);
   const [objPendienteDuplicado, setObjPendienteDuplicado] = useState<DatosPendientesSubida | null>(null);
+  const [documentoDuplicadoExistente, setDocumentoDuplicadoExistente] = useState<Documento | null>(null);
   const [strAdvertenciaDuplicado, setStrAdvertenciaDuplicado] = useState("");
 
   // Diálogo de detalles
@@ -123,6 +149,19 @@ export default function DocumentosPage() {
   const [documentoEliminar, setDocumentoEliminar] = useState<Documento | null>(null);
   const [bolEliminando, setBolEliminando] = useState(false);
   const [strErrorEliminar, setStrErrorEliminar] = useState("");
+
+  // Diálogo de reemplazar archivo
+  const [documentoReemplazar, setDocumentoReemplazar] = useState<Documento | null>(null);
+  const [archivoReemplazo, setArchivoReemplazo] = useState<File | null>(null);
+  const [bolReemplazando, setBolReemplazando] = useState(false);
+  const [strErrorReemplazo, setStrErrorReemplazo] = useState("");
+
+  // Diálogo de auditoría
+  const [bolDialogoAuditoria, setBolDialogoAuditoria] = useState(false);
+  const [registrosAuditoria, setRegistrosAuditoria] = useState<RegistroAuditoria[]>([]);
+  const [paginacionAuditoria, setPaginacionAuditoria] = useState<PaginacionAuditoria | null>(null);
+  const [bolCargandoAuditoria, setBolCargandoAuditoria] = useState(false);
+  const [strErrorAuditoria, setStrErrorAuditoria] = useState("");
 
   async function cargarDocumentos() {
     try {
@@ -191,6 +230,7 @@ export default function DocumentosPage() {
     setCamposErrorSubida(new Set());
     setStrErrorSubida("");
     setObjPendienteDuplicado(null);
+    setDocumentoDuplicadoExistente(null);
     setStrAdvertenciaDuplicado("");
     setBolDialogoSubir(true);
   }
@@ -198,6 +238,7 @@ export default function DocumentosPage() {
   function cerrarDialogoSubir() {
     setBolDialogoSubir(false);
     setObjPendienteDuplicado(null);
+    setDocumentoDuplicadoExistente(null);
     setStrAdvertenciaDuplicado("");
     setStrErrorSubida("");
   }
@@ -224,6 +265,32 @@ export default function DocumentosPage() {
       await cargarDocumentos();
     } catch (error) {
       setStrErrorSubida(obtenerMensajeError(error, "Ocurrió un error al subir el documento."));
+    } finally {
+      setBolSubiendo(false);
+    }
+  }
+
+  async function ejecutarReemplazoDesdeDuplicado(documentoId: string, datos: DatosPendientesSubida) {
+    setBolSubiendo(true);
+    setStrErrorSubida("");
+
+    try {
+      const archivoRenombrado = new File(
+        [datos.archivo],
+        sanitizarNombreArchivo(datos.titulo, datos.archivo.name),
+        { type: datos.archivo.type }
+      );
+
+      const formData = new FormData();
+      formData.append("archivo", archivoRenombrado);
+
+      await actualizarDocumento(documentoId, formData);
+
+      setStrExito("Archivo reemplazado correctamente.");
+      cerrarDialogoSubir();
+      await cargarDocumentos();
+    } catch (error) {
+      setStrErrorSubida(obtenerMensajeError(error, "Ocurrió un error al reemplazar el archivo."));
     } finally {
       setBolSubiendo(false);
     }
@@ -266,17 +333,19 @@ export default function DocumentosPage() {
     setCamposErrorSubida(new Set());
     setStrErrorSubida("");
 
-    const bolDuplicado = documentos.some(
-      (doc) =>
-        doc.nombre.trim().toLowerCase() === strTitulo.toLowerCase() && doc.categoria === strCategoria
-    );
+    const documentoExistente =
+      documentos.find(
+        (doc) =>
+          doc.nombre.trim().toLowerCase() === strTitulo.toLowerCase() && doc.categoria === strCategoria
+      ) ?? null;
 
     const datos: DatosPendientesSubida = { titulo: strTitulo, categoria: strCategoria, archivo: archivo! };
 
-    if (bolDuplicado) {
+    if (documentoExistente) {
       setObjPendienteDuplicado(datos);
+      setDocumentoDuplicadoExistente(documentoExistente);
       setStrAdvertenciaDuplicado(
-        `Ya existe un documento llamado "${strTitulo}" en la categoría ${ETIQUETA_CATEGORIA[strCategoria]}. Este repositorio todavía no permite reemplazar un archivo conservando su historial — puedes subir este como un documento independiente o cancelar.`
+        `Ya existe un documento llamado "${strTitulo}" en la categoría ${ETIQUETA_CATEGORIA[strCategoria]}. Puedes reemplazar su archivo actual o subir este como un documento independiente.`
       );
       return;
     }
@@ -344,6 +413,82 @@ export default function DocumentosPage() {
     }
   }
 
+  function abrirDialogoReemplazar(doc: Documento) {
+    const objValidacion = validarAccion(rol, "documentos", "crear");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setStrErrorReemplazo("");
+    setArchivoReemplazo(null);
+    setDocumentoReemplazar(doc);
+  }
+
+  function cerrarDialogoReemplazar() {
+    setDocumentoReemplazar(null);
+    setArchivoReemplazo(null);
+    setStrErrorReemplazo("");
+  }
+
+  async function handleConfirmarReemplazo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!documentoReemplazar) return;
+
+    if (!archivoReemplazo) {
+      setStrErrorReemplazo("Selecciona un archivo para reemplazar el actual.");
+      return;
+    }
+    if (!FORMATOS_PERMITIDOS[archivoReemplazo.type]) {
+      setStrErrorReemplazo(
+        `Formato no permitido. Formatos aceptados: ${Object.values(FORMATOS_PERMITIDOS).join(", ")}.`
+      );
+      return;
+    }
+    if (archivoReemplazo.size > TAMANIO_MAXIMO_BYTES) {
+      setStrErrorReemplazo("El archivo supera el tamaño máximo permitido de 10 MB.");
+      return;
+    }
+
+    setBolReemplazando(true);
+    setStrErrorReemplazo("");
+
+    try {
+      const formData = new FormData();
+      formData.append("archivo", archivoReemplazo);
+
+      await actualizarDocumento(documentoReemplazar.id, formData);
+
+      setStrExito("Archivo reemplazado correctamente.");
+      cerrarDialogoReemplazar();
+      await cargarDocumentos();
+    } catch (error) {
+      setStrErrorReemplazo(obtenerMensajeError(error, "Ocurrió un error al reemplazar el archivo."));
+    } finally {
+      setBolReemplazando(false);
+    }
+  }
+
+  async function cargarAuditoria(intPagina: number) {
+    setBolCargandoAuditoria(true);
+    setStrErrorAuditoria("");
+
+    try {
+      const resultado = await listarAuditoria({ entidad: "Documento", pagina: intPagina });
+      setRegistrosAuditoria(resultado.registros);
+      setPaginacionAuditoria(resultado.paginacion);
+    } catch (error) {
+      setStrErrorAuditoria(obtenerMensajeError(error, "No se pudo cargar el historial de auditoría."));
+    } finally {
+      setBolCargandoAuditoria(false);
+    }
+  }
+
+  function abrirDialogoAuditoria() {
+    setBolDialogoAuditoria(true);
+    void cargarAuditoria(1);
+  }
+
   return (
     <div className="px-6 py-6">
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -351,12 +496,19 @@ export default function DocumentosPage() {
           Repositorio de actas, reglamentos, contratos y cotizaciones del edificio.
         </p>
 
-        {bolPuedeSubir && (
-          <Button onClick={abrirDialogoSubir}>
-            <Upload className="mr-2 h-4 w-4" />
-            Subir documento
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button variant="outline" onClick={abrirDialogoAuditoria}>
+            <ClipboardList className="mr-2 h-4 w-4" />
+            Ver auditoría
           </Button>
-        )}
+
+          {bolPuedeSubir && (
+            <Button onClick={abrirDialogoSubir}>
+              <Upload className="mr-2 h-4 w-4" />
+              Subir documento
+            </Button>
+          )}
+        </div>
       </div>
 
       {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
@@ -504,6 +656,16 @@ export default function DocumentosPage() {
                         >
                           <Download className="h-4 w-4" />
                         </Button>
+                        {bolPuedeSubir && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Reemplazar archivo"
+                            onClick={() => abrirDialogoReemplazar(doc)}
+                          >
+                            <Replace className="h-4 w-4" />
+                          </Button>
+                        )}
                         {bolPuedeEliminar && (
                           <Button
                             variant="ghost"
@@ -641,6 +803,18 @@ export default function DocumentosPage() {
                 </Button>
                 <Button
                   type="button"
+                  variant="outline"
+                  onClick={() =>
+                    documentoDuplicadoExistente &&
+                    objPendienteDuplicado &&
+                    void ejecutarReemplazoDesdeDuplicado(documentoDuplicadoExistente.id, objPendienteDuplicado)
+                  }
+                  disabled={bolSubiendo}
+                >
+                  {bolSubiendo ? "Reemplazando..." : "Reemplazar existente"}
+                </Button>
+                <Button
+                  type="button"
                   onClick={() => objPendienteDuplicado && void ejecutarSubida(objPendienteDuplicado)}
                   disabled={bolSubiendo}
                 >
@@ -726,6 +900,136 @@ export default function DocumentosPage() {
               {bolEliminando ? "Eliminando..." : "Eliminar"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo: reemplazar archivo */}
+      <Dialog open={documentoReemplazar !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoReemplazar()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Reemplazar archivo</DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {documentoReemplazar &&
+                `Se reemplazará el archivo de "${documentoReemplazar.nombre}". El nombre y la categoría no cambian.`}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleConfirmarReemplazo} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="archivoReemplazo" className="text-[12px] font-medium text-foreground">
+                Nuevo archivo <span className="text-muted-foreground">(PDF, DOCX, JPG o PNG · máx. 10 MB)</span>
+              </label>
+              <input
+                id="archivoReemplazo"
+                type="file"
+                accept=".pdf,.docx,image/jpeg,image/png"
+                onChange={(event) => setArchivoReemplazo(event.target.files?.[0] ?? null)}
+                className={claseCampo(false)}
+              />
+            </div>
+
+            {strErrorReemplazo && (
+              <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
+                {strErrorReemplazo}
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={cerrarDialogoReemplazar} disabled={bolReemplazando}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={bolReemplazando}>
+                {bolReemplazando ? "Reemplazando..." : "Reemplazar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo: auditoría */}
+      <Dialog open={bolDialogoAuditoria} onOpenChange={setBolDialogoAuditoria}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Auditoría de documentos</DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              Historial de cargas, reemplazos y eliminaciones en el repositorio.
+            </DialogDescription>
+          </DialogHeader>
+
+          {bolCargandoAuditoria && (
+            <div className="space-y-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          )}
+
+          {!bolCargandoAuditoria && strErrorAuditoria && (
+            <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
+              {strErrorAuditoria}
+            </p>
+          )}
+
+          {!bolCargandoAuditoria && !strErrorAuditoria && (
+            <>
+              {registrosAuditoria.length === 0 ? (
+                <p className="py-6 text-center text-[13px] text-muted-foreground">
+                  Todavía no hay movimientos registrados.
+                </p>
+              ) : (
+                <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto">
+                  {registrosAuditoria.map((registro) => (
+                    <div key={registro.id} className="rounded-lg border border-border px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant="secondary" className="font-caption text-[11px]">
+                          {ETIQUETA_ACCION_AUDITORIA[registro.accion]}
+                        </Badge>
+                        <p className="font-caption text-[11px] text-muted-foreground">
+                          {formatearFecha(registro.createdAt)}
+                        </p>
+                      </div>
+                      <p className="mt-1.5 text-[13px] text-foreground">{resumirDetalleAuditoria(registro)}</p>
+                      <p className="mt-0.5 text-[12px] text-muted-foreground">
+                        {registro.usuario ? `${registro.usuario.nombre} ${registro.usuario.apellido}` : "Usuario no disponible"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {paginacionAuditoria && paginacionAuditoria.totalPaginas > 1 && (
+                <div className="flex items-center justify-between border-t border-border pt-3">
+                  <p className="text-[12px] text-muted-foreground">
+                    Página {paginacionAuditoria.pagina} de {paginacionAuditoria.totalPaginas}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paginacionAuditoria.pagina <= 1}
+                      onClick={() => void cargarAuditoria(paginacionAuditoria.pagina - 1)}
+                    >
+                      Anterior
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paginacionAuditoria.pagina >= paginacionAuditoria.totalPaginas}
+                      onClick={() => void cargarAuditoria(paginacionAuditoria.pagina + 1)}
+                    >
+                      Siguiente
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setBolDialogoAuditoria(false)}>
+              Cerrar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

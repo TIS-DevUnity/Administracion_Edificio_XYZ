@@ -40,12 +40,28 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
 
   const [bolMenuMovilAbierto, setBolMenuMovilAbierto] = useState(false);
 
+  // La sesión vive en localStorage y se lee vía useSyncExternalStore, que en la
+  // primera renderización (SSR/hidratación) devuelve un snapshot vacío antes de
+  // corregirse con el valor real del navegador. Sin esta bandera, ese vacío
+  // transitorio hacía que este efecto interpretara "no hay sesión" en cada
+  // recarga de página y cerrara una sesión que sí era válida. Se espera a que el
+  // componente termine de montarse (un ciclo de render aparte, ya con el
+  // snapshot corregido) antes de decidir si corresponde redirigir.
+  const [bolListoParaVerificar, setBolListoParaVerificar] = useState(false);
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBolListoParaVerificar(true);
+  }, []);
+
+  useEffect(() => {
+    if (!bolListoParaVerificar) return;
+
     if (!strToken || !usuario) {
       cerrarSesion();
       router.replace("/login");
     }
-  }, [strToken, usuario, router]);
+  }, [bolListoParaVerificar, strToken, usuario, router]);
 
   function handleLogout() {
     setBolMenuMovilAbierto(false);
@@ -57,7 +73,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
     setBolMenuMovilAbierto(false);
   }
 
-  if (!usuario) {
+  if (!bolListoParaVerificar || !usuario) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-[14px] text-muted-foreground">
