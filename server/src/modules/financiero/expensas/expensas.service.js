@@ -7,8 +7,11 @@ const {
   parsearMonto,
   validarMetodoPago,
   normalizarReferencia,
-  sumarPagos,
-  calcularEstado,
+  parsearFechaPago,
+  formatearFolio,
+  resumenRecibo,
+  crearRecibo,
+  repartirPago,
   bloquearInmueble,
   bloquearExpensa,
   aplicarSaldoAExpensa
@@ -253,10 +256,11 @@ async function aplicarMora(expensaId, { usuarioId = null, ip = null, origen = 'M
   return { ...actualizada, moraActualizada: hayCambioDeMonto }
 }
 
-async function registrarPago({ expensaId, monto, metodoPago, referencia, usuarioId, ip }) {
+async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPago, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
+  const fecha = parsearFechaPago(fechaPago)
 
   const previa = await prisma.expensa.findUnique({
     where: { id: expensaId },
@@ -281,25 +285,27 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, usuario
       throw errorHttp('La expensa ya esta pagada, no se pueden registrar mas pagos', 409)
     }
 
-    const adeudado = new Decimal(expensa.montoTotal).plus(expensa.montoMora)
-    const pagadoAntes = sumarPagos(expensa.pagos)
-    const pendiente = Decimal.max(adeudado.minus(pagadoAntes), new Decimal(0))
+    const recibo = await crearRecibo(tx, {
+      inmuebleId: expensa.inmuebleId,
+      montoTotal: montoRecibido,
+      metodoPago,
+      referencia: referenciaLimpia,
+      fechaPago: fecha,
+      usuarioId
+    })
 
     // Lo que alcanza la expensa se aplica como pago; el sobrante pasa a saldo a favor.
-    const aplicado = Decimal.min(montoRecibido, pendiente)
-    const exceso = montoRecibido.minus(aplicado)
-
-    const pago = aplicado.gt(0)
-      ? await tx.pago.create({
-          data: {
-            expensaId,
-            monto: aplicado,
-            metodoPago,
-            referencia: referenciaLimpia,
-            registradoPorId: usuarioId
-          }
-        })
-      : null
+    const { aplicaciones, restante: exceso } = await repartirPago(tx, {
+      reciboId: recibo.id,
+      expensas: [expensa],
+      monto: montoRecibido,
+      metodoPago,
+      referencia: referenciaLimpia,
+      fechaPago: fecha,
+      usuarioId
+    })
+    const aplicacion = aplicaciones[0] ?? null
+    const aplicado = aplicacion ? aplicacion.aplicado : new Decimal(0)
 
     const movimiento = exceso.gt(0)
       ? await tx.movimientoSaldo.create({
@@ -308,6 +314,7 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, usuario
             tipo: 'EXCESO_PAGO',
             monto: exceso,
             expensaId,
+            reciboId: recibo.id,
             metodoPago,
             referencia: referenciaLimpia,
             registradoPorId: usuarioId
@@ -315,22 +322,39 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, usuario
         })
       : null
 
-    const estado = calcularEstado({
-      montoTotal: expensa.montoTotal,
-      montoMora: expensa.montoMora,
-      totalPagado: pagadoAntes.plus(aplicado)
-    })
-
-    const expensaActualizada = await tx.expensa.update({
+    const expensaActualizada = await tx.expensa.findUnique({
       where: { id: expensaId },
-      data: { estado },
       include: { pagos: true, ...INCLUIR_INMUEBLE }
     })
 
-    return { pago, movimiento, expensa: expensaActualizada, estadoAnterior: expensa.estado, aplicado, exceso }
+    return {
+      recibo,
+      pago: aplicacion ? aplicacion.pago : null,
+      movimiento,
+      expensa: expensaActualizada,
+      estadoAnterior: expensa.estado,
+      aplicado,
+      exceso
+    }
   }, OPCIONES_TX)
 
-  const { pago, movimiento, expensa, estadoAnterior, aplicado, exceso } = resultado
+  const { recibo, pago, movimiento, expensa, estadoAnterior, aplicado, exceso } = resultado
+
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'CREATE',
+    entidad: 'Recibo',
+    entidadId: recibo.id,
+    detalle: {
+      folio: formatearFolio(recibo.folioNumero),
+      inmuebleId: expensa.inmuebleId,
+      montoRecibido: montoRecibido.toFixed(2),
+      fechaPago: recibo.fechaPago.toISOString(),
+      metodoPago,
+      referencia: referenciaLimpia
+    },
+    ip
+  })
 
   if (pago) {
     await registrarAuditoria({
@@ -340,6 +364,7 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, usuario
       entidadId: pago.id,
       detalle: {
         expensaId,
+        folio: formatearFolio(recibo.folioNumero),
         montoRecibido: montoRecibido.toFixed(2),
         montoAplicado: aplicado.toFixed(2),
         excesoASaldoFavor: exceso.toFixed(2),
@@ -358,6 +383,7 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, usuario
       entidadId: movimiento.id,
       detalle: {
         tipo: 'EXCESO_PAGO',
+        folio: formatearFolio(recibo.folioNumero),
         expensaId,
         monto: exceso.toFixed(2),
         metodoPago,
@@ -381,6 +407,7 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, usuario
   return {
     pago,
     expensa,
+    recibo: resumenRecibo(recibo),
     montoRecibido: montoRecibido.toFixed(2),
     montoAplicado: aplicado.toFixed(2),
     saldoFavorGenerado: exceso.toFixed(2)
