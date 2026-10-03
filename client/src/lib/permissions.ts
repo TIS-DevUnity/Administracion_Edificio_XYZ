@@ -14,6 +14,7 @@ export type SeccionId =
   | "roles"
   | "morosidad"
   | "documentos"
+  | "finanzas"
   | "auditoria";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
@@ -49,6 +50,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     roles: ["ver", "editar"],
     morosidad: ["ver", "crear", "editar", "eliminar"],
     documentos: ["ver", "crear", "eliminar"],
+    finanzas: ["ver", "crear", "editar", "eliminar"],
     // "auditoria" no aparece a propósito: la HU la define como exclusiva de
     // Directorio ("un usuario sin el rol de Directorio... debe impedir el
     // acceso"), incluyendo a Administrador — es una bitácora de control
@@ -68,6 +70,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     morosidad: ["ver"],
     documentos: ["ver", "crear"],
     auditoria: ["ver"],
+    finanzas: ["ver", "crear", "editar"],
   },
   CONSULTA: {
     panel: ["ver"],
@@ -78,6 +81,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
+    finanzas: ["ver"],
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
     // para Consulta (documentos: el backend no distingue privado/público, así que
     // hasta que exista ese campo se oculta el módulo entero en vez de fingir un
@@ -113,6 +117,7 @@ export interface SeccionNav {
 
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
+  { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
   { id: "edificios", label: "Edificios", href: "/admin/edificios" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },
   { id: "residentes", label: "Residentes", href: "/admin/residentes" },
