@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarClock,
   CalendarPlus,
+  CircleDollarSign,
   Info,
   RefreshCw,
   Search,
@@ -106,12 +107,6 @@ function periodoActual(): string {
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function ultimoDiaDelMesISO(): string {
-  const fecha = new Date();
-  const ultimoDia = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
-  return ultimoDia.toISOString().slice(0, 10);
-}
-
 function tieneMoraAplicada(exp: ExpensaDTO): boolean {
   return exp.estado === "VENCIDA" && Number(exp.montoMora || 0) > 0;
 }
@@ -147,6 +142,7 @@ export default function GeneracionExpensasAdminPage() {
   // Revisión manual de mora / generación manual del mes
   const [bolRevisandoMora, setBolRevisandoMora] = useState(false);
   const [bolGenerandoMes, setBolGenerandoMes] = useState(false);
+  const [bolForzandoMora, setBolForzandoMora] = useState(false);
   const [strErrorAccion, setStrErrorAccion] = useState("");
 
   // Configuración de mora
@@ -309,22 +305,13 @@ export default function GeneracionExpensasAdminPage() {
     setBolRevisandoMora(true);
 
     try {
-      const candidatas = expensas.filter((exp) => exp.estado === "PENDIENTE" || exp.estado === "PARCIAL");
-
-      const resultados = await Promise.all(
-        candidatas.map((exp) =>
-          financeService.aplicarMoraManual(exp.id).catch((error) => {
-            console.error(`No se pudo revisar la expensa ${exp.id}:`, error);
-            return null;
-          })
-        )
-      );
-
-      const intAplicadas = resultados.filter((resultado) => resultado?.estado === "VENCIDA").length;
+      // Se usa el endpoint del job (no el aplicar-mora por expensa) porque es el
+      // único camino que también notifica por correo a los ocupantes afectados.
+      const resultado = await financeService.ejecutarMoraJob();
 
       setStrExito(
-        intAplicadas > 0
-          ? `Revisión completa: se aplicó mora a ${intAplicadas} expensa${intAplicadas === 1 ? "" : "s"}.`
+        resultado.aplicadas > 0
+          ? `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.`
           : "Revisión completa: ninguna expensa superó el período de gracia todavía."
       );
       await cargarDatos();
@@ -332,6 +319,63 @@ export default function GeneracionExpensasAdminPage() {
       setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al revisar las deudas pendientes."));
     } finally {
       setBolRevisandoMora(false);
+    }
+  }
+
+  async function handleForzarMora() {
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setStrErrorAccion("");
+    setStrExito("");
+    setBolForzandoMora(true);
+
+    try {
+      // Fuerza el recálculo de mora expensa por expensa (endpoint aplicar-mora),
+      // sin esperar al job. Se omiten solo las ya pagadas.
+      const candidatas = expensas.filter((exp) => exp.estado !== "PAGADA");
+
+      if (candidatas.length === 0) {
+        setStrExito("No hay expensas pendientes para actualizar la mora.");
+        return;
+      }
+
+      const resultados = await Promise.allSettled(
+        candidatas.map((exp) => financeService.aplicarMoraManual(exp.id))
+      );
+
+      const fallidas = resultados.filter((r) => r.status === "rejected");
+      fallidas.forEach((r) => console.error("No se pudo actualizar la mora:", (r as PromiseRejectedResult).reason));
+
+      // Cuenta como actualizada si el backend lo indica (moraActualizada) o si el monto de mora cambió
+      const intActualizadas = resultados.filter((r, i) => {
+        if (r.status !== "fulfilled" || !r.value) return false;
+        const flag = (r.value as { moraActualizada?: boolean }).moraActualizada;
+        if (typeof flag === "boolean") return flag;
+        return Number(r.value.montoMora || 0) !== Number(candidatas[i].montoMora || 0);
+      }).length;
+      const intOk = resultados.length - fallidas.length;
+
+      await cargarDatos();
+
+      if (fallidas.length > 0) {
+        setStrErrorAccion(
+          `Se procesaron ${intOk} de ${resultados.length} expensas; ${fallidas.length} fallaron. Revisa la consola o el backend.`
+        );
+      } else {
+        setStrExito(
+          intActualizadas > 0
+            ? `Mora forzada: se actualizó en ${intActualizadas} expensa${intActualizadas === 1 ? "" : "s"} (${intOk} revisadas).`
+            : `Revisión completa (${intOk} expensas): ninguna requirió cambios en la mora.`
+        );
+      }
+    } catch (error) {
+      setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al forzar la mora."));
+    } finally {
+      setBolForzandoMora(false);
     }
   }
 
@@ -347,31 +391,17 @@ export default function GeneracionExpensasAdminPage() {
     setBolGenerandoMes(true);
 
     try {
-      const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
+      // Se usa el endpoint del job (forzar=true) en vez de crear expensas una por una
+      // porque es el único camino que también notifica por correo a los ocupantes.
+      const resultado = await financeService.ejecutarGeneracionJob(true);
       const strPeriodo = periodoActual();
-      const strFechaVencimiento = ultimoDiaDelMesISO();
-
-      let intGeneradas = 0;
-      let intOmitidas = 0;
-
-      for (const inmueble of inmueblesActivos) {
-        try {
-          await financeService.generarExpensaManual({
-            inmuebleId: inmueble.id,
-            periodo: strPeriodo,
-            fechaVencimiento: strFechaVencimiento,
-          });
-          intGeneradas += 1;
-        } catch (error) {
-          intOmitidas += 1;
-          console.warn(`Inmueble ${inmueble.codigo}: no se generó la expensa de ${strPeriodo}.`, error);
-        }
-      }
 
       setStrExito(
-        `Generación del período ${strPeriodo}: ${intGeneradas} expensa${intGeneradas === 1 ? "" : "s"} nueva${
-          intGeneradas === 1 ? "" : "s"
-        }, ${intOmitidas} ya existía${intOmitidas === 1 ? "" : "n"} o no se pudo${intOmitidas === 1 ? "" : "ieron"} generar.`
+        `Generación del período ${strPeriodo}: ${resultado.generadas} expensa${
+          resultado.generadas === 1 ? "" : "s"
+        } nueva${resultado.generadas === 1 ? "" : "s"}, ${resultado.omitidas} ya existía${
+          resultado.omitidas === 1 ? "" : "n"
+        } o no se pudo${resultado.omitidas === 1 ? "" : "ieron"} generar.`
       );
       await cargarDatos();
     } catch (error) {
@@ -419,6 +449,16 @@ export default function GeneracionExpensasAdminPage() {
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
               {bolRevisandoMora ? "Revisando..." : "Revisar deudas ahora"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full md:w-auto"
+              onClick={handleForzarMora}
+              disabled={bolForzandoMora}
+            >
+              <CircleDollarSign className={`mr-2 h-4 w-4 ${bolForzandoMora ? "animate-pulse" : ""}`} />
+              {bolForzandoMora ? "Forzando..." : "Forzar mora"}
             </Button>
 
           <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
@@ -967,7 +1007,11 @@ export default function GeneracionExpensasAdminPage() {
                         className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
                       >
                         <div>
-                          <p className="text-[13px] text-foreground">{ETIQUETA_METODO_PAGO[pago.metodoPago]}</p>
+                          <p className="text-[13px] text-foreground">
+                            {pago.metodoPago === "SALDO_A_FAVOR"
+                              ? "Saldo a favor"
+                              : ETIQUETA_METODO_PAGO[pago.metodoPago]}
+                          </p>
                           <p className="font-caption text-[11px] text-muted-foreground">
                             {formatearFecha(pago.fechaPago)}
                             {pago.referencia ? ` · ${pago.referencia}` : ""}

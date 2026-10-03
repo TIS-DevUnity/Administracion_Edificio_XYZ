@@ -99,9 +99,10 @@ router.post('/:id/aplicar-mora', autenticar, GESTION, controller.aplicarMora)
  *               monto: { type: number, example: 350, description: "Mayor que cero, maximo 2 decimales" }
  *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
  *               referencia: { type: string, example: "Comprobante 00123", maxLength: 200 }
+ *               fechaPago: { type: string, example: "2026-10-03", description: "Dia en que se pago (YYYY-MM-DD, hora de Bolivia). Opcional: sin ella se usa el momento actual. No puede ser futura." }
  *     responses:
- *       201: { description: "Pago registrado. Incluye montoRecibido, montoAplicado y saldoFavorGenerado" }
- *       400: { description: monto o metodoPago invalidos o ausentes }
+ *       201: { description: "Pago registrado. Incluye montoRecibido, montoAplicado, saldoFavorGenerado y el recibo (folio y enlace al PDF)" }
+ *       400: { description: monto, metodoPago o fechaPago invalidos o ausentes }
  *       404: { description: Expensa no encontrada }
  *       409: { description: La expensa ya esta pagada }
  */

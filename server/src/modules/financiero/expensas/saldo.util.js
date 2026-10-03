@@ -1,6 +1,9 @@
 const { Prisma } = require('@prisma/client')
+const { fechaEnZona } = require('./mora.util')
 
 const Decimal = Prisma.Decimal
+const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
+const TOLERANCIA_RELOJ_MS = 60 * 1000 // un pago con hora "de hace un momento" no es futuro
 
 // SALDO_A_FAVOR lo asigna el sistema al usar un saldo previo; nadie lo puede elegir a mano.
 const METODOS_PAGO_MANUALES = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE']
@@ -48,6 +51,74 @@ function normalizarReferencia(referencia) {
   return texto || null
 }
 
+/**
+ * Fecha en que se hizo el pago. Acepta YYYY-MM-DD (dia en hora de Bolivia) o un ISO
+ * completo con zona. No puede ser futura. Sin valor: `obligatoria` decide entre error
+ * y "ahora".
+ */
+function parsearFechaPago(valor, { obligatoria = false } = {}) {
+  if (valor === undefined || valor === null || valor === '') {
+    if (obligatoria) throw errorHttp('fechaPago es requerida', 400)
+    return new Date()
+  }
+  if (typeof valor !== 'string') {
+    throw errorHttp('fechaPago debe ser un texto con formato YYYY-MM-DD', 400)
+  }
+
+  const texto = valor.trim()
+  const ahora = new Date()
+  let fecha
+
+  if (SOLO_FECHA.test(texto)) {
+    // Se compara el dia de calendario para no rechazar "hoy" por un tema de horas.
+    const dia = new Date(`${texto}T00:00:00Z`)
+    if (Number.isNaN(dia.getTime()) || dia.toISOString().slice(0, 10) !== texto) {
+      throw errorHttp('fechaPago no es una fecha valida', 400)
+    }
+    if (texto > fechaEnZona(ahora)) throw errorHttp('fechaPago no puede ser futura', 400)
+    // Hoy conserva la hora real; un dia anterior se guarda a mediodia de Bolivia.
+    fecha = texto === fechaEnZona(ahora) ? ahora : new Date(`${texto}T12:00:00-04:00`)
+  } else {
+    fecha = new Date(texto)
+    if (Number.isNaN(fecha.getTime()) || !/(Z|[+-]\d{2}:?\d{2})$/.test(texto)) {
+      throw errorHttp('fechaPago debe tener el formato YYYY-MM-DD', 400)
+    }
+    if (fecha.getTime() > ahora.getTime() + TOLERANCIA_RELOJ_MS) {
+      throw errorHttp('fechaPago no puede ser futura', 400)
+    }
+  }
+  return fecha
+}
+
+/** Folio imprimible de un recibo: REC-000123. */
+function formatearFolio(folioNumero) {
+  return `REC-${String(folioNumero).padStart(6, '0')}`
+}
+
+/**
+ * Estado de un cobro segun las expensas que toco: PAGADO si todas quedaron saldadas,
+ * PAGO_PARCIAL si alguna sigue con deuda, SALDO_A_FAVOR si no cubrio ninguna expensa
+ * (todo el dinero quedo como saldo a favor).
+ */
+function estadoPagoDe(estadosExpensas) {
+  if (estadosExpensas.length === 0) return 'SALDO_A_FAVOR'
+  return estadosExpensas.every((estado) => estado === 'PAGADA') ? 'PAGADO' : 'PAGO_PARCIAL'
+}
+
+/** Datos del recibo que se devuelven al cliente (con el folio ya formateado). */
+function resumenRecibo(recibo) {
+  return {
+    id: recibo.id,
+    folio: formatearFolio(recibo.folioNumero),
+    montoTotal: new Decimal(recibo.montoTotal).toFixed(2),
+    metodoPago: recibo.metodoPago,
+    referencia: recibo.referencia,
+    fechaPago: recibo.fechaPago,
+    tieneComprobante: Boolean(recibo.comprobantePath),
+    urlPdf: `/api/financiero/recibos/${recibo.id}/pdf`
+  }
+}
+
 function sumarPagos(pagos = []) {
   return pagos.reduce((acc, p) => acc.plus(p.monto), new Decimal(0))
 }
@@ -74,6 +145,94 @@ async function bloquearInmueble(tx, inmuebleId) {
 
 async function bloquearExpensa(tx, expensaId) {
   await tx.$queryRaw`SELECT "id" FROM "expensas" WHERE "id" = ${expensaId} FOR UPDATE`
+}
+
+/**
+ * Bloquea todas las expensas con deuda de un inmueble, de la mas antigua a la mas nueva.
+ * Se usa despues de `bloquearInmueble`; asi una mora aplicada en paralelo no cambia lo
+ * adeudado mientras se reparte un pago.
+ */
+async function bloquearExpensasConDeuda(tx, inmuebleId) {
+  await tx.$queryRaw`
+    SELECT "id" FROM "expensas"
+    WHERE "inmuebleId" = ${inmuebleId} AND "estado" <> 'PAGADA'
+    ORDER BY "fechaVencimiento" ASC, "periodo" ASC
+    FOR UPDATE`
+}
+
+/** Expensas con deuda de un inmueble, la mas antigua primero (ya con `pagos`). */
+function expensasConDeudaOrdenadas(tx, inmuebleId) {
+  return tx.expensa.findMany({
+    where: { inmuebleId, estado: { not: 'PAGADA' } },
+    include: { pagos: true },
+    orderBy: [{ fechaVencimiento: 'asc' }, { periodo: 'asc' }]
+  })
+}
+
+/** Crea el recibo (folio) de una operacion de cobro. Debe llamarse dentro de la transaccion. */
+function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId }) {
+  return tx.recibo.create({
+    data: {
+      inmuebleId,
+      montoTotal,
+      metodoPago,
+      referencia,
+      fechaPago,
+      registradoPorId: usuarioId
+    }
+  })
+}
+
+/**
+ * Reparte `monto` entre las expensas recibidas, en el orden en que llegan (la mas antigua
+ * primero): cada una se cubre completa antes de pasar a la siguiente. Crea un `Pago` por
+ * expensa tocada y actualiza su estado. Devuelve lo que sobro. Debe llamarse dentro de una
+ * transaccion con inmueble y expensas ya bloqueados; cada expensa debe traer `pagos`.
+ */
+async function repartirPago(tx, { reciboId, expensas, monto, metodoPago, referencia, fechaPago, usuarioId }) {
+  let restante = new Decimal(monto)
+  const aplicaciones = []
+
+  for (const expensa of expensas) {
+    const adeudado = new Decimal(expensa.montoTotal).plus(expensa.montoMora)
+    const pagado = sumarPagos(expensa.pagos)
+    const pendiente = Decimal.max(adeudado.minus(pagado), new Decimal(0))
+
+    if (pendiente.lte(0)) {
+      // Nada que cobrar: solo se corrige el estado si estaba desactualizado.
+      const estado = calcularEstado({ montoTotal: expensa.montoTotal, montoMora: expensa.montoMora, totalPagado: pagado })
+      if (estado !== expensa.estado) {
+        await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
+        aplicaciones.push({ expensa, pago: null, aplicado: new Decimal(0), estadoAnterior: expensa.estado, estado })
+      }
+      continue
+    }
+    if (restante.lte(0)) break
+
+    const aplicado = Decimal.min(restante, pendiente)
+    const pago = await tx.pago.create({
+      data: {
+        expensaId: expensa.id,
+        reciboId,
+        monto: aplicado,
+        metodoPago,
+        referencia,
+        fechaPago,
+        registradoPorId: usuarioId
+      }
+    })
+    const estado = calcularEstado({
+      montoTotal: expensa.montoTotal,
+      montoMora: expensa.montoMora,
+      totalPagado: pagado.plus(aplicado)
+    })
+    await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
+
+    aplicaciones.push({ expensa, pago, aplicado, estadoAnterior: expensa.estado, estado })
+    restante = restante.minus(aplicado)
+  }
+
+  return { aplicaciones, restante }
 }
 
 /** Saldo a favor vigente de un inmueble: suma de abonos (+) y usos (-). */
@@ -138,10 +297,18 @@ module.exports = {
   parsearMonto,
   validarMetodoPago,
   normalizarReferencia,
+  parsearFechaPago,
+  formatearFolio,
+  estadoPagoDe,
+  resumenRecibo,
   sumarPagos,
   calcularEstado,
   bloquearInmueble,
   bloquearExpensa,
+  bloquearExpensasConDeuda,
+  expensasConDeudaOrdenadas,
+  crearRecibo,
+  repartirPago,
   saldoFavorDe,
   aplicarSaldoAExpensa
 }

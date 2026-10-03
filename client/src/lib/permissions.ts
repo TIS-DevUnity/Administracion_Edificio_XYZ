@@ -13,7 +13,9 @@ export type SeccionId =
   | "usuarios"
   | "roles"
   | "morosidad"
-  | "documentos";
+  | "documentos"
+  | "finanzas"
+  | "auditoria";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -39,25 +41,36 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     edificios: ["ver", "crear", "editar", "eliminar"],
     inmuebles: ["ver", "crear", "editar", "eliminar"],
     residentes: ["ver", "crear", "editar", "eliminar"],
-    pagos: ["ver", "crear", "editar", "eliminar"],
+    // El backend restringe las mutaciones de financiero/pagos a ADMINISTRADOR
+    // (ver server/src/modules/financiero/**: GESTION = autorizar('ADMINISTRADOR')).
+    pagos: ["ver", "crear", "editar"],
     mantenimiento: ["ver", "crear", "editar", "eliminar"],
     copropietarios: ["ver"],
     usuarios: ["ver", "crear", "editar", "eliminar"],
     roles: ["ver", "editar"],
     morosidad: ["ver", "crear", "editar", "eliminar"],
     documentos: ["ver", "crear", "eliminar"],
+    finanzas: ["ver", "crear", "editar", "eliminar"],
+    // "auditoria" no aparece a propósito: la HU la define como exclusiva de
+    // Directorio ("un usuario sin el rol de Directorio... debe impedir el
+    // acceso"), incluyendo a Administrador — es una bitácora de control
+    // independiente sobre lo que hace cualquiera, Administrador incluido.
+    // Nota: el backend (GET /api/auditoria) sí autoriza a ADMINISTRADOR además
+    // de DIRECTORIO, así que esta restricción hoy solo vive en el frontend.
   },
   DIRECTORIO: {
     panel: ["ver"],
     edificios: ["ver", "crear", "editar"],
     inmuebles: ["ver", "crear", "editar"],
     residentes: ["ver", "crear", "editar"],
-    pagos: ["ver", "crear", "editar"],
+    pagos: ["ver"],
     mantenimiento: ["ver", "crear", "editar"],
     copropietarios: ["ver"],
     usuarios: ["ver"],
     morosidad: ["ver"],
     documentos: ["ver", "crear"],
+    auditoria: ["ver"],
+    finanzas: ["ver", "crear", "editar"],
   },
   CONSULTA: {
     panel: ["ver"],
@@ -68,6 +81,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
+    finanzas: ["ver"],
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
     // para Consulta (documentos: el backend no distingue privado/público, así que
     // hasta que exista ese campo se oculta el módulo entero en vez de fingir un
@@ -103,6 +117,7 @@ export interface SeccionNav {
 
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
+  { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
   { id: "edificios", label: "Edificios", href: "/admin/edificios" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },
   { id: "residentes", label: "Residentes", href: "/admin/residentes" },
@@ -110,6 +125,7 @@ export const SECCIONES_NAV: SeccionNav[] = [
   { id: "pagos", label: "Pagos", href: "/admin/pagos" },
   { id: "morosidad", label: "Morosidad y Expensas", href: "/admin/morosidad" },
   { id: "documentos", label: "Gestión Documental", href: "/admin/documentos" },
+  { id: "auditoria", label: "Bitácora de Auditoría", href: "/admin/auditoria" },
   { id: "mantenimiento", label: "Mantenimiento", href: "/admin/mantenimiento" },
   { id: "usuarios", label: "Usuarios", href: "/admin/usuarios" },
   { id: "roles", label: "Configurar roles", href: "/admin/roles" },

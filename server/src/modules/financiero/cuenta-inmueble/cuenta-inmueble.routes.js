@@ -32,12 +32,66 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *               monto: { type: number, example: 1000, description: "Mayor que cero, maximo 2 decimales" }
  *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
  *               referencia: { type: string, example: "Transferencia 4521", maxLength: 200 }
+ *               fechaPago: { type: string, example: "2026-10-03", description: "YYYY-MM-DD, hora de Bolivia. Opcional (por defecto ahora). No puede ser futura." }
  *     responses:
- *       201: { description: Saldo a favor registrado (devuelve el saldo vigente) }
- *       400: { description: monto o metodoPago invalidos }
+ *       201: { description: Saldo a favor registrado (devuelve el saldo vigente y el recibo con su folio) }
+ *       400: { description: monto, metodoPago o fechaPago invalidos }
  *       404: { description: Inmueble no encontrado }
  */
 router.post('/:id/pagos-anticipados', autenticar, GESTION, controller.registrarPagoAnticipado)
+
+/**
+ * @openapi
+ * /api/financiero/inmuebles/{id}/pagos:
+ *   post:
+ *     summary: Registra un pago del inmueble. El monto se aplica a las expensas con deuda empezando por la mas antigua; lo que sobre (o todo, si no debe nada) queda como saldo a favor. Genera un recibo con folio unico.
+ *     tags: [Financiero]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Id del inmueble
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [monto, metodoPago, fechaPago]
+ *             properties:
+ *               monto: { type: number, example: 750.50, description: "Mayor que cero, maximo 2 decimales" }
+ *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
+ *               fechaPago: { type: string, example: "2026-10-03", description: "Dia en que se pago (YYYY-MM-DD, hora de Bolivia). No puede ser futura." }
+ *               referencia: { type: string, example: "Transferencia 4521", maxLength: 200 }
+ *     responses:
+ *       201:
+ *         description: "Pago registrado. Devuelve recibo (folio, urlPdf), estadoPago (PAGADO | PAGO_PARCIAL | SALDO_A_FAVOR), aplicaciones por expensa (de la mas antigua), saldoFavorGenerado y saldoFavor vigente"
+ *       400: { description: "Faltan campos obligatorios (la respuesta lista cuales) o monto, metodoPago o fechaPago invalidos" }
+ *       404: { description: Inmueble no encontrado }
+ *   get:
+ *     summary: Historial de pagos del inmueble (mas reciente primero) con monto, fecha, metodo, folio y estado de la expensa que cubrieron (ultimos 200)
+ *     tags: [Financiero]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: desde
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date, example: "2026-12-31" }
+ *     responses:
+ *       200: { description: Pagos del inmueble }
+ *       400: { description: Fechas invalidas }
+ *       404: { description: Inmueble no encontrado }
+ */
+router.post('/:id/pagos', autenticar, GESTION, controller.registrarPagoInmueble)
+router.get('/:id/pagos', autenticar, CONSULTA, controller.listarPagos)
 
 /**
  * @openapi

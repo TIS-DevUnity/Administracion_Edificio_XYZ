@@ -6,13 +6,22 @@ const {
   parsearMonto,
   validarMetodoPago,
   normalizarReferencia,
+  parsearFechaPago,
+  formatearFolio,
+  estadoPagoDe,
+  resumenRecibo,
+  crearRecibo,
+  repartirPago,
   sumarPagos,
   bloquearInmueble,
+  bloquearExpensasConDeuda,
+  expensasConDeudaOrdenadas,
   saldoFavorDe
 } = require('../expensas/saldo.util')
 
 const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
 const MAX_MOVIMIENTOS = 200
+const OPCIONES_TX = { timeout: 15000 }
 
 async function obtenerInmueble(inmuebleId) {
   const inmueble = await prisma.inmueble.findUnique({
@@ -62,27 +71,55 @@ function parsearFecha(valor, campo, { finDeDia, offset }) {
   return fecha
 }
 
-async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referencia, usuarioId, ip }) {
+async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referencia, fechaPago, usuarioId, ip }) {
   const montoAbono = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
+  const fecha = parsearFechaPago(fechaPago)
 
   const inmueble = await obtenerInmueble(inmuebleId)
 
-  const { movimiento, saldoFavor } = await prisma.$transaction(async (tx) => {
+  const { recibo, movimiento, saldoFavor } = await prisma.$transaction(async (tx) => {
     await bloquearInmueble(tx, inmuebleId)
 
+    const reciboCreado = await crearRecibo(tx, {
+      inmuebleId,
+      montoTotal: montoAbono,
+      metodoPago,
+      referencia: referenciaLimpia,
+      fechaPago: fecha,
+      usuarioId
+    })
     const creado = await tx.movimientoSaldo.create({
       data: {
         inmuebleId,
         tipo: 'PAGO_ANTICIPADO',
         monto: montoAbono,
+        reciboId: reciboCreado.id,
         metodoPago,
         referencia: referenciaLimpia,
         registradoPorId: usuarioId
       }
     })
-    return { movimiento: creado, saldoFavor: await saldoFavorDe(tx, inmuebleId) }
+    return { recibo: reciboCreado, movimiento: creado, saldoFavor: await saldoFavorDe(tx, inmuebleId) }
+  })
+
+  const folio = formatearFolio(recibo.folioNumero)
+
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'CREATE',
+    entidad: 'Recibo',
+    entidadId: recibo.id,
+    detalle: {
+      folio,
+      inmueble: inmueble.codigo,
+      montoRecibido: montoAbono.toFixed(2),
+      fechaPago: recibo.fechaPago.toISOString(),
+      metodoPago,
+      referencia: referenciaLimpia
+    },
+    ip
   })
 
   await registrarAuditoria({
@@ -92,6 +129,7 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
     entidadId: movimiento.id,
     detalle: {
       tipo: 'PAGO_ANTICIPADO',
+      folio,
       inmueble: inmueble.codigo,
       monto: montoAbono.toFixed(2),
       metodoPago,
@@ -102,9 +140,203 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
 
   return {
     movimiento,
+    recibo: resumenRecibo(recibo),
     saldoFavor: saldoFavor.toFixed(2),
     mensaje:
       'Pago anticipado registrado como saldo a favor. Se descuenta solo en la proxima expensa que se genere, o a mano con POST /api/financiero/expensas/{id}/aplicar-saldo'
+  }
+}
+
+/**
+ * Registra un pago a nivel de inmueble: el monto se reparte entre sus expensas con deuda,
+ * de la mas antigua a la mas nueva (cada una se cubre completa antes de pasar a la
+ * siguiente). Si sobra, la diferencia queda como saldo a favor; si el inmueble no debe
+ * nada, todo es saldo a favor.
+ */
+async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia, fechaPago, usuarioId, ip }) {
+  const montoRecibido = parsearMonto(monto)
+  validarMetodoPago(metodoPago)
+  const referenciaLimpia = normalizarReferencia(referencia)
+  const fecha = parsearFechaPago(fechaPago, { obligatoria: true })
+
+  const inmueble = await obtenerInmueble(inmuebleId)
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    await bloquearInmueble(tx, inmuebleId)
+    await bloquearExpensasConDeuda(tx, inmuebleId)
+    const expensas = await expensasConDeudaOrdenadas(tx, inmuebleId)
+
+    const recibo = await crearRecibo(tx, {
+      inmuebleId,
+      montoTotal: montoRecibido,
+      metodoPago,
+      referencia: referenciaLimpia,
+      fechaPago: fecha,
+      usuarioId
+    })
+
+    const { aplicaciones, restante } = await repartirPago(tx, {
+      reciboId: recibo.id,
+      expensas,
+      monto: montoRecibido,
+      metodoPago,
+      referencia: referenciaLimpia,
+      fechaPago: fecha,
+      usuarioId
+    })
+
+    const conPago = aplicaciones.filter((a) => a.pago)
+    let movimiento = null
+    if (restante.gt(0)) {
+      const ultima = conPago[conPago.length - 1]
+      movimiento = await tx.movimientoSaldo.create({
+        data: {
+          inmuebleId,
+          // Sin deuda que cubrir es un pago anticipado; con deuda, un exceso sobre lo adeudado.
+          tipo: ultima ? 'EXCESO_PAGO' : 'PAGO_ANTICIPADO',
+          monto: restante,
+          expensaId: ultima ? ultima.expensa.id : null,
+          reciboId: recibo.id,
+          metodoPago,
+          referencia: referenciaLimpia,
+          registradoPorId: usuarioId
+        }
+      })
+    }
+
+    return { recibo, aplicaciones, conPago, restante, movimiento, saldoFavor: await saldoFavorDe(tx, inmuebleId) }
+  }, OPCIONES_TX)
+
+  const { recibo, aplicaciones, conPago, restante, movimiento, saldoFavor } = resultado
+  const folio = formatearFolio(recibo.folioNumero)
+  const montoAplicado = montoRecibido.minus(restante)
+
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'CREATE',
+    entidad: 'Recibo',
+    entidadId: recibo.id,
+    detalle: {
+      folio,
+      inmueble: inmueble.codigo,
+      montoRecibido: montoRecibido.toFixed(2),
+      montoAplicado: montoAplicado.toFixed(2),
+      saldoFavorGenerado: restante.toFixed(2),
+      fechaPago: recibo.fechaPago.toISOString(),
+      metodoPago,
+      referencia: referenciaLimpia,
+      expensas: conPago.map((a) => ({ periodo: a.expensa.periodo, monto: a.aplicado.toFixed(2) }))
+    },
+    ip
+  })
+
+  for (const a of conPago) {
+    await registrarAuditoria({
+      usuarioId,
+      accion: 'CREATE',
+      entidad: 'Pago',
+      entidadId: a.pago.id,
+      detalle: {
+        folio,
+        expensaId: a.expensa.id,
+        periodo: a.expensa.periodo,
+        montoAplicado: a.aplicado.toFixed(2),
+        metodoPago,
+        referencia: referenciaLimpia
+      },
+      ip
+    })
+  }
+
+  for (const a of aplicaciones) {
+    if (a.estadoAnterior === a.estado) continue
+    await registrarAuditoria({
+      usuarioId,
+      accion: 'UPDATE',
+      entidad: 'Expensa',
+      entidadId: a.expensa.id,
+      detalle: { motivo: 'PAGO', folio, estado: { antes: a.estadoAnterior, despues: a.estado } },
+      ip
+    })
+  }
+
+  if (movimiento) {
+    await registrarAuditoria({
+      usuarioId,
+      accion: 'CREATE',
+      entidad: 'MovimientoSaldo',
+      entidadId: movimiento.id,
+      detalle: {
+        tipo: movimiento.tipo,
+        folio,
+        inmueble: inmueble.codigo,
+        monto: restante.toFixed(2),
+        metodoPago,
+        referencia: referenciaLimpia
+      },
+      ip
+    })
+  }
+
+  return {
+    recibo: resumenRecibo(recibo),
+    estadoPago: estadoPagoDe(conPago.map((a) => a.estado)),
+    montoRecibido: montoRecibido.toFixed(2),
+    montoAplicado: montoAplicado.toFixed(2),
+    saldoFavorGenerado: restante.toFixed(2),
+    saldoFavor: saldoFavor.toFixed(2),
+    aplicaciones: conPago.map((a) => ({
+      expensaId: a.expensa.id,
+      periodo: a.expensa.periodo,
+      pagoId: a.pago.id,
+      montoAplicado: a.aplicado.toFixed(2),
+      estado: a.estado
+    })),
+    mensaje: 'Pago registrado exitosamente'
+  }
+}
+
+/** Historial de pagos de un inmueble (mas reciente primero), con su folio y estado. */
+async function listarPagos(inmuebleId, { desde, hasta } = {}) {
+  const inicio = parsearFecha(desde, 'desde', { finDeDia: false, offset: '-04:00' })
+  const fin = parsearFecha(hasta, 'hasta', { finDeDia: true, offset: '-04:00' })
+  if (inicio && fin && inicio > fin) {
+    throw errorHttp('desde no puede ser posterior a hasta', 400)
+  }
+
+  const inmueble = await obtenerInmueble(inmuebleId)
+
+  const pagos = await prisma.pago.findMany({
+    where: {
+      expensa: { inmuebleId },
+      ...(inicio || fin
+        ? { fechaPago: { ...(inicio ? { gte: inicio } : {}), ...(fin ? { lte: fin } : {}) } }
+        : {})
+    },
+    include: {
+      expensa: { select: { id: true, periodo: true, estado: true } },
+      recibo: { select: { id: true, folioNumero: true, comprobantePath: true } },
+      registradoPor: { select: { id: true, nombre: true, apellido: true } }
+    },
+    orderBy: [{ fechaPago: 'desc' }, { id: 'desc' }],
+    take: MAX_MOVIMIENTOS
+  })
+
+  return {
+    inmueble: resumenInmueble(inmueble),
+    rango: { desde: desde ?? null, hasta: hasta ?? null },
+    pagos: pagos.map((p) => ({
+      id: p.id,
+      folio: p.recibo ? formatearFolio(p.recibo.folioNumero) : null,
+      reciboId: p.reciboId,
+      tieneComprobante: Boolean(p.recibo?.comprobantePath),
+      monto: new Decimal(p.monto).toFixed(2),
+      metodoPago: p.metodoPago,
+      referencia: p.referencia,
+      fechaPago: p.fechaPago,
+      expensa: p.expensa, // periodo y estado actual de la expensa que cubrio
+      registradoPor: p.registradoPor
+    }))
   }
 }
 
@@ -240,6 +472,8 @@ async function listarMovimientosSaldo(inmuebleId) {
 
 module.exports = {
   registrarPagoAnticipado,
+  registrarPagoInmueble,
+  listarPagos,
   obtenerSaldo,
   obtenerEstadoCuenta,
   listarMovimientosSaldo
