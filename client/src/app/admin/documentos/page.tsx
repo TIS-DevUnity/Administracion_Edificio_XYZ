@@ -8,7 +8,7 @@ import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
-  ETIQUETA_ACCION_AUDITORIA,
+  etiquetaAccion,
   PaginacionAuditoria,
   RegistroAuditoria,
   listarAuditoria,
@@ -48,9 +48,11 @@ import {
   Documento,
   ETIQUETA_CATEGORIA,
   FORMATOS_PERMITIDOS,
+  MAX_DESCRIPCION_DOCUMENTO,
   TAMANIO_MAXIMO_BYTES,
   actualizarDocumento,
   eliminarDocumento,
+  establecerDescripcion,
   formatearFecha,
   formatearTamanio,
   listarDocumentos,
@@ -72,6 +74,7 @@ interface DatosPendientesSubida {
   titulo: string;
   categoria: CategoriaDocumento;
   archivo: File;
+  descripcion: string;
 }
 
 const CLASE_HEADER_TABLA =
@@ -144,6 +147,9 @@ export default function DocumentosPage() {
 
   // Diálogo de detalles
   const [documentoDetalle, setDocumentoDetalle] = useState<Documento | null>(null);
+  const [strDescripcionEditada, setStrDescripcionEditada] = useState("");
+  const [bolGuardandoDescripcion, setBolGuardandoDescripcion] = useState(false);
+  const [strErrorDescripcion, setStrErrorDescripcion] = useState("");
 
   // Diálogo de eliminar
   const [documentoEliminar, setDocumentoEliminar] = useState<Documento | null>(null);
@@ -258,7 +264,10 @@ export default function DocumentosPage() {
       formData.append("archivo", archivoRenombrado);
       formData.append("categoria", datos.categoria);
 
-      await subirDocumento(formData);
+      const documento = await subirDocumento(formData);
+      if (datos.descripcion.trim()) {
+        await establecerDescripcion(documento.id, datos.descripcion.trim());
+      }
 
       setStrExito("Documento cargado correctamente.");
       cerrarDialogoSubir();
@@ -303,6 +312,7 @@ export default function DocumentosPage() {
     const objFormulario = new FormData(event.currentTarget);
     const strTitulo = String(objFormulario.get("titulo") ?? "").trim();
     const strCategoria = String(objFormulario.get("categoria") ?? "") as CategoriaDocumento;
+    const strDescripcion = String(objFormulario.get("descripcion") ?? "");
     const archivo = objFormulario.get("archivo") as File | null;
 
     const camposFaltantes = new Set<string>();
@@ -339,7 +349,12 @@ export default function DocumentosPage() {
           doc.nombre.trim().toLowerCase() === strTitulo.toLowerCase() && doc.categoria === strCategoria
       ) ?? null;
 
-    const datos: DatosPendientesSubida = { titulo: strTitulo, categoria: strCategoria, archivo: archivo! };
+    const datos: DatosPendientesSubida = {
+      titulo: strTitulo,
+      categoria: strCategoria,
+      archivo: archivo!,
+      descripcion: strDescripcion,
+    };
 
     if (documentoExistente) {
       setObjPendienteDuplicado(datos);
@@ -466,6 +481,31 @@ export default function DocumentosPage() {
       setStrErrorReemplazo(obtenerMensajeError(error, "Ocurrió un error al reemplazar el archivo."));
     } finally {
       setBolReemplazando(false);
+    }
+  }
+
+  function abrirDialogoDetalle(doc: Documento) {
+    setDocumentoDetalle(doc);
+    setStrDescripcionEditada(doc.descripcion ?? "");
+    setStrErrorDescripcion("");
+  }
+
+  async function handleGuardarDescripcion() {
+    if (!documentoDetalle) return;
+
+    setBolGuardandoDescripcion(true);
+    setStrErrorDescripcion("");
+
+    try {
+      const descripcionLimpia = strDescripcionEditada.trim() || null;
+      const documentoActualizado = await establecerDescripcion(documentoDetalle.id, descripcionLimpia);
+      setDocumentoDetalle(documentoActualizado);
+      setStrExito("Descripción actualizada correctamente.");
+      await cargarDocumentos();
+    } catch (error) {
+      setStrErrorDescripcion(obtenerMensajeError(error, "Ocurrió un error al guardar la descripción."));
+    } finally {
+      setBolGuardandoDescripcion(false);
     }
   }
 
@@ -634,7 +674,7 @@ export default function DocumentosPage() {
                           variant="ghost"
                           size="icon-sm"
                           title="Ver detalles"
-                          onClick={() => setDocumentoDetalle(doc)}
+                          onClick={() => abrirDialogoDetalle(doc)}
                         >
                           <Info className="h-4 w-4" />
                         </Button>
@@ -748,6 +788,19 @@ export default function DocumentosPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label htmlFor="descripcion" className="text-[12px] font-medium text-foreground">
+                  Descripción <span className="text-muted-foreground">(opcional)</span>
+                </label>
+                <textarea
+                  id="descripcion"
+                  name="descripcion"
+                  rows={2}
+                  maxLength={MAX_DESCRIPCION_DOCUMENTO}
+                  className={`${claseCampo(false)} h-auto resize-none py-2`}
+                />
               </div>
 
               <div className="flex flex-col gap-1">
@@ -865,9 +918,34 @@ export default function DocumentosPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="descripcionDetalle" className="text-[12px] font-medium text-foreground">
+                  Descripción <span className="text-muted-foreground">(opcional)</span>
+                </label>
+                <textarea
+                  id="descripcionDetalle"
+                  rows={2}
+                  maxLength={MAX_DESCRIPCION_DOCUMENTO}
+                  value={strDescripcionEditada}
+                  onChange={(event) => setStrDescripcionEditada(event.target.value)}
+                  className={`${claseCampo(false)} h-auto resize-none py-2`}
+                />
+                {strErrorDescripcion && (
+                  <p className="text-[12px] text-destructive">{strErrorDescripcion}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setDocumentoDetalle(null)}>
                   Cerrar
+                </Button>
+                <Button
+                  onClick={handleGuardarDescripcion}
+                  disabled={
+                    bolGuardandoDescripcion || strDescripcionEditada === (documentoDetalle.descripcion ?? "")
+                  }
+                >
+                  {bolGuardandoDescripcion ? "Guardando..." : "Guardar descripción"}
                 </Button>
               </div>
             </div>
@@ -982,7 +1060,7 @@ export default function DocumentosPage() {
                     <div key={registro.id} className="rounded-lg border border-border px-3 py-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <Badge variant="secondary" className="font-caption text-[11px]">
-                          {ETIQUETA_ACCION_AUDITORIA[registro.accion]}
+                          {etiquetaAccion(registro.accion)}
                         </Badge>
                         <p className="font-caption text-[11px] text-muted-foreground">
                           {formatearFecha(registro.createdAt)}
