@@ -26,7 +26,7 @@ model Usuario {
   passwordHash    String
   rol             RolNombre
   activo          Boolean   @default(true)
-  ultimoLogin     DateTime?
+  ultimoLogin     DateTime? @db.Timestamptz(3)
 
   copropietario   Copropietario? @relation(fields: [copropietarioId], references: [id])
   copropietarioId String?
@@ -34,12 +34,13 @@ model Usuario {
   auditorias      HistorialAuditoria[]
 
   pagosRegistrados       Pago[]
+  saldosRegistrados      MovimientoSaldo[]
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
   @@map("usuarios")
 }
@@ -61,8 +62,8 @@ model Copropietario {
   usuarios    Usuario[]
   ocupaciones OcupanteInmueble[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("copropietarios")
 }
@@ -74,8 +75,8 @@ model TipoInmueble {
 
   inmuebles   Inmueble[]
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
 
   @@map("tipos_inmueble")
 }
@@ -93,9 +94,10 @@ model Inmueble {
 
   ocupaciones    OcupanteInmueble[]
   expensas       Expensa[]
+  movimientosSaldo MovimientoSaldo[]
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
 
   @@map("inmuebles")
   @@index([tipoInmuebleId])
@@ -106,13 +108,20 @@ enum TipoValorMora {
   MONTO_FIJO
 }
 
+// UNICA: la mora se cobra una sola vez al vencer. MENSUAL: se repite por cada mes de atraso.
+enum ModoMora {
+  UNICA
+  MENSUAL
+}
+
 model ConfiguracionMora {
   id            String        @id @default(uuid())
   diaGeneracion Int           @default(1)
   diasGracia    Int           @default(0)
   tipoValor     TipoValorMora @default(PORCENTAJE)
   valor         Decimal       @db.Decimal(10, 2)
-  vigenteDesde  DateTime      @default(now())
+  modoMora      ModoMora      @default(UNICA)
+  vigenteDesde  DateTime      @default(now()) @db.Timestamptz(3)
 
   @@map("configuracion_mora")
 }
@@ -128,8 +137,8 @@ model OcupanteInmueble {
   copropietarioId String
 
   esPropietario   Boolean  @default(true) // false = inquilino
-  fechaInicio     DateTime @default(now())
-  fechaFin        DateTime?
+  fechaInicio     DateTime @default(now()) @db.Timestamptz(3)
+  fechaFin        DateTime? @db.Timestamptz(3)
 
   @@map("ocupante_inmueble")
   @@index([inmuebleId])
@@ -155,6 +164,7 @@ model Documento {
   id             String             @id @default(uuid())
   nombre         String
   categoria      CategoriaDocumento
+  descripcion    String?
   mimeType       String
   tamanioBytes   Int
   storagePath    String             @unique
@@ -165,7 +175,7 @@ model Documento {
   subidoPor      Usuario?           @relation(fields: [subidoPorId], references: [id])
   subidoPorId    String?
 
-  createdAt      DateTime           @default(now())
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
 
   @@map("documentos")
   @@index([categoria])
@@ -189,7 +199,7 @@ model HistorialAuditoria {
   detalle   Json?    // payload/diff relevante de la operacion
   ip        String?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@map("historial_auditoria")
   @@index([entidad, entidadId])
@@ -215,6 +225,14 @@ enum MetodoPago {
   TRANSFERENCIA
   TARJETA
   CHEQUE
+  SALDO_A_FAVOR // pago cubierto con saldo a favor previo: no es dinero nuevo en caja
+}
+
+// Origen de un movimiento del saldo a favor de un inmueble
+enum TipoMovimientoSaldo {
+  PAGO_ANTICIPADO   // abono (+): el copropietario pago por adelantado
+  EXCESO_PAGO       // abono (+): pago por encima de lo adeudado en una expensa
+  APLICACION_EXPENSA // uso (-): el saldo cubrio total o parcialmente una expensa
 }
 
 enum TipoMovimiento {
@@ -236,9 +254,10 @@ model Expensa {
   fechaVencimiento DateTime
 
   pagos            Pago[]
+  movimientosSaldo MovimientoSaldo[]
 
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
 
   @@map("expensas")
   @@unique([inmuebleId, periodo])
@@ -256,7 +275,7 @@ model Pago {
   monto           Decimal    @db.Decimal(10, 2)
   metodoPago      MetodoPago
   referencia      String?
-  fechaPago       DateTime   @default(now())
+  fechaPago       DateTime   @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
@@ -264,6 +283,33 @@ model Pago {
   @@map("pagos")
   @@index([expensaId])
   @@index([fechaPago])
+}
+
+// Libro de movimientos del saldo a favor por inmueble. El saldo actual es la suma de
+// `monto` (abonos positivos, usos negativos); nunca se edita, solo se agregan filas.
+model MovimientoSaldo {
+  id              String              @id @default(uuid())
+
+  inmueble        Inmueble            @relation(fields: [inmuebleId], references: [id])
+  inmuebleId      String
+
+  tipo            TipoMovimientoSaldo
+  monto           Decimal             @db.Decimal(10, 2) // + abono, - uso
+
+  expensa         Expensa?            @relation(fields: [expensaId], references: [id])
+  expensaId       String?
+
+  metodoPago      MetodoPago?         // solo en abonos (PAGO_ANTICIPADO / EXCESO_PAGO)
+  referencia      String?
+
+  registradoPor   Usuario?            @relation(fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@map("movimientos_saldo")
+  @@index([inmuebleId, createdAt])
+  @@index([expensaId])
 }
 
 // Ingresos extraordinarios y egresos generales (no ligados a una expensa puntual)
@@ -274,7 +320,7 @@ model MovimientoFinanciero {
   categoria       String
   monto           Decimal        @db.Decimal(10, 2)
   descripcion     String?
-  fecha           DateTime       @default(now())
+  fecha           DateTime       @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario?       @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
@@ -294,8 +340,8 @@ model CuentaBancaria {
 
   movimientos  MovimientoCaja[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("cuentas_bancarias")
 }
@@ -311,7 +357,7 @@ model MovimientoCaja {
   monto      Decimal        @db.Decimal(12, 2)
   concepto   String
   conciliado Boolean        @default(false)
-  fecha      DateTime       @default(now())
+  fecha      DateTime       @default(now()) @db.Timestamptz(3)
 
   @@map("movimientos_caja")
   @@index([cuentaId])
@@ -325,13 +371,13 @@ model Personal {
   apellido     String
   cargo        String
   salarioBase  Decimal  @db.Decimal(10, 2)
-  fechaIngreso DateTime @default(now())
+  fechaIngreso DateTime @default(now()) @db.Timestamptz(3)
   activo       Boolean  @default(true)
 
   pagos        PagoPersonal[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("personal")
 }
@@ -347,7 +393,7 @@ model PagoPersonal {
   bonificaciones Decimal  @default(0) @db.Decimal(10, 2)
   descuentos     Decimal  @default(0) @db.Decimal(10, 2)
   montoNeto      Decimal  @db.Decimal(10, 2)
-  fechaPago      DateTime @default(now())
+  fechaPago      DateTime @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario? @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?

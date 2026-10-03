@@ -1,3 +1,4 @@
+const { Prisma } = require('@prisma/client')
 const { obtenerTransporter } = require('../../../config/mailer')
 const prisma = require('../../../config/prisma')
 
@@ -63,10 +64,14 @@ async function notificarMoraAplicada(expensa) {
   const destinatarios = await obtenerDestinatariosInmueble(expensa.inmuebleId)
   const codigo = expensa.inmueble?.codigo || expensa.inmuebleId
 
+  // Saldo real: lo adeudado (expensa + mora) menos lo que ya se pago.
+  const pagado = (expensa.pagos || []).reduce((acc, p) => acc.plus(p.monto), new Prisma.Decimal(0))
+  const saldoPendiente = new Prisma.Decimal(expensa.montoTotal).plus(expensa.montoMora).minus(pagado)
+
   const html = `
     <p>La expensa del periodo <strong>${expensa.periodo}</strong> del inmueble <strong>${codigo}</strong> esta vencida y se le aplico un recargo por mora.</p>
-    <p>Monto de mora: <strong>${Number(expensa.montoMora).toFixed(2)}</strong></p>
-    <p>Monto total adeudado: <strong>${(Number(expensa.montoTotal) + Number(expensa.montoMora)).toFixed(2)}</strong></p>
+    <p>Monto de mora: <strong>${new Prisma.Decimal(expensa.montoMora).toFixed(2)}</strong></p>
+    <p>Saldo pendiente: <strong>${saldoPendiente.toFixed(2)}</strong></p>
   `
 
   await Promise.all(

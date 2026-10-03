@@ -8,7 +8,13 @@ async function generar(req, res, next) {
         error: 'inmuebleId, periodo y fechaVencimiento son requeridos'
       })
     }
-    const expensa = await service.generar({ inmuebleId, periodo, fechaVencimiento })
+    const expensa = await service.generar({
+      inmuebleId,
+      periodo,
+      fechaVencimiento,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
     res.status(201).json(expensa)
   } catch (err) {
     next(err)
@@ -17,7 +23,8 @@ async function generar(req, res, next) {
 
 async function listar(req, res, next) {
   try {
-    const expensas = await service.listar()
+    const { periodo, estado, inmuebleId, pagina, porPagina } = req.query
+    const expensas = await service.listar({ periodo, estado, inmuebleId, pagina, porPagina })
     res.json(expensas)
   } catch (err) {
     next(err)
@@ -27,7 +34,7 @@ async function listar(req, res, next) {
 async function aplicarMora(req, res, next) {
   try {
     const { id } = req.params
-    const resultado = await service.aplicarMora(id)
+    const resultado = await service.aplicarMora(id, { usuarioId: req.usuario.id, ip: req.ip })
     res.json(resultado)
   } catch (err) {
     next(err)
@@ -38,7 +45,7 @@ async function registrarPago(req, res, next) {
   try {
     const { id } = req.params
     const { monto, metodoPago, referencia } = req.body
-    if (!monto || !metodoPago) {
+    if (monto === undefined || !metodoPago) {
       return res.status(400).json({
         error: 'monto y metodoPago son requeridos'
       })
@@ -48,7 +55,8 @@ async function registrarPago(req, res, next) {
       monto,
       metodoPago,
       referencia,
-      usuarioId: req.usuario.id
+      usuarioId: req.usuario.id,
+      ip: req.ip
     })
     res.status(201).json(resultado)
   } catch (err) {
@@ -56,4 +64,16 @@ async function registrarPago(req, res, next) {
   }
 }
 
-module.exports = { generar, listar, aplicarMora, registrarPago }
+async function aplicarSaldoFavor(req, res, next) {
+  try {
+    const resultado = await service.aplicarSaldoFavor(req.params.id, {
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(resultado)
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { generar, listar, aplicarMora, registrarPago, aplicarSaldoFavor }

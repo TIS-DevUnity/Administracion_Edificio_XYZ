@@ -15,19 +15,41 @@ async function registrarAuditoria({ usuarioId, accion, entidad, entidadId, detal
 }
 
 const LIMITE_POR_PAGINA = 50;
+const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
-async function listar({ usuarioId, entidad, accion, desde, hasta, pagina = 1 }) {
+/**
+ * Una fecha sola (YYYY-MM-DD) se interpreta como dia completo en hora de Bolivia
+ * (UTC-4 todo el anio): `desde` es el inicio del dia y `hasta` el final, para que el
+ * ultimo dia del rango no quede fuera. Un valor con hora se respeta tal cual.
+ */
+function parsearFecha(valor, campo, finDeDia) {
+  if (valor === undefined || valor === "") return undefined;
+
+  const fecha = SOLO_FECHA.test(valor)
+    ? new Date(`${valor}T${finDeDia ? "23:59:59.999" : "00:00:00.000"}-04:00`)
+    : new Date(valor);
+
+  if (Number.isNaN(fecha.getTime())) {
+    throw Object.assign(new Error(`${campo} no es una fecha valida (use YYYY-MM-DD)`), { status: 400 });
+  }
+  return fecha;
+}
+
+async function listar({ usuarioId, entidad, entidadId, accion, desde, hasta, pagina = 1 }) {
   const numeroPagina = Math.max(1, Number(pagina) || 1);
+  const fechaDesde = parsearFecha(desde, "desde", false);
+  const fechaHasta = parsearFecha(hasta, "hasta", true);
 
   const where = {
     ...(usuarioId ? { usuarioId } : {}),
     ...(entidad ? { entidad } : {}),
+    ...(entidadId ? { entidadId } : {}),
     ...(accion ? { accion } : {}),
-    ...(desde || hasta
+    ...(fechaDesde || fechaHasta
       ? {
           createdAt: {
-            ...(desde ? { gte: new Date(desde) } : {}),
-            ...(hasta ? { lte: new Date(hasta) } : {}),
+            ...(fechaDesde ? { gte: fechaDesde } : {}),
+            ...(fechaHasta ? { lte: fechaHasta } : {}),
           },
         }
       : {}),
@@ -55,4 +77,15 @@ async function listar({ usuarioId, entidad, accion, desde, hasta, pagina = 1 }) 
   };
 }
 
-module.exports = { registrarAuditoria, listar };
+async function obtenerPorId(id) {
+  const registro = await prisma.historialAuditoria.findUnique({
+    where: { id },
+    include: { usuario: { select: { id: true, nombre: true, apellido: true, email: true } } },
+  });
+  if (!registro) {
+    throw Object.assign(new Error("Registro de auditoria no encontrado"), { status: 404 });
+  }
+  return registro;
+}
+
+module.exports = { registrarAuditoria, listar, obtenerPorId };
