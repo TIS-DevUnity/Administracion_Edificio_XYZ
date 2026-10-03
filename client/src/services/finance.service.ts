@@ -1,5 +1,11 @@
 import { api } from "@/lib/api";
-import { ConfiguracionMoraDTO, ExpensaDTO, MetodoPago, PagoDTO } from "@/types/finance";
+import {
+  AplicarSaldoFavorResponse,
+  ConfiguracionMoraDTO,
+  ExpensaDTO,
+  MetodoPago,
+  RegistrarPagoResponse,
+} from "@/types/finance";
 
 export const financeService = {
   async getConfiguracionVigente(): Promise<ConfiguracionMoraDTO> {
@@ -31,11 +37,27 @@ export const financeService = {
   async registrarPago(
     expensaId: string,
     data: { monto: number; metodoPago: MetodoPago; referencia?: string }
-  ): Promise<{ pago: PagoDTO; expensa: ExpensaDTO }> {
-    const response = await api.post<{ pago: PagoDTO; expensa: ExpensaDTO }>(
-      `/financiero/expensas/${expensaId}/pagos`,
-      data
+  ): Promise<RegistrarPagoResponse> {
+    const response = await api.post<RegistrarPagoResponse>(`/financiero/expensas/${expensaId}/pagos`, data);
+    return response.data;
+  },
+
+  async aplicarSaldoFavor(expensaId: string): Promise<AplicarSaldoFavorResponse> {
+    const response = await api.post<AplicarSaldoFavorResponse>(
+      `/financiero/expensas/${expensaId}/aplicar-saldo`
     );
     return response.data;
-  }
+  },
+
+  async ejecutarGeneracionJob(forzar = true): Promise<{ generadas: number; omitidas: number }> {
+    const response = await api.post<{ generadas: number; omitidas: number }>(
+      `/financiero/jobs/ejecutar-generacion?forzar=${forzar}`
+    );
+    return response.data;
+  },
+
+  async ejecutarMoraJob(): Promise<{ aplicadas: number }> {
+    const response = await api.post<{ aplicadas: number }>("/financiero/jobs/ejecutar-mora");
+    return response.data;
+  },
 };

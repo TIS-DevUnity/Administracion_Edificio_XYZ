@@ -8,18 +8,37 @@ export type TipoValorMora =
   | "PORCENTAJE"
   | "MONTO_FIJO";
 
+// Metodos que puede elegir el Administrador al registrar un pago manual.
 export type MetodoPago =
   | "EFECTIVO"
   | "TRANSFERENCIA"
   | "TARJETA"
   | "CHEQUE";
 
+// SALDO_A_FAVOR lo asigna el sistema solo (al cubrir una expensa con saldo previo);
+// aparece en el historial pero nunca es seleccionable en un formulario.
+export type MetodoPagoRegistro = MetodoPago | "SALDO_A_FAVOR";
+
 export interface PagoDTO {
   id: string;
+  expensaId?: string;
   monto: number;
-  metodoPago: MetodoPago;
+  metodoPago: MetodoPagoRegistro;
   referencia?: string | null;
   fechaPago: string;
+}
+
+export interface RegistrarPagoResponse {
+  pago: PagoDTO | null;
+  expensa: ExpensaDTO;
+  montoRecibido: string;
+  montoAplicado: string;
+  saldoFavorGenerado: string;
+}
+
+export interface AplicarSaldoFavorResponse {
+  expensa: ExpensaDTO;
+  saldoFavorAplicado: string;
 }
 
 export interface ConfiguracionMoraDTO {

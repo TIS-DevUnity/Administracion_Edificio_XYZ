@@ -106,12 +106,6 @@ function periodoActual(): string {
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function ultimoDiaDelMesISO(): string {
-  const fecha = new Date();
-  const ultimoDia = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
-  return ultimoDia.toISOString().slice(0, 10);
-}
-
 function tieneMoraAplicada(exp: ExpensaDTO): boolean {
   return exp.estado === "VENCIDA" && Number(exp.montoMora || 0) > 0;
 }
@@ -309,22 +303,13 @@ export default function GeneracionExpensasAdminPage() {
     setBolRevisandoMora(true);
 
     try {
-      const candidatas = expensas.filter((exp) => exp.estado === "PENDIENTE" || exp.estado === "PARCIAL");
-
-      const resultados = await Promise.all(
-        candidatas.map((exp) =>
-          financeService.aplicarMoraManual(exp.id).catch((error) => {
-            console.error(`No se pudo revisar la expensa ${exp.id}:`, error);
-            return null;
-          })
-        )
-      );
-
-      const intAplicadas = resultados.filter((resultado) => resultado?.estado === "VENCIDA").length;
+      // Se usa el endpoint del job (no el aplicar-mora por expensa) porque es el
+      // único camino que también notifica por correo a los ocupantes afectados.
+      const resultado = await financeService.ejecutarMoraJob();
 
       setStrExito(
-        intAplicadas > 0
-          ? `Revisión completa: se aplicó mora a ${intAplicadas} expensa${intAplicadas === 1 ? "" : "s"}.`
+        resultado.aplicadas > 0
+          ? `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.`
           : "Revisión completa: ninguna expensa superó el período de gracia todavía."
       );
       await cargarDatos();
@@ -347,31 +332,17 @@ export default function GeneracionExpensasAdminPage() {
     setBolGenerandoMes(true);
 
     try {
-      const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
+      // Se usa el endpoint del job (forzar=true) en vez de crear expensas una por una
+      // porque es el único camino que también notifica por correo a los ocupantes.
+      const resultado = await financeService.ejecutarGeneracionJob(true);
       const strPeriodo = periodoActual();
-      const strFechaVencimiento = ultimoDiaDelMesISO();
-
-      let intGeneradas = 0;
-      let intOmitidas = 0;
-
-      for (const inmueble of inmueblesActivos) {
-        try {
-          await financeService.generarExpensaManual({
-            inmuebleId: inmueble.id,
-            periodo: strPeriodo,
-            fechaVencimiento: strFechaVencimiento,
-          });
-          intGeneradas += 1;
-        } catch (error) {
-          intOmitidas += 1;
-          console.warn(`Inmueble ${inmueble.codigo}: no se generó la expensa de ${strPeriodo}.`, error);
-        }
-      }
 
       setStrExito(
-        `Generación del período ${strPeriodo}: ${intGeneradas} expensa${intGeneradas === 1 ? "" : "s"} nueva${
-          intGeneradas === 1 ? "" : "s"
-        }, ${intOmitidas} ya existía${intOmitidas === 1 ? "" : "n"} o no se pudo${intOmitidas === 1 ? "" : "ieron"} generar.`
+        `Generación del período ${strPeriodo}: ${resultado.generadas} expensa${
+          resultado.generadas === 1 ? "" : "s"
+        } nueva${resultado.generadas === 1 ? "" : "s"}, ${resultado.omitidas} ya existía${
+          resultado.omitidas === 1 ? "" : "n"
+        } o no se pudo${resultado.omitidas === 1 ? "" : "ieron"} generar.`
       );
       await cargarDatos();
     } catch (error) {
@@ -967,7 +938,11 @@ export default function GeneracionExpensasAdminPage() {
                         className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
                       >
                         <div>
-                          <p className="text-[13px] text-foreground">{ETIQUETA_METODO_PAGO[pago.metodoPago]}</p>
+                          <p className="text-[13px] text-foreground">
+                            {pago.metodoPago === "SALDO_A_FAVOR"
+                              ? "Saldo a favor"
+                              : ETIQUETA_METODO_PAGO[pago.metodoPago]}
+                          </p>
                           <p className="font-caption text-[11px] text-muted-foreground">
                             {formatearFecha(pago.fechaPago)}
                             {pago.referencia ? ` · ${pago.referencia}` : ""}
