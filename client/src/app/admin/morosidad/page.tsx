@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarClock,
   CalendarPlus,
+  CircleDollarSign,
   Info,
   RefreshCw,
   Search,
@@ -141,6 +142,7 @@ export default function GeneracionExpensasAdminPage() {
   // Revisión manual de mora / generación manual del mes
   const [bolRevisandoMora, setBolRevisandoMora] = useState(false);
   const [bolGenerandoMes, setBolGenerandoMes] = useState(false);
+  const [bolForzandoMora, setBolForzandoMora] = useState(false);
   const [strErrorAccion, setStrErrorAccion] = useState("");
 
   // Configuración de mora
@@ -320,6 +322,63 @@ export default function GeneracionExpensasAdminPage() {
     }
   }
 
+  async function handleForzarMora() {
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setStrErrorAccion("");
+    setStrExito("");
+    setBolForzandoMora(true);
+
+    try {
+      // Fuerza el recálculo de mora expensa por expensa (endpoint aplicar-mora),
+      // sin esperar al job. Se omiten solo las ya pagadas.
+      const candidatas = expensas.filter((exp) => exp.estado !== "PAGADA");
+
+      if (candidatas.length === 0) {
+        setStrExito("No hay expensas pendientes para actualizar la mora.");
+        return;
+      }
+
+      const resultados = await Promise.allSettled(
+        candidatas.map((exp) => financeService.aplicarMoraManual(exp.id))
+      );
+
+      const fallidas = resultados.filter((r) => r.status === "rejected");
+      fallidas.forEach((r) => console.error("No se pudo actualizar la mora:", (r as PromiseRejectedResult).reason));
+
+      // Cuenta como actualizada si el backend lo indica (moraActualizada) o si el monto de mora cambió
+      const intActualizadas = resultados.filter((r, i) => {
+        if (r.status !== "fulfilled" || !r.value) return false;
+        const flag = (r.value as { moraActualizada?: boolean }).moraActualizada;
+        if (typeof flag === "boolean") return flag;
+        return Number(r.value.montoMora || 0) !== Number(candidatas[i].montoMora || 0);
+      }).length;
+      const intOk = resultados.length - fallidas.length;
+
+      await cargarDatos();
+
+      if (fallidas.length > 0) {
+        setStrErrorAccion(
+          `Se procesaron ${intOk} de ${resultados.length} expensas; ${fallidas.length} fallaron. Revisa la consola o el backend.`
+        );
+      } else {
+        setStrExito(
+          intActualizadas > 0
+            ? `Mora forzada: se actualizó en ${intActualizadas} expensa${intActualizadas === 1 ? "" : "s"} (${intOk} revisadas).`
+            : `Revisión completa (${intOk} expensas): ninguna requirió cambios en la mora.`
+        );
+      }
+    } catch (error) {
+      setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al forzar la mora."));
+    } finally {
+      setBolForzandoMora(false);
+    }
+  }
+
   async function handleGenerarMes() {
     const objValidacion = validarAccion(rol, "morosidad", "editar");
     if (!objValidacion.permitido) {
@@ -390,6 +449,16 @@ export default function GeneracionExpensasAdminPage() {
             >
               <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
               {bolRevisandoMora ? "Revisando..." : "Revisar deudas ahora"}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full md:w-auto"
+              onClick={handleForzarMora}
+              disabled={bolForzandoMora}
+            >
+              <CircleDollarSign className={`mr-2 h-4 w-4 ${bolForzandoMora ? "animate-pulse" : ""}`} />
+              {bolForzandoMora ? "Forzando..." : "Forzar mora"}
             </Button>
 
           <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
