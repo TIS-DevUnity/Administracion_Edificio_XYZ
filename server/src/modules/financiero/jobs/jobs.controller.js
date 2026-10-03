@@ -12,7 +12,11 @@ const {
 async function ejecutarGeneracion(req, res, next) {
   try {
     const forzar = req.query.forzar === 'true'
-    const resultado = await ejecutarGeneracionAutomatica(new Date(), { forzar })
+    const resultado = await ejecutarGeneracionAutomatica(new Date(), {
+      forzar,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
     res.json(resultado)
   } catch (err) {
     next(err)
@@ -25,7 +29,10 @@ async function ejecutarGeneracion(req, res, next) {
  */
 async function ejecutarMora(req, res, next) {
   try {
-    const resultado = await ejecutarAplicacionMoraAutomatica()
+    const resultado = await ejecutarAplicacionMoraAutomatica({
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
     res.json(resultado)
   } catch (err) {
     next(err)

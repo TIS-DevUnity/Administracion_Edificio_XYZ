@@ -13,10 +13,13 @@ const CATEGORIAS_VALIDAS = [
   "OTRO",
 ];
 
+const MAX_DESCRIPCION = 1000;
+
 const CAMPOS_PUBLICOS = {
   id: true,
   nombre: true,
   categoria: true,
+  descripcion: true,
   mimeType: true,
   tamanioBytes: true,
   entidad: true,
@@ -213,6 +216,44 @@ async function actualizar(id, { nombre, categoria, archivo, actorId, ip }) {
   return documentoActualizado;
 }
 
+async function describir(id, { descripcion, actorId, ip }) {
+  if (descripcion !== null && typeof descripcion !== "string") {
+    throw Object.assign(new Error("descripcion debe ser un texto (o null para borrarla)"), {
+      status: 400,
+    });
+  }
+
+  const documento = await prisma.documento.findUnique({ where: { id } });
+  if (!documento) {
+    throw Object.assign(new Error("Documento no encontrado"), { status: 404 });
+  }
+
+  const descripcionLimpia = descripcion === null ? null : descripcion.trim() || null;
+  if (descripcionLimpia && descripcionLimpia.length > MAX_DESCRIPCION) {
+    throw Object.assign(
+      new Error(`descripcion no puede superar ${MAX_DESCRIPCION} caracteres`),
+      { status: 400 }
+    );
+  }
+
+  const documentoActualizado = await prisma.documento.update({
+    where: { id },
+    data: { descripcion: descripcionLimpia },
+    select: CAMPOS_PUBLICOS,
+  });
+
+  await registrarAuditoria({
+    usuarioId: actorId,
+    accion: "UPDATE",
+    entidad: "Documento",
+    entidadId: id,
+    detalle: { descripcion: { antes: documento.descripcion, despues: descripcionLimpia } },
+    ip,
+  });
+
+  return documentoActualizado;
+}
+
 async function eliminar(id, { actorId, ip }) {
   const documento = await prisma.documento.findUnique({ where: { id } });
   if (!documento) {
@@ -232,4 +273,13 @@ async function eliminar(id, { actorId, ip }) {
   });
 }
 
-module.exports = { listar, obtenerPorId, obtenerUrlDescarga, crear, actualizar, eliminar, CATEGORIAS_VALIDAS };
+module.exports = {
+  listar,
+  obtenerPorId,
+  obtenerUrlDescarga,
+  crear,
+  actualizar,
+  describir,
+  eliminar,
+  CATEGORIAS_VALIDAS,
+};

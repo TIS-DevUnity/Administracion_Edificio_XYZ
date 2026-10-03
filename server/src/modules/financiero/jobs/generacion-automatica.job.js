@@ -19,8 +19,14 @@ function ultimoDiaDelMes(fecha = new Date()) {
  * la expensa del periodo actual para cada inmueble activo que todavia no la
  * tenga, y notifica por correo a sus ocupantes. Un inmueble que ya tiene
  * expensa (o falla por cualquier otro motivo) no debe frenar a los demas.
+ *
+ * `usuarioId` / `ip` solo vienen cuando lo dispara un administrador a mano; el cron
+ * real los deja en null y la auditoria lo registra como origen AUTOMATICO.
  */
-async function ejecutarGeneracionAutomatica(fecha = new Date(), { forzar = false } = {}) {
+async function ejecutarGeneracionAutomatica(
+  fecha = new Date(),
+  { forzar = false, usuarioId = null, ip = null } = {}
+) {
   const config = await configuracionMoraService.obtenerVigente().catch(() => null)
   if (!config) {
     console.warn('[cron:expensas] No hay configuracion de mora vigente, se omite la generacion')
@@ -44,7 +50,10 @@ async function ejecutarGeneracionAutomatica(fecha = new Date(), { forzar = false
       const expensa = await expensasService.generar({
         inmuebleId: inmueble.id,
         periodo,
-        fechaVencimiento
+        fechaVencimiento,
+        usuarioId,
+        ip,
+        origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO'
       })
       generadas += 1
       await notificacionesService.notificarExpensaGenerada(expensa)
@@ -63,20 +72,33 @@ async function ejecutarGeneracionAutomatica(fecha = new Date(), { forzar = false
 }
 
 /**
- * Revisa todas las expensas pendientes/parciales y aplica mora a las que ya
- * pasaron su fecha de vencimiento + dias de gracia, notificando por correo.
+ * Revisa las expensas con deuda y deja la mora al dia. Con mora UNICA solo se revisan
+ * las que aun no tienen mora (PENDIENTE/PARCIAL); con mora MENSUAL tambien las VENCIDA,
+ * porque su recargo crece cada mes. El correo se envia unicamente cuando el monto de
+ * mora cambia, asi un pago parcial ya no provoca avisos repetidos.
  */
-async function ejecutarAplicacionMoraAutomatica() {
+async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } = {}) {
+  const config = await configuracionMoraService.obtenerVigente().catch(() => null)
+  if (!config) {
+    console.warn('[cron:mora] No hay configuracion de mora vigente, se omite la aplicacion')
+    return { aplicadas: 0 }
+  }
+
+  const estados = config.modoMora === 'MENSUAL' ? ['PENDIENTE', 'PARCIAL', 'VENCIDA'] : ['PENDIENTE', 'PARCIAL']
   const expensasVencibles = await prisma.expensa.findMany({
-    where: { estado: { in: ['PENDIENTE', 'PARCIAL'] } }
+    where: { estado: { in: estados } }
   })
 
   let aplicadas = 0
 
   for (const expensa of expensasVencibles) {
     try {
-      const resultado = await expensasService.aplicarMora(expensa.id)
-      if (resultado.estado === 'VENCIDA') {
+      const resultado = await expensasService.aplicarMora(expensa.id, {
+        usuarioId,
+        ip,
+        origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO'
+      })
+      if (resultado.moraActualizada) {
         aplicadas += 1
         await notificacionesService.notificarMoraAplicada(resultado)
       }
@@ -85,7 +107,7 @@ async function ejecutarAplicacionMoraAutomatica() {
     }
   }
 
-  console.log(`[cron:mora] Aplicacion automatica de mora: ${aplicadas} expensas marcadas VENCIDA`)
+  console.log(`[cron:mora] Aplicacion automatica de mora: ${aplicadas} expensas con mora nueva o actualizada`)
   return { aplicadas }
 }
 

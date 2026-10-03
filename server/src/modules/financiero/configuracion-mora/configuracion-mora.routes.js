@@ -32,7 +32,12 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *               diaGeneracion: { type: integer, example: 1, description: "Dia del mes (1-28) en que se generan las expensas" }
  *               diasGracia: { type: integer, example: 5 }
  *               tipoValor: { type: string, enum: [PORCENTAJE, MONTO_FIJO], example: PORCENTAJE }
- *               valor: { type: number, example: 2 }
+ *               valor: { type: number, example: 2, description: "No puede ser negativo; si el tipo es PORCENTAJE, maximo 100" }
+ *               modoMora:
+ *                 type: string
+ *                 enum: [UNICA, MENSUAL]
+ *                 default: UNICA
+ *                 description: "UNICA cobra la mora una sola vez; MENSUAL la repite por cada mes de atraso (1-30 dias = 1 mes, 31-60 = 2, ...)"
  *     responses:
  *       201: { description: Configuracion creada }
  *       400: { description: Datos invalidos }
