@@ -35,6 +35,7 @@ model Usuario {
 
   pagosRegistrados       Pago[]
   saldosRegistrados      MovimientoSaldo[]
+  recibosRegistrados     Recibo[]
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
@@ -95,6 +96,7 @@ model Inmueble {
   ocupaciones    OcupanteInmueble[]
   expensas       Expensa[]
   movimientosSaldo MovimientoSaldo[]
+  recibos        Recibo[]
 
   createdAt      DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
@@ -277,12 +279,50 @@ model Pago {
   referencia      String?
   fechaPago       DateTime   @default(now()) @db.Timestamptz(3)
 
+  // Recibo (folio) de la operacion de cobro a la que pertenece. Null en pagos anteriores
+  // a los recibos y en los cubiertos con saldo a favor (no entra dinero nuevo).
+  recibo          Recibo?    @relation(fields: [reciboId], references: [id])
+  reciboId        String?
+
   registradoPor   Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
 
   @@map("pagos")
   @@index([expensaId])
   @@index([fechaPago])
+  @@index([reciboId])
+}
+
+// Una operacion de cobro: lo que el administrador recibe en un momento. Puede repartirse
+// en varios `Pago` (uno por expensa cubierta, de la mas antigua a la mas nueva) y dejar un
+// sobrante como `MovimientoSaldo`. El folio es unico y es lo que se imprime en el recibo.
+model Recibo {
+  id                String     @id @default(uuid())
+  folioNumero       Int        @unique @default(autoincrement())
+
+  inmueble          Inmueble   @relation(fields: [inmuebleId], references: [id])
+  inmuebleId        String
+
+  montoTotal        Decimal    @db.Decimal(10, 2) // todo lo recibido (aplicado + saldo a favor)
+  metodoPago        MetodoPago
+  referencia        String?
+  fechaPago         DateTime   @db.Timestamptz(3)
+
+  // Foto del comprobante del pagador (opcional, en el storage de Supabase)
+  comprobantePath   String?    @unique
+  comprobanteMime   String?
+  comprobanteNombre String?
+
+  pagos             Pago[]
+  movimientosSaldo  MovimientoSaldo[]
+
+  registradoPor     Usuario?   @relation(fields: [registradoPorId], references: [id])
+  registradoPorId   String?
+
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@map("recibos")
+  @@index([inmuebleId, fechaPago])
 }
 
 // Libro de movimientos del saldo a favor por inmueble. El saldo actual es la suma de
@@ -299,6 +339,9 @@ model MovimientoSaldo {
   expensa         Expensa?            @relation(fields: [expensaId], references: [id])
   expensaId       String?
 
+  recibo          Recibo?             @relation(fields: [reciboId], references: [id])
+  reciboId        String?
+
   metodoPago      MetodoPago?         // solo en abonos (PAGO_ANTICIPADO / EXCESO_PAGO)
   referencia      String?
 
@@ -310,6 +353,7 @@ model MovimientoSaldo {
   @@map("movimientos_saldo")
   @@index([inmuebleId, createdAt])
   @@index([expensaId])
+  @@index([reciboId])
 }
 
 // Ingresos extraordinarios y egresos generales (no ligados a una expensa puntual)
