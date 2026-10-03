@@ -1,4 +1,7 @@
 const prisma = require('../../../config/prisma')
+const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
+
+const MODOS_MORA = ['UNICA', 'MENSUAL']
 
 async function obtenerVigente() {
   const config = await prisma.configuracionMora.findFirst({
@@ -18,26 +21,57 @@ async function listarHistorial() {
   })
 }
 
-async function crear({ diaGeneracion, diasGracia, tipoValor, valor }) {
-  if (diaGeneracion < 1 || diaGeneracion > 28) {
-    throw Object.assign(new Error('diaGeneracion debe estar entre 1 y 28'), { status: 400 })
+function errorValidacion(mensaje) {
+  return Object.assign(new Error(mensaje), { status: 400 })
+}
+
+async function crear({
+  diaGeneracion,
+  diasGracia,
+  tipoValor,
+  valor,
+  modoMora = 'UNICA',
+  usuarioId = null,
+  ip = null
+}) {
+  if (!Number.isInteger(diaGeneracion) || diaGeneracion < 1 || diaGeneracion > 28) {
+    throw errorValidacion('diaGeneracion debe ser un entero entre 1 y 28')
   }
 
-  if (diasGracia < 0) {
-    throw Object.assign(new Error('diasGracia no puede ser negativo'), { status: 400 })
+  if (!Number.isInteger(diasGracia) || diasGracia < 0) {
+    throw errorValidacion('diasGracia debe ser un entero mayor o igual a 0')
   }
 
   if (!['PORCENTAJE', 'MONTO_FIJO'].includes(tipoValor)) {
-    throw Object.assign(new Error('tipoValor debe ser PORCENTAJE o MONTO_FIJO'), { status: 400 })
+    throw errorValidacion('tipoValor debe ser PORCENTAJE o MONTO_FIJO')
   }
 
-  if (valor < 0) {
-    throw Object.assign(new Error('valor no puede ser negativo'), { status: 400 })
+  if (typeof valor !== 'number' || !Number.isFinite(valor) || valor < 0) {
+    throw errorValidacion('valor debe ser un numero mayor o igual a 0')
   }
 
-  return prisma.configuracionMora.create({
-    data: { diaGeneracion, diasGracia, tipoValor, valor }
+  if (tipoValor === 'PORCENTAJE' && valor > 100) {
+    throw errorValidacion('valor no puede superar 100 cuando el tipo es PORCENTAJE')
+  }
+
+  if (!MODOS_MORA.includes(modoMora)) {
+    throw errorValidacion(`modoMora debe ser uno de: ${MODOS_MORA.join(', ')}`)
+  }
+
+  const config = await prisma.configuracionMora.create({
+    data: { diaGeneracion, diasGracia, tipoValor, valor, modoMora }
   })
+
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'CREATE',
+    entidad: 'ConfiguracionMora',
+    entidadId: config.id,
+    detalle: { diaGeneracion, diasGracia, tipoValor, valor, modoMora },
+    ip
+  })
+
+  return config
 }
 
-module.exports = { obtenerVigente, listarHistorial, crear }
+module.exports = { obtenerVigente, listarHistorial, crear, MODOS_MORA }

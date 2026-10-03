@@ -34,6 +34,7 @@ model Usuario {
   auditorias      HistorialAuditoria[]
 
   pagosRegistrados       Pago[]
+  saldosRegistrados      MovimientoSaldo[]
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
@@ -93,6 +94,7 @@ model Inmueble {
 
   ocupaciones    OcupanteInmueble[]
   expensas       Expensa[]
+  movimientosSaldo MovimientoSaldo[]
 
   createdAt      DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
@@ -106,12 +108,19 @@ enum TipoValorMora {
   MONTO_FIJO
 }
 
+// UNICA: la mora se cobra una sola vez al vencer. MENSUAL: se repite por cada mes de atraso.
+enum ModoMora {
+  UNICA
+  MENSUAL
+}
+
 model ConfiguracionMora {
   id            String        @id @default(uuid())
   diaGeneracion Int           @default(1)
   diasGracia    Int           @default(0)
   tipoValor     TipoValorMora @default(PORCENTAJE)
   valor         Decimal       @db.Decimal(10, 2)
+  modoMora      ModoMora      @default(UNICA)
   vigenteDesde  DateTime      @default(now()) @db.Timestamptz(3)
 
   @@map("configuracion_mora")
@@ -155,6 +164,7 @@ model Documento {
   id             String             @id @default(uuid())
   nombre         String
   categoria      CategoriaDocumento
+  descripcion    String?
   mimeType       String
   tamanioBytes   Int
   storagePath    String             @unique
@@ -215,6 +225,14 @@ enum MetodoPago {
   TRANSFERENCIA
   TARJETA
   CHEQUE
+  SALDO_A_FAVOR // pago cubierto con saldo a favor previo: no es dinero nuevo en caja
+}
+
+// Origen de un movimiento del saldo a favor de un inmueble
+enum TipoMovimientoSaldo {
+  PAGO_ANTICIPADO   // abono (+): el copropietario pago por adelantado
+  EXCESO_PAGO       // abono (+): pago por encima de lo adeudado en una expensa
+  APLICACION_EXPENSA // uso (-): el saldo cubrio total o parcialmente una expensa
 }
 
 enum TipoMovimiento {
@@ -236,6 +254,7 @@ model Expensa {
   fechaVencimiento DateTime
 
   pagos            Pago[]
+  movimientosSaldo MovimientoSaldo[]
 
   createdAt        DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
@@ -264,6 +283,33 @@ model Pago {
   @@map("pagos")
   @@index([expensaId])
   @@index([fechaPago])
+}
+
+// Libro de movimientos del saldo a favor por inmueble. El saldo actual es la suma de
+// `monto` (abonos positivos, usos negativos); nunca se edita, solo se agregan filas.
+model MovimientoSaldo {
+  id              String              @id @default(uuid())
+
+  inmueble        Inmueble            @relation(fields: [inmuebleId], references: [id])
+  inmuebleId      String
+
+  tipo            TipoMovimientoSaldo
+  monto           Decimal             @db.Decimal(10, 2) // + abono, - uso
+
+  expensa         Expensa?            @relation(fields: [expensaId], references: [id])
+  expensaId       String?
+
+  metodoPago      MetodoPago?         // solo en abonos (PAGO_ANTICIPADO / EXCESO_PAGO)
+  referencia      String?
+
+  registradoPor   Usuario?            @relation(fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@map("movimientos_saldo")
+  @@index([inmuebleId, createdAt])
+  @@index([expensaId])
 }
 
 // Ingresos extraordinarios y egresos generales (no ligados a una expensa puntual)

@@ -107,4 +107,38 @@ router.get("/:id", autenticar, LECTURA, controller.obtener);
 router.patch("/:id", autenticar, GESTION, upload.single("archivo"), controller.actualizar);
 router.delete("/:id", autenticar, ELIMINAR, controller.eliminar);
 
+/**
+ * @openapi
+ * /api/documentos/{id}/descripcion:
+ *   patch:
+ *     summary: Agrega, modifica o borra la descripcion de un documento (solo ADMINISTRADOR/DIRECTORIO)
+ *     tags: [Documentos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [descripcion]
+ *             properties:
+ *               descripcion:
+ *                 type: string
+ *                 nullable: true
+ *                 maxLength: 1000
+ *                 description: Texto que describe el documento. Enviar null o cadena vacia para borrarla.
+ *                 example: Acta de la asamblea ordinaria de octubre 2026
+ *     responses:
+ *       200: { description: Descripcion actualizada, devuelve el documento }
+ *       400: { description: descripcion ausente, no es texto o supera 1000 caracteres }
+ *       403: { description: Sin permisos }
+ *       404: { description: Documento no encontrado }
+ */
+router.patch("/:id/descripcion", autenticar, GESTION, controller.describir);
+
 module.exports = router;
