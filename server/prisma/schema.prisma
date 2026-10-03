@@ -26,7 +26,7 @@ model Usuario {
   passwordHash    String
   rol             RolNombre
   activo          Boolean   @default(true)
-  ultimoLogin     DateTime?
+  ultimoLogin     DateTime? @db.Timestamptz(3)
 
   copropietario   Copropietario? @relation(fields: [copropietarioId], references: [id])
   copropietarioId String?
@@ -38,8 +38,8 @@ model Usuario {
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
   @@map("usuarios")
 }
@@ -61,8 +61,8 @@ model Copropietario {
   usuarios    Usuario[]
   ocupaciones OcupanteInmueble[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("copropietarios")
 }
@@ -74,8 +74,8 @@ model TipoInmueble {
 
   inmuebles   Inmueble[]
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
 
   @@map("tipos_inmueble")
 }
@@ -94,8 +94,8 @@ model Inmueble {
   ocupaciones    OcupanteInmueble[]
   expensas       Expensa[]
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
 
   @@map("inmuebles")
   @@index([tipoInmuebleId])
@@ -112,7 +112,7 @@ model ConfiguracionMora {
   diasGracia    Int           @default(0)
   tipoValor     TipoValorMora @default(PORCENTAJE)
   valor         Decimal       @db.Decimal(10, 2)
-  vigenteDesde  DateTime      @default(now())
+  vigenteDesde  DateTime      @default(now()) @db.Timestamptz(3)
 
   @@map("configuracion_mora")
 }
@@ -128,8 +128,8 @@ model OcupanteInmueble {
   copropietarioId String
 
   esPropietario   Boolean  @default(true) // false = inquilino
-  fechaInicio     DateTime @default(now())
-  fechaFin        DateTime?
+  fechaInicio     DateTime @default(now()) @db.Timestamptz(3)
+  fechaFin        DateTime? @db.Timestamptz(3)
 
   @@map("ocupante_inmueble")
   @@index([inmuebleId])
@@ -165,7 +165,7 @@ model Documento {
   subidoPor      Usuario?           @relation(fields: [subidoPorId], references: [id])
   subidoPorId    String?
 
-  createdAt      DateTime           @default(now())
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
 
   @@map("documentos")
   @@index([categoria])
@@ -189,7 +189,7 @@ model HistorialAuditoria {
   detalle   Json?    // payload/diff relevante de la operacion
   ip        String?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@map("historial_auditoria")
   @@index([entidad, entidadId])
@@ -237,8 +237,8 @@ model Expensa {
 
   pagos            Pago[]
 
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
 
   @@map("expensas")
   @@unique([inmuebleId, periodo])
@@ -256,7 +256,7 @@ model Pago {
   monto           Decimal    @db.Decimal(10, 2)
   metodoPago      MetodoPago
   referencia      String?
-  fechaPago       DateTime   @default(now())
+  fechaPago       DateTime   @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
@@ -274,7 +274,7 @@ model MovimientoFinanciero {
   categoria       String
   monto           Decimal        @db.Decimal(10, 2)
   descripcion     String?
-  fecha           DateTime       @default(now())
+  fecha           DateTime       @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario?       @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
@@ -294,8 +294,8 @@ model CuentaBancaria {
 
   movimientos  MovimientoCaja[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("cuentas_bancarias")
 }
@@ -311,7 +311,7 @@ model MovimientoCaja {
   monto      Decimal        @db.Decimal(12, 2)
   concepto   String
   conciliado Boolean        @default(false)
-  fecha      DateTime       @default(now())
+  fecha      DateTime       @default(now()) @db.Timestamptz(3)
 
   @@map("movimientos_caja")
   @@index([cuentaId])
@@ -325,13 +325,13 @@ model Personal {
   apellido     String
   cargo        String
   salarioBase  Decimal  @db.Decimal(10, 2)
-  fechaIngreso DateTime @default(now())
+  fechaIngreso DateTime @default(now()) @db.Timestamptz(3)
   activo       Boolean  @default(true)
 
   pagos        PagoPersonal[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("personal")
 }
@@ -347,7 +347,7 @@ model PagoPersonal {
   bonificaciones Decimal  @default(0) @db.Decimal(10, 2)
   descuentos     Decimal  @default(0) @db.Decimal(10, 2)
   montoNeto      Decimal  @db.Decimal(10, 2)
-  fechaPago      DateTime @default(now())
+  fechaPago      DateTime @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario? @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
