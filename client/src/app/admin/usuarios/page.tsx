@@ -12,6 +12,14 @@ import {
   puedeEjecutar,
   validarAccion,
 } from "@/lib/permissions";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface UsuarioApi {
   id: string;
@@ -20,6 +28,20 @@ interface UsuarioApi {
   email: string;
   rol: string;
   activo: boolean;
+  ultimoLogin?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+function formatearFechaHora(strFechaISO?: string | null): string {
+  if (!strFechaISO) return "—";
+  return new Intl.DateTimeFormat("es-BO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(strFechaISO));
 }
 
 const claseInput =
@@ -113,6 +135,7 @@ export default function UsuariosPage() {
   const [bolMostrarFormularioNuevo, setBolMostrarFormularioNuevo] =
     useState(false);
   const [strIdEnEdicion, setStrIdEnEdicion] = useState<string | null>(null);
+  const [usuarioDetalle, setUsuarioDetalle] = useState<UsuarioApi | null>(null);
 
   const bolPuedeCrear = puedeEjecutar(rol, "usuarios", "crear");
   const bolPuedeEditar = puedeEjecutar(rol, "usuarios", "editar");
@@ -121,7 +144,10 @@ export default function UsuariosPage() {
     "usuarios",
     "eliminar"
   );
-  const bolHayAcciones = bolPuedeEditar || bolPuedeCambiarEstado;
+  // "Ver detalle" es de solo lectura: si el usuario llegó a esta página ya
+  // tiene permiso de "ver" (se valida a nivel de sección en el layout), así
+  // que la columna de acciones siempre aparece, aunque no pueda editar/desactivar.
+  const bolHayAcciones = true;
 
   useEffect(() => {
     let bolCancelado = false;
@@ -512,6 +538,14 @@ export default function UsuariosPage() {
                     {bolHayAcciones && (
                       <td className="px-5 py-3 text-right">
                         <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setUsuarioDetalle(registro)}
+                            className="font-caption text-[12px] font-medium text-foreground hover:text-foreground/80"
+                          >
+                            Ver
+                          </button>
+
                           {bolPuedeEditar && (
                             <button
                               type="button"
@@ -678,6 +712,14 @@ export default function UsuariosPage() {
 
                     {bolHayAcciones && (
                       <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3 sm:flex-row">
+                        <button
+                          type="button"
+                          onClick={() => setUsuarioDetalle(registro)}
+                          className="h-9 w-full rounded-lg border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted sm:w-auto"
+                        >
+                          Ver
+                        </button>
+
                         {bolPuedeEditar && (
                           <button
                             type="button"
@@ -719,6 +761,83 @@ export default function UsuariosPage() {
             </div>
           )}
       </div>
+
+      {/* Diálogo: detalle del usuario (solo lectura) */}
+      <Dialog open={usuarioDetalle !== null} onOpenChange={(bolOpen) => !bolOpen && setUsuarioDetalle(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+              Detalle del usuario
+            </DialogTitle>
+          </DialogHeader>
+
+          {usuarioDetalle && (
+            <div className="flex flex-col gap-4">
+              <div className="rounded-lg bg-muted/30 p-3">
+                <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                  Nombre completo
+                </p>
+                <p className="mt-1 text-[15px] font-semibold text-foreground">
+                  {usuarioDetalle.nombre} {usuarioDetalle.apellido}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Correo
+                  </p>
+                  <p className="mt-1 break-all text-[13px] text-foreground">{usuarioDetalle.email}</p>
+                </div>
+                <div>
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Rol
+                  </p>
+                  <p className="mt-1 text-[13px] text-foreground">{usuarioDetalle.rol}</p>
+                </div>
+                <div>
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Estado
+                  </p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {usuarioDetalle.activo ? "Activo" : "Inactivo"}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Último inicio de sesión
+                  </p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {formatearFechaHora(usuarioDetalle.ultimoLogin)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Creado el
+                  </p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {formatearFechaHora(usuarioDetalle.createdAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Última actualización
+                  </p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {formatearFechaHora(usuarioDetalle.updatedAt)}
+                  </p>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setUsuarioDetalle(null)}>
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
