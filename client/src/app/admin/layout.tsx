@@ -137,14 +137,19 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
       <aside className="animate-in fade-in slide-in-from-left-4 duration-500 sticky top-0 hidden h-screen w-60 shrink-0 flex-col justify-between overflow-x-hidden border-r border-sidebar-border bg-sidebar px-4 py-6 lg:flex">
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Logo */}
-          <div className="mb-8 flex shrink-0 items-center gap-2.5 px-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary shadow-lg shadow-sidebar-primary/30">
-              <LogoMark className="h-5 w-5 text-sidebar-primary-foreground" />
+          <div className="mb-8 flex shrink-0 items-center gap-3 px-2">
+            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-sidebar-primary to-sidebar-primary/70 shadow-lg shadow-sidebar-primary/40 ring-1 ring-sidebar-primary-foreground/15">
+              <LogoMark className="h-6 w-6 text-sidebar-primary-foreground drop-shadow-sm" />
             </div>
 
-            <span className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-sidebar-foreground">
-              Edificio Admin
-            </span>
+            <div className="min-w-0">
+              <p className="font-subtitle truncate text-[15px] font-semibold leading-[1.2] tracking-[-0.005em] text-sidebar-foreground">
+                Edificio Admin
+              </p>
+              <p className="font-caption truncate text-[11px] leading-[1.2] tracking-[0.01em] text-sidebar-foreground/50">
+                Panel de administración
+              </p>
+            </div>
           </div>
 
           {/* Navegación */}
@@ -220,14 +225,19 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
         <div>
           {/* Header del menú móvil */}
           <div className="mb-8 flex items-center justify-between px-2">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary shadow-lg shadow-sidebar-primary/30">
-                <LogoMark className="h-5 w-5 text-sidebar-primary-foreground" />
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-sidebar-primary to-sidebar-primary/70 shadow-lg shadow-sidebar-primary/40 ring-1 ring-sidebar-primary-foreground/15">
+                <LogoMark className="h-6 w-6 text-sidebar-primary-foreground drop-shadow-sm" />
               </div>
 
-              <span className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-sidebar-foreground">
-                Edificio Admin
-              </span>
+              <div className="min-w-0">
+                <p className="font-subtitle truncate text-[15px] font-semibold leading-[1.2] tracking-[-0.005em] text-sidebar-foreground">
+                  Edificio Admin
+                </p>
+                <p className="font-caption truncate text-[11px] leading-[1.2] tracking-[0.01em] text-sidebar-foreground/50">
+                  Panel de administración
+                </p>
+              </div>
             </div>
 
             <button
