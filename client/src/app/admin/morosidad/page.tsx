@@ -150,10 +150,12 @@ export default function GeneracionExpensasAdminPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [strErrorConfig, setStrErrorConfig] = useState("");
   const [formData, setFormData] = useState<{
-    diaGeneracion: number;
-    diasGracia: number;
+    // "" mientras el campo está vacío (el usuario borrando para escribir de
+    // nuevo), para que el input no se rellene solo con un "0".
+    diaGeneracion: number | "";
+    diasGracia: number | "";
     tipoValor: TipoValorMora;
-    valor: number;
+    valor: number | "";
   }>({
     diaGeneracion: 1,
     diasGracia: 5,
@@ -187,10 +189,15 @@ export default function GeneracionExpensasAdminPage() {
       setInmuebles(inmueblesData);
 
       setFormData({
-        diaGeneracion: configData.diaGeneracion,
-        diasGracia: configData.diasGracia,
+        diaGeneracion: Number(configData.diaGeneracion),
+        diasGracia: Number(configData.diasGracia),
         tipoValor: configData.tipoValor,
-        valor: configData.valor,
+        // "valor" es un Decimal en la base de datos: el backend lo serializa como
+        // string (ej. "2") aunque el tipo ConfiguracionMoraDTO diga `number`. Sin
+        // este Number(...), ese string pasaba la validación del frontend (JS
+        // compara "2" < 0 igual que un número) pero el backend lo rechazaba por
+        // exigir typeof valor === "number" estricto.
+        valor: Number(configData.valor),
       });
     } catch (error) {
       console.error("Error al cargar datos:", error);
@@ -215,15 +222,15 @@ export default function GeneracionExpensasAdminPage() {
     }
     setStrMensajePermiso("");
 
-    if (formData.diaGeneracion < 1 || formData.diaGeneracion > 28) {
+    if (formData.diaGeneracion === "" || formData.diaGeneracion < 1 || formData.diaGeneracion > 28) {
       setStrErrorConfig("El día de generación debe estar entre 1 y 28.");
       return;
     }
-    if (formData.diasGracia < 0) {
+    if (formData.diasGracia === "" || formData.diasGracia < 0) {
       setStrErrorConfig("Los días de gracia no pueden ser negativos.");
       return;
     }
-    if (formData.valor < 0) {
+    if (formData.valor === "" || formData.valor < 0) {
       setStrErrorConfig("El valor de la mora no puede ser negativo.");
       return;
     }
@@ -232,7 +239,12 @@ export default function GeneracionExpensasAdminPage() {
     setStrErrorConfig("");
 
     try {
-      await financeService.actualizarConfiguracion(formData);
+      await financeService.actualizarConfiguracion({
+        diaGeneracion: Number(formData.diaGeneracion),
+        diasGracia: Number(formData.diasGracia),
+        tipoValor: formData.tipoValor,
+        valor: Number(formData.valor),
+      });
       await cargarDatos();
       setIsConfigOpen(false);
       setStrExito("Configuración de mora actualizada correctamente.");
@@ -305,15 +317,24 @@ export default function GeneracionExpensasAdminPage() {
     setBolRevisandoMora(true);
 
     try {
+      // Mismo filtro que usa el job en backend (modoMora UNICA solo revisa
+      // PENDIENTE/PARCIAL) para poder distinguir, si aplicadas===0, entre "no había
+      // nada que revisar" y "había pendientes pero ninguna superó la gracia".
+      const candidatas = expensas.filter((exp) => exp.estado === "PENDIENTE" || exp.estado === "PARCIAL").length;
+
       // Se usa el endpoint del job (no el aplicar-mora por expensa) porque es el
       // único camino que también notifica por correo a los ocupantes afectados.
       const resultado = await financeService.ejecutarMoraJob();
 
-      setStrExito(
-        resultado.aplicadas > 0
-          ? `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.`
-          : "Revisión completa: ninguna expensa superó el período de gracia todavía."
-      );
+      if (resultado.aplicadas > 0) {
+        setStrExito(
+          `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.`
+        );
+      } else if (candidatas === 0) {
+        setStrExito("Revisión completa: no hay expensas pendientes o parciales por revisar.");
+      } else {
+        setStrExito("Revisión completa: ninguna expensa superó el período de gracia todavía.");
+      }
       await cargarDatos();
     } catch (error) {
       setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al revisar las deudas pendientes."));
@@ -486,7 +507,10 @@ export default function GeneracionExpensasAdminPage() {
                     max="28"
                     value={formData.diaGeneracion}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, diaGeneracion: Number(e.target.value) }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        diaGeneracion: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
                     }
                   />
                 </div>
@@ -497,7 +521,12 @@ export default function GeneracionExpensasAdminPage() {
                     type="number"
                     min="0"
                     value={formData.diasGracia}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, diasGracia: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        diasGracia: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
+                    }
                   />
                 </div>
 
@@ -525,7 +554,12 @@ export default function GeneracionExpensasAdminPage() {
                       min="0"
                       step="0.1"
                       value={formData.valor}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, valor: Number(e.target.value) }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          valor: e.target.value === "" ? "" : Number(e.target.value),
+                        }))
+                      }
                     />
                   </div>
                 </div>
