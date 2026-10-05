@@ -134,7 +134,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
       {/* ============================================================
           SIDEBAR DESKTOP
           ============================================================ */}
-      <aside className="animate-in fade-in slide-in-from-left-4 duration-500 sticky top-0 hidden h-screen w-60 shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar px-4 py-6 lg:flex">
+      <aside className="animate-in fade-in slide-in-from-left-4 duration-500 sticky top-0 hidden h-screen w-60 shrink-0 flex-col justify-between overflow-x-hidden border-r border-sidebar-border bg-sidebar px-4 py-6 lg:flex">
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Logo */}
           <div className="mb-8 flex shrink-0 items-center gap-2.5 px-2">
@@ -148,7 +148,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
           </div>
 
           {/* Navegación */}
-          <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+          <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
             {seccionesVisibles.map((seccion) => {
               const Icono = ICONO_SECCION[seccion.id];
               return (
@@ -162,7 +162,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                   }`}
                 >
                   <Icono className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{seccion.label}</span>
+                  <span className="min-w-0 truncate">{seccion.label}</span>
                 </Link>
               );
             })}
@@ -241,7 +241,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
           </div>
 
           {/* Navegación móvil */}
-          <nav className="flex max-h-[calc(100vh-180px)] flex-col gap-0.5 overflow-y-auto">
+          <nav className="flex max-h-[calc(100vh-180px)] flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
             {seccionesVisibles.map((seccion) => {
               const Icono = ICONO_SECCION[seccion.id];
               return (
@@ -256,7 +256,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                   }`}
                 >
                   <Icono className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{seccion.label}</span>
+                  <span className="min-w-0 truncate">{seccion.label}</span>
                 </Link>
               );
             })}
