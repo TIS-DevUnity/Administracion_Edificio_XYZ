@@ -31,6 +31,10 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO");
  *         description: "CREATE, UPDATE, DELETE, LOGIN, LOGIN_FALLIDO, ACTIVAR, DESACTIVAR"
  *         schema: { type: string }
  *       - in: query
+ *         name: modulo
+ *         description: "Agrupa entidades por modulo: Financiero (Expensa, Pago, Recibo, MovimientoSaldo, ConfiguracionMora), Seguridad (Usuario), Copropietarios, Inmuebles (Inmueble, OcupanteInmueble), Documentos. Cada evento devuelto trae su campo modulo"
+ *         schema: { type: string, enum: [Financiero, Seguridad, Copropietarios, Inmuebles, Documentos] }
+ *       - in: query
  *         name: desde
  *         description: Inicio del dia indicado, hora de Bolivia
  *         schema: { type: string, format: date }
@@ -43,7 +47,7 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO");
  *         schema: { type: integer, default: 1 }
  *     responses:
  *       200: { description: OK }
- *       400: { description: Fecha invalida }
+ *       400: { description: Fecha o modulo invalido }
  *       403: { description: Sin permisos }
  */
 router.get("/", autenticar, LECTURA, controller.listar);

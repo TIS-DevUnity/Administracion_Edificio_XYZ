@@ -1,16 +1,55 @@
 const prisma = require("../../../config/prisma");
 
+// Agrupa las entidades auditadas por modulo del sistema. No se guarda en la base:
+// se calcula al consultar, asi que una entidad nueva solo requiere agregarla aqui.
+const MODULOS = {
+  Financiero: ["Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora"],
+  Seguridad: ["Usuario"],
+  Copropietarios: ["Copropietario"],
+  Inmuebles: ["Inmueble", "OcupanteInmueble"],
+  Documentos: ["Documento"],
+};
+
+const MODULO_POR_ENTIDAD = Object.fromEntries(
+  Object.entries(MODULOS).flatMap(([modulo, entidades]) => entidades.map((entidad) => [entidad, modulo]))
+);
+
+function moduloDeEntidad(entidad) {
+  return MODULO_POR_ENTIDAD[entidad] ?? "Otros";
+}
+
+async function obtenerRolUsuario(usuarioId) {
+  try {
+    const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId }, select: { rol: true } });
+    return usuario?.rol ?? null;
+  } catch (err) {
+    return null;
+  }
+}
+
 /**
  * Registra una entrada de auditoria. Nunca debe interrumpir el flujo principal:
  * un fallo al auditar se loguea en consola pero no propaga el error.
+ * `rol` es el rol del usuario al momento del evento; si no se envia se busca por `usuarioId`
+ * (sin usuario, como en los procesos automaticos, queda en null).
  */
-async function registrarAuditoria({ usuarioId, accion, entidad, entidadId, detalle, ip }) {
+async function registrarAuditoria({ usuarioId, rol, accion, entidad, entidadId, detalle, ip }) {
+  const rolEvento = rol ?? (usuarioId ? await obtenerRolUsuario(usuarioId) : null);
   try {
     await prisma.historialAuditoria.create({
-      data: { usuarioId, accion, entidad, entidadId, detalle, ip },
+      data: { usuarioId, rol: rolEvento, accion, entidad, entidadId, detalle, ip },
     });
   } catch (err) {
-    console.error("No se pudo registrar auditoria:", err.message);
+    // Si la migracion de `rol` aun no se aplico (o el cliente de Prisma no se regenero),
+    // se guarda el evento sin rol para no perderlo.
+    try {
+      await prisma.historialAuditoria.create({
+        data: { usuarioId, accion, entidad, entidadId, detalle, ip },
+      });
+      console.warn("Auditoria registrada sin rol (aplique la migracion y regenere Prisma):", err.message);
+    } catch (errSinRol) {
+      console.error("No se pudo registrar auditoria:", errSinRol.message);
+    }
   }
 }
 
@@ -35,14 +74,33 @@ function parsearFecha(valor, campo, finDeDia) {
   return fecha;
 }
 
-async function listar({ usuarioId, entidad, entidadId, accion, desde, hasta, pagina = 1 }) {
+/**
+ * Filtro de entidad combinando `entidad` y `modulo`: con ambos, solo coincide si la entidad
+ * pertenece a ese modulo.
+ */
+function filtrarEntidad(entidad, modulo) {
+  if (!modulo) return entidad || undefined;
+  const entidadesModulo = MODULOS[modulo];
+  if (!entidad) return { in: entidadesModulo };
+  return { in: entidadesModulo.filter((e) => e === entidad) };
+}
+
+async function listar({ usuarioId, entidad, entidadId, accion, modulo, desde, hasta, pagina = 1 }) {
   const numeroPagina = Math.max(1, Number(pagina) || 1);
   const fechaDesde = parsearFecha(desde, "desde", false);
   const fechaHasta = parsearFecha(hasta, "hasta", true);
 
+  if (modulo && !MODULOS[modulo]) {
+    throw Object.assign(
+      new Error(`modulo no es valido (use: ${Object.keys(MODULOS).join(", ")})`),
+      { status: 400 }
+    );
+  }
+  const filtroEntidad = filtrarEntidad(entidad, modulo);
+
   const where = {
     ...(usuarioId ? { usuarioId } : {}),
-    ...(entidad ? { entidad } : {}),
+    ...(filtroEntidad ? { entidad: filtroEntidad } : {}),
     ...(entidadId ? { entidadId } : {}),
     ...(accion ? { accion } : {}),
     ...(fechaDesde || fechaHasta
@@ -59,7 +117,8 @@ async function listar({ usuarioId, entidad, entidadId, accion, desde, hasta, pag
     prisma.historialAuditoria.findMany({
       where,
       include: { usuario: { select: { id: true, nombre: true, apellido: true, email: true } } },
-      orderBy: { createdAt: "desc" },
+      // El id desempata eventos con la misma fecha para que el orden sea estable entre consultas.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (numeroPagina - 1) * LIMITE_POR_PAGINA,
       take: LIMITE_POR_PAGINA,
     }),
@@ -67,7 +126,7 @@ async function listar({ usuarioId, entidad, entidadId, accion, desde, hasta, pag
   ]);
 
   return {
-    registros,
+    registros: registros.map((registro) => ({ ...registro, modulo: moduloDeEntidad(registro.entidad) })),
     paginacion: {
       pagina: numeroPagina,
       porPagina: LIMITE_POR_PAGINA,
@@ -85,7 +144,7 @@ async function obtenerPorId(id) {
   if (!registro) {
     throw Object.assign(new Error("Registro de auditoria no encontrado"), { status: 404 });
   }
-  return registro;
+  return { ...registro, modulo: moduloDeEntidad(registro.entidad) };
 }
 
-module.exports = { registrarAuditoria, listar, obtenerPorId };
+module.exports = { registrarAuditoria, listar, obtenerPorId, MODULOS, moduloDeEntidad };

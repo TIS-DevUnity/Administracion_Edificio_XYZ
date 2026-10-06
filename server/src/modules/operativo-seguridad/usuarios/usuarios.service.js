@@ -1,5 +1,6 @@
 const prisma = require("../../../config/prisma");
 const { hashPassword } = require("../../../utils/hash");
+const { diferencias } = require("../../../utils/diferencias");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
 
 const CAMPOS_PUBLICOS = {
@@ -54,7 +55,7 @@ async function crear({ nombre, apellido, email, password, rol, actorId, ip }) {
 }
 
 async function actualizar(id, { nombre, apellido, email, rol }, { actorId, ip }) {
-  await obtenerPorId(id);
+  const antes = await obtenerPorId(id);
 
   if (email) {
     const conflicto = await prisma.usuario.findUnique({ where: { email } });
@@ -74,7 +75,7 @@ async function actualizar(id, { nombre, apellido, email, rol }, { actorId, ip })
     accion: "UPDATE",
     entidad: "Usuario",
     entidadId: usuario.id,
-    detalle: { nombre, apellido, email, rol },
+    detalle: diferencias(antes, usuario, ["nombre", "apellido", "email", "rol"]),
     ip,
   });
 
@@ -82,7 +83,7 @@ async function actualizar(id, { nombre, apellido, email, rol }, { actorId, ip })
 }
 
 async function cambiarEstado(id, activo, { actorId, ip }) {
-  await obtenerPorId(id);
+  const antes = await obtenerPorId(id);
 
   const usuario = await prisma.usuario.update({
     where: { id },
@@ -95,7 +96,7 @@ async function cambiarEstado(id, activo, { actorId, ip }) {
     accion: activo ? "ACTIVAR" : "DESACTIVAR",
     entidad: "Usuario",
     entidadId: usuario.id,
-    detalle: { activo },
+    detalle: diferencias(antes, usuario, ["activo"]),
     ip,
   });
 
