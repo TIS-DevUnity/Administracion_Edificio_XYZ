@@ -57,6 +57,7 @@ export const ENTIDADES_AUDITORIA = [
   "Pago",
   "MovimientoSaldo",
   "ConfiguracionMora",
+  "Recibo",
 ] as const;
 
 export const ETIQUETA_ENTIDAD_AUDITORIA: Record<string, string> = {
@@ -69,6 +70,7 @@ export const ETIQUETA_ENTIDAD_AUDITORIA: Record<string, string> = {
   Pago: "Pagos",
   MovimientoSaldo: "Saldo a favor",
   ConfiguracionMora: "Configuración de mora",
+  Recibo: "Recibos",
 };
 
 export function etiquetaEntidad(entidad: string): string {

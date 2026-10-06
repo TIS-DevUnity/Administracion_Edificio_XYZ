@@ -56,7 +56,7 @@ import {
 
 import { financeService } from "@/services/finance.service";
 import { cuentaInmuebleService } from "@/services/cuentaInmueble.service";
-import { EstadoExpensa, MetodoPago } from "@/types/finance";
+import { EstadoExpensa, ExpensaDTO, MetodoPago } from "@/types/finance";
 import {
   EstadoCuentaDTO,
   MovimientoSaldoDTO,
@@ -118,7 +118,13 @@ function obtenerMensajeError(error: unknown, strFallback: string): string {
 
 interface CuentaInmuebleFila {
   inmueble: Inmueble;
-  saldo: SaldoInmuebleDTO | null;
+  // Calculado en el cliente a partir de UNA sola consulta masiva (getExpensas()),
+  // no de un GET /saldo por inmueble — ver nota en cargarCuentas(). No incluye
+  // saldo a favor (ese sí vive en una tabla aparte, sin endpoint masivo): se
+  // consulta al vuelo, un solo inmueble a la vez, recién cuando hace falta
+  // (abrir "Registrar pago" o "Ver cuenta" de ESE inmueble).
+  deudaPendiente: number;
+  tieneExpensasVencidas: boolean;
 }
 
 interface ResultadoRegistroPago {
@@ -168,16 +174,40 @@ export default function PagosPage() {
   const [strErrorCuenta, setStrErrorCuenta] = useState("");
   const [expensaExpandida, setExpensaExpandida] = useState<string | null>(null);
 
+  function deudaDeExpensa(exp: ExpensaDTO): number {
+    if (exp.estado === "PAGADA") return 0;
+    const total = Number(exp.montoTotal) + Number(exp.montoMora || 0);
+    const pagado = (exp.pagos ?? []).reduce((acc, pago) => acc + Number(pago.monto), 0);
+    return Math.max(total - pagado, 0);
+  }
+
   async function cargarCuentas() {
     try {
       setIsLoading(true);
-      const inmuebles = await listarInmuebles();
-      const saldos = await Promise.all(
-        inmuebles.map((inmueble) =>
-          cuentaInmuebleService.obtenerSaldo(inmueble.id).catch(() => null)
-        )
+      // Antes esto hacía 1 GET /saldo POR CADA inmueble (N+1: con 100 inmuebles,
+      // 100 consultas en paralelo, cada una con sus propias queries a la base).
+      // Reportado por DevOps como el cuello de botella de esta pantalla. Ahora son
+      // solo 2 consultas en total: la lista de inmuebles y TODAS las expensas (que
+      // ya traen sus pagos anidados), y la deuda por inmueble se agrupa en memoria.
+      const [inmuebles, expensas] = await Promise.all([listarInmuebles(), financeService.getExpensas()]);
+
+      const deudaPorInmueble = new Map<string, number>();
+      const vencidaPorInmueble = new Set<string>();
+      expensas.forEach((exp) => {
+        const deuda = deudaDeExpensa(exp);
+        if (deuda > 0) {
+          deudaPorInmueble.set(exp.inmuebleId, (deudaPorInmueble.get(exp.inmuebleId) ?? 0) + deuda);
+        }
+        if (exp.estado === "VENCIDA") vencidaPorInmueble.add(exp.inmuebleId);
+      });
+
+      setFilas(
+        inmuebles.map((inmueble) => ({
+          inmueble,
+          deudaPendiente: deudaPorInmueble.get(inmueble.id) ?? 0,
+          tieneExpensasVencidas: vencidaPorInmueble.has(inmueble.id),
+        }))
       );
-      setFilas(inmuebles.map((inmueble, i) => ({ inmueble, saldo: saldos[i] })));
     } catch (error) {
       console.error("Error al cargar cuentas de inmuebles:", error);
     } finally {
@@ -188,6 +218,7 @@ export default function PagosPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     cargarCuentas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filasFiltradas = filas.filter((fila) =>
@@ -197,14 +228,11 @@ export default function PagosPage() {
   const totales = useMemo(() => {
     let intConDeuda = 0;
     let totalDeuda = 0;
-    let totalSaldoFavor = 0;
     filas.forEach((fila) => {
-      if (!fila.saldo) return;
-      if (fila.saldo.situacion === "DEBE") intConDeuda += 1;
-      totalDeuda += Number(fila.saldo.deudaPendiente);
-      totalSaldoFavor += Number(fila.saldo.saldoFavor);
+      if (fila.deudaPendiente > 0) intConDeuda += 1;
+      totalDeuda += fila.deudaPendiente;
     });
-    return { intConDeuda, totalDeuda, totalSaldoFavor };
+    return { intConDeuda, totalDeuda };
   }, [filas]);
 
   function limpiarFormularioPago() {
@@ -226,9 +254,11 @@ export default function PagosPage() {
     }
     setStrMensajePermiso("");
     limpiarFormularioPago();
-    setCuentaSeleccionada(fila?.saldo ?? null);
     setStrInmuebleElegido(fila?.inmueble.id ?? "");
     setBolDialogoPago(true);
+    if (fila) {
+      void handleSeleccionarInmuebleEnDialogo(fila.inmueble.id);
+    }
   }
 
   function cerrarDialogoPago() {
@@ -241,11 +271,7 @@ export default function PagosPage() {
   async function handleSeleccionarInmuebleEnDialogo(inmuebleId: string) {
     setStrInmuebleElegido(inmuebleId);
     setStrErrorPago("");
-    const filaExistente = filas.find((f) => f.inmueble.id === inmuebleId);
-    if (filaExistente?.saldo) {
-      setCuentaSeleccionada(filaExistente.saldo);
-      return;
-    }
+    setCuentaSeleccionada(null);
     try {
       const saldo = await cuentaInmuebleService.obtenerSaldo(inmuebleId);
       setCuentaSeleccionada(saldo);
@@ -438,7 +464,7 @@ export default function PagosPage() {
       )}
 
       {/* KPIs */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2">
         <Card className="shadow-sm">
           <CardContent className="p-5">
             <p className={CLASE_LABEL_CAMPO}>Inmuebles con deuda</p>
@@ -455,15 +481,11 @@ export default function PagosPage() {
             </h3>
           </CardContent>
         </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-5">
-            <p className={CLASE_LABEL_CAMPO}>Saldo a favor total</p>
-            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-accent-secondary">
-              {formatCurrency(totales.totalSaldoFavor)}
-            </h3>
-          </CardContent>
-        </Card>
       </div>
+      <p className="font-caption -mt-3 mb-6 text-[11px] text-muted-foreground">
+        El saldo a favor de cada inmueble se consulta al abrir &quot;Registrar pago&quot; o
+        &quot;Ver cuenta&quot;, para no tener que calcularlo de todos a la vez.
+      </p>
 
       <Card className="shadow-sm">
         <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -497,7 +519,6 @@ export default function PagosPage() {
                       <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
                       <TableHead className={CLASE_HEADER_TABLA}>Tipo</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Deuda pendiente</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Saldo a favor</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-center`}>Situación</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Acciones</TableHead>
                     </TableRow>
@@ -512,17 +533,10 @@ export default function PagosPage() {
                           {fila.inmueble.tipoInmueble.nombre}
                         </TableCell>
                         <TableCell className="text-right text-[13px] text-foreground">
-                          {fila.saldo ? formatCurrency(Number(fila.saldo.deudaPendiente)) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right text-[13px] text-foreground">
-                          {fila.saldo ? formatCurrency(Number(fila.saldo.saldoFavor)) : "—"}
+                          {formatCurrency(fila.deudaPendiente)}
                         </TableCell>
                         <TableCell className="text-center">
-                          {fila.saldo && (
-                            <Badge className={`font-caption text-[11px] ${CLASE_BADGE_SITUACION[fila.saldo.situacion]}`}>
-                              {ETIQUETA_SITUACION[fila.saldo.situacion]}
-                            </Badge>
-                          )}
+                          <BadgeSituacionFila fila={fila} />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -542,7 +556,7 @@ export default function PagosPage() {
                     ))}
                     {filasFiltradas.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="py-8 text-center text-[13px] text-muted-foreground">
+                        <TableCell colSpan={5} className="py-8 text-center text-[13px] text-muted-foreground">
                           No hay inmuebles que coincidan con la búsqueda.
                         </TableCell>
                       </TableRow>
@@ -563,26 +577,12 @@ export default function PagosPage() {
                           {fila.inmueble.tipoInmueble.nombre}
                         </p>
                       </div>
-                      {fila.saldo && (
-                        <Badge className={`font-caption text-[11px] ${CLASE_BADGE_SITUACION[fila.saldo.situacion]}`}>
-                          {ETIQUETA_SITUACION[fila.saldo.situacion]}
-                        </Badge>
-                      )}
+                      <BadgeSituacionFila fila={fila} />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                      <div>
-                        <p className={CLASE_LABEL_CAMPO}>Deuda pendiente</p>
-                        <p className="text-[13px] text-foreground">
-                          {fila.saldo ? formatCurrency(Number(fila.saldo.deudaPendiente)) : "—"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className={CLASE_LABEL_CAMPO}>Saldo a favor</p>
-                        <p className="text-[13px] text-foreground">
-                          {fila.saldo ? formatCurrency(Number(fila.saldo.saldoFavor)) : "—"}
-                        </p>
-                      </div>
+                    <div>
+                      <p className={CLASE_LABEL_CAMPO}>Deuda pendiente</p>
+                      <p className="text-[13px] text-foreground">{formatCurrency(fila.deudaPendiente)}</p>
                     </div>
 
                     <div className="mt-3 flex justify-end gap-1 border-t border-border pt-3">
@@ -947,6 +947,19 @@ export default function PagosPage() {
       </Dialog>
     </div>
   );
+}
+
+// Situación aproximada a partir de datos ya cargados en bloque (sin saldo a favor,
+// que requiere una consulta por inmueble — ver CuentaInmuebleFila). "Ver cuenta"
+// muestra la situación exacta, incluyendo saldo a favor, para ese inmueble puntual.
+function BadgeSituacionFila({ fila }: { fila: CuentaInmuebleFila }) {
+  if (fila.deudaPendiente <= 0) {
+    return <Badge className="font-caption bg-success-subtle text-[11px] text-success">Al día</Badge>;
+  }
+  if (fila.tieneExpensasVencidas) {
+    return <Badge className="font-caption bg-danger-subtle text-[11px] text-destructive">Vencida</Badge>;
+  }
+  return <Badge className="font-caption bg-danger-subtle text-[11px] text-destructive">Debe</Badge>;
 }
 
 function MovimientoSaldoFila({ movimiento }: { movimiento: MovimientoSaldoDTO }) {
