@@ -194,6 +194,7 @@ model HistorialAuditoria {
 
   usuario   Usuario? @relation(fields: [usuarioId], references: [id])
   usuarioId String?
+  rol       RolNombre? // rol del usuario al momento del evento (null en eventos previos o del sistema)
 
   accion    String   // LOGIN, CREATE, UPDATE, DELETE, etc.
   entidad   String   // nombre de la entidad afectada (Usuario, Copropietario, Expensa...)
