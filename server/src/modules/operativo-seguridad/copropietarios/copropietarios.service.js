@@ -1,5 +1,6 @@
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
+const { diferencias } = require("../../../utils/diferencias");
 
 const CAMPOS_PUBLICOS = {
   id: true,
@@ -54,7 +55,7 @@ async function crear({ nombre, apellido, ci, email, telefono, actorId, ip }) {
 }
 
 async function actualizar(id, { nombre, apellido, ci, email, telefono }, { actorId, ip }) {
-  await obtenerPorId(id);
+  const antes = await obtenerPorId(id);
 
   if (ci) {
     const conflicto = await prisma.copropietario.findUnique({ where: { ci } });
@@ -74,7 +75,7 @@ async function actualizar(id, { nombre, apellido, ci, email, telefono }, { actor
     accion: "UPDATE",
     entidad: "Copropietario",
     entidadId: copropietario.id,
-    detalle: { nombre, apellido, ci, email, telefono },
+    detalle: diferencias(antes, copropietario, ["nombre", "apellido", "ci", "email", "telefono"]),
     ip,
   });
 

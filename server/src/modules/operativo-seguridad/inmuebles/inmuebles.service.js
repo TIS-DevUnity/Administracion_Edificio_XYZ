@@ -1,5 +1,6 @@
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
+const { diferencias } = require("../../../utils/diferencias");
 
 const CAMPOS_PUBLICOS = {
   id: true,
@@ -78,7 +79,7 @@ async function crear({ codigo, tipoInmuebleId, piso, areaM2, actorId, ip }) {
 }
 
 async function actualizar(id, { codigo, tipoInmuebleId, piso, areaM2, activo }, { actorId, ip }) {
-  await obtenerPorId(id);
+  const antes = await obtenerPorId(id);
 
   if (codigo) {
     const conflicto = await prisma.inmueble.findUnique({ where: { codigo } });
@@ -101,7 +102,7 @@ async function actualizar(id, { codigo, tipoInmuebleId, piso, areaM2, activo }, 
     accion: "UPDATE",
     entidad: "Inmueble",
     entidadId: inmueble.id,
-    detalle: { codigo, tipoInmuebleId, piso, areaM2, activo },
+    detalle: diferencias(antes, inmueble, ["codigo", "tipoInmuebleId", "piso", "areaM2", "activo"]),
     ip,
   });
 
@@ -211,7 +212,7 @@ async function darDeBajaOcupante(inmuebleId, ocupanteId, { fechaFin: fechaFinInp
     accion: "UPDATE",
     entidad: "OcupanteInmueble",
     entidadId: actualizado.id,
-    detalle: { fechaFin: actualizado.fechaFin },
+    detalle: diferencias(ocupante, actualizado, ["fechaFin"]),
     ip,
   });
 
