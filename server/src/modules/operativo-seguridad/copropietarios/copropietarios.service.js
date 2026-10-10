@@ -82,4 +82,51 @@ async function actualizar(id, { nombre, apellido, ci, email, telefono }, { actor
   return copropietario;
 }
 
-module.exports = { listar, obtenerPorId, crear, actualizar };
+/**
+ * Inmuebles de una persona: los que tiene asociados hoy (vigentes) y las asociaciones que ya
+ * terminaron (anteriores). Cada uno trae clase, tipo (A, B, C solo en departamentos), piso,
+ * rol (propietario o inquilino) y fechas. Los vigentes se resumen por clase.
+ */
+async function listarInmuebles(id) {
+  const copropietario = await obtenerPorId(id);
+
+  const ocupaciones = await prisma.ocupanteInmueble.findMany({
+    where: { copropietarioId: id },
+    include: { inmueble: { include: { tipoInmueble: true } } },
+    orderBy: [{ fechaInicio: "desc" }, { id: "asc" }],
+  });
+
+  const ahora = new Date();
+  const items = ocupaciones.map((o) => {
+    const vigente = o.fechaInicio <= ahora && (o.fechaFin === null || o.fechaFin > ahora);
+    return {
+      ocupanteId: o.id,
+      inmuebleId: o.inmueble.id,
+      codigo: o.inmueble.codigo,
+      clase: o.inmueble.clase,
+      tipoInmueble: o.inmueble.tipoInmueble?.nombre ?? null,
+      piso: o.inmueble.piso,
+      areaM2: o.inmueble.areaM2,
+      activo: o.inmueble.activo,
+      rol: o.esPropietario ? "PROPIETARIO" : "INQUILINO",
+      fechaInicio: o.fechaInicio,
+      fechaFin: o.fechaFin,
+      vigente,
+    };
+  });
+
+  const vigentes = items.filter((i) => i.vigente);
+  const anteriores = items.filter((i) => !i.vigente);
+
+  const contar = (clase) => vigentes.filter((i) => i.clase === clase).length;
+  const resumen = {
+    departamentos: contar("DEPARTAMENTO"),
+    bauleras: contar("BAULERA"),
+    parqueos: contar("PARQUEO"),
+    total: vigentes.length,
+  };
+
+  return { copropietario, vigentes, anteriores, resumen };
+}
+
+module.exports = { listar, obtenerPorId, crear, actualizar, listarInmuebles };

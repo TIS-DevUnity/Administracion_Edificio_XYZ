@@ -86,4 +86,28 @@ router.post("/", autenticar, GESTION, controller.crear);
 router.get("/:id", autenticar, LECTURA, controller.obtener);
 router.put("/:id", autenticar, GESTION, controller.actualizar);
 
+/**
+ * @openapi
+ * /api/copropietarios/{id}/inmuebles:
+ *   get:
+ *     summary: Inmuebles de una persona - los que tiene asociados hoy y el historial de asociaciones anteriores
+ *     description: |
+ *       `vigentes` son las asociaciones en curso y `anteriores` las que ya terminaron. Cada
+ *       inmueble trae clase (DEPARTAMENTO, BAULERA, PARQUEO), tipo (A, B, C; solo departamentos),
+ *       piso, rol (PROPIETARIO o INQUILINO) y fechas. `resumen` cuenta los vigentes por clase.
+ *       Una persona puede tener un departamento sin baulera ni parqueo, o solo un parqueo; cada
+ *       inmueble aparece por separado.
+ *     tags: [Copropietarios]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ copropietario, vigentes, anteriores, resumen }" }
+ *       404: { description: Copropietario no encontrado }
+ */
+router.get("/:id/inmuebles", autenticar, LECTURA, controller.listarInmuebles);
+
 module.exports = router;
