@@ -1,6 +1,7 @@
 "use client";
 
-import React, { FormEvent, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { QueryProvider } from "./QueryProvider";
 import { TablaExpensas } from "./components/TablaExpensas";
@@ -12,12 +13,10 @@ import {
   CalendarPlus,
   CalendarDays,
   UserRound,
-  Info,
   RefreshCw,
   Search,
   SlidersHorizontal,
   Save,
-  Wallet,
 } from "lucide-react";
 
 import { AlertaPermiso } from "@/components/AlertaPermiso";
@@ -73,7 +72,10 @@ const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
   CHEQUE: "Cheque",
 };
 
+const EXPENSAS_VACIAS: ExpensaDTO[] = [];
+
 function ContenidoMorosidad() {
+  const searchParams = useSearchParams();
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
   const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
@@ -93,7 +95,7 @@ function ContenidoMorosidad() {
   const [guardandoTipo, setGuardandoTipo] = useState(false);
 
 
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
   const [filtroInmuebleId, setFiltroInmuebleId] = useState("");
   // Un solo selector de mes; inicialmente muestra el mes actual.
   const [filtroPeriodo, setFiltroPeriodo] = useState(periodoActual());
@@ -185,7 +187,7 @@ function ContenidoMorosidad() {
   const facturasQuery = useQuery({
     queryKey: ["morosidad", "agua", "facturas"], queryFn: () => financeService.listarFacturasAgua(),
   });
-  const expensas = expensasQuery.data?.expensas ?? [];
+  const expensas = expensasQuery.data?.expensas ?? EXPENSAS_VACIAS;
   const paginacion = expensasQuery.data?.paginacion;
   const configMora = configQuery.data ?? null;
   const historialConfiguracion = historialQuery.data ?? [];
@@ -206,12 +208,6 @@ function ContenidoMorosidad() {
     ]);
   }
 
-
-  // Sin setState de resultados: TanStack Query es la única fuente de datos remotos.
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q");
-    if (q) setSearchTerm(q);
-  }, []);
 
   useEffect(() => {
     if (!configMora) return;
@@ -1278,5 +1274,11 @@ function ContenidoMorosidad() {
 }
 // Provider aislado: no altera otras pantallas ni deja datos financieros cacheados entre sesiones.
 export default function GeneracionExpensasAdminPage() {
-  return <QueryProvider><ContenidoMorosidad /></QueryProvider>;
+  return (
+    <QueryProvider>
+      <Suspense fallback={<div className="px-4 py-6 text-sm text-muted-foreground">Cargando morosidad...</div>}>
+        <ContenidoMorosidad />
+      </Suspense>
+    </QueryProvider>
+  );
 }
