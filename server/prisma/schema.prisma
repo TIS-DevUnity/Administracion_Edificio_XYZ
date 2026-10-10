@@ -39,6 +39,8 @@ model Usuario {
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
+  facturasAguaRegistradas FacturaAgua[]
+  cambiosVencimiento      CambioVencimiento[]
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -62,6 +64,7 @@ model Copropietario {
 
   usuarios    Usuario[]
   ocupaciones OcupanteInmueble[]
+  expensasComoResponsable Expensa[]
 
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
@@ -69,10 +72,21 @@ model Copropietario {
   @@map("copropietarios")
 }
 
+// Clase de inmueble. Solo el DEPARTAMENTO paga expensa y tiene tipo (A, B, C...).
+// Baulera y parqueo se registran pero no tienen tipo ni generan expensa.
+enum ClaseInmueble {
+  DEPARTAMENTO
+  BAULERA
+  PARQUEO
+}
+
+// Tipo de departamento (A, B, C...). Define la expensa fija mensual (`montoBase`) y el
+// peso con el que participa en el reparto de la factura de agua (`pesoAgua`, mayor que 0).
 model TipoInmueble {
   id          String     @id @default(uuid())
   nombre      String     @unique
   montoBase   Decimal    @db.Decimal(10, 2)
+  pesoAgua    Decimal    @default(1) @db.Decimal(6, 3)
 
   inmuebles   Inmueble[]
 
@@ -83,11 +97,14 @@ model TipoInmueble {
 }
 
 model Inmueble {
-  id             String       @id @default(uuid())
-  codigo         String       @unique
+  id             String        @id @default(uuid())
+  codigo         String        @unique
 
-  tipoInmueble   TipoInmueble @relation(fields: [tipoInmuebleId], references: [id])
-  tipoInmuebleId String
+  clase          ClaseInmueble @default(DEPARTAMENTO)
+
+  // Solo los departamentos tienen tipo; en baulera y parqueo es null.
+  tipoInmueble   TipoInmueble? @relation(fields: [tipoInmuebleId], references: [id])
+  tipoInmuebleId String?
 
   piso           String?
   areaM2         Decimal?     @db.Decimal(8, 2)
@@ -117,13 +134,20 @@ enum ModoMora {
 }
 
 model ConfiguracionMora {
-  id            String        @id @default(uuid())
-  diaGeneracion Int           @default(1)
-  diasGracia    Int           @default(0)
-  tipoValor     TipoValorMora @default(PORCENTAJE)
-  valor         Decimal       @db.Decimal(10, 2)
-  modoMora      ModoMora      @default(UNICA)
-  vigenteDesde  DateTime      @default(now()) @db.Timestamptz(3)
+  id             String        @id @default(uuid())
+  diaGeneracion  Int           @default(1)
+  // Dia del mes (1-28) en que vence la expensa. La mora corre desde el dia siguiente
+  // al vencimiento mas los dias de gracia.
+  diaVencimiento Int           @default(10)
+  diasGracia     Int           @default(0)
+  tipoValor      TipoValorMora @default(PORCENTAJE)
+  valor          Decimal       @db.Decimal(10, 2)
+  modoMora       ModoMora      @default(MENSUAL)
+  // Desde cuando rige. La vigente en una fecha es la mas reciente con vigenteDesde <= fecha;
+  // una con fecha futura queda programada y no cambia lo que ya esta generado.
+  vigenteDesde   DateTime      @default(now()) @db.Timestamptz(3)
+
+  expensas       Expensa[]
 
   @@map("configuracion_mora")
 }
@@ -251,12 +275,37 @@ model Expensa {
   inmuebleId       String
 
   periodo          String        // formato "YYYY-MM"
+
+  // montoTotal = montoBase (expensa fija del tipo) + montoAgua (parte de la factura de agua).
+  // No incluye la mora, que se lleva aparte en `moras` y se resume en `montoMora`.
+  montoBase        Decimal       @default(0) @db.Decimal(10, 2)
+  montoAgua        Decimal       @default(0) @db.Decimal(10, 2)
   montoTotal       Decimal       @db.Decimal(10, 2)
-  montoMora        Decimal       @default(0) @db.Decimal(10, 2)
+  montoMora        Decimal       @default(0) @db.Decimal(10, 2) // suma de las lineas de `moras`
+
+  // Foto del tipo y su peso de agua al generar la expensa: cambiar el tipo despues
+  // no altera los meses ya generados.
+  tipoNombre       String?
+  pesoAgua         Decimal       @default(1) @db.Decimal(6, 3)
+
   estado           EstadoExpensa @default(PENDIENTE)
   fechaVencimiento DateTime
 
+  // Regla de mora (y dias de gracia) que rige para esta expensa: la vigente al generarla.
+  // Un cambio posterior de configuracion no altera la mora de las expensas ya generadas.
+  configuracionMora   ConfiguracionMora? @relation(fields: [configuracionMoraId], references: [id])
+  configuracionMoraId String?
+
+  // Persona responsable al generarla (propietario vigente; si no hay, el inquilino).
+  // Se guarda el nombre tal como era en ese momento.
+  responsable         Copropietario? @relation(fields: [responsableId], references: [id])
+  responsableId       String?
+  responsableNombre   String?
+  responsableRol      String?        // PROPIETARIO | INQUILINO
+
   pagos            Pago[]
+  moras            MoraExpensa[]
+  cambiosVencimiento CambioVencimiento[]
   movimientosSaldo MovimientoSaldo[]
 
   createdAt        DateTime      @default(now()) @db.Timestamptz(3)
@@ -276,6 +325,9 @@ model Pago {
   expensaId       String
 
   monto           Decimal    @db.Decimal(10, 2)
+  // monto = montoMora + montoExpensa: lo que el pago cubrio de la mora y del monto de la expensa.
+  montoMora       Decimal    @default(0) @db.Decimal(10, 2)
+  montoExpensa    Decimal    @default(0) @db.Decimal(10, 2)
   metodoPago      MetodoPago
   referencia      String?
   fechaPago       DateTime   @default(now()) @db.Timestamptz(3)
@@ -292,6 +344,69 @@ model Pago {
   @@index([expensaId])
   @@index([fechaPago])
   @@index([reciboId])
+}
+
+// Historial de cambios manuales de la fecha de vencimiento de una expensa ya generada.
+model CambioVencimiento {
+  id               String   @id @default(uuid())
+
+  expensa          Expensa  @relation(fields: [expensaId], references: [id])
+  expensaId        String
+
+  fechaAnterior    DateTime @db.Date
+  fechaNueva       DateTime @db.Date
+  motivo           String?
+
+  registradoPor    Usuario? @relation(fields: [registradoPorId], references: [id])
+  registradoPorId  String?
+
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("cambios_vencimiento")
+  @@index([expensaId])
+}
+
+// Una linea de mora por cada mes de atraso de una expensa. Se calcula sobre lo que faltaba
+// pagar de la expensa al dia de corte y nunca se edita: solo se agregan filas.
+model MoraExpensa {
+  id         String        @id @default(uuid())
+
+  expensa    Expensa       @relation(fields: [expensaId], references: [id])
+  expensaId  String
+
+  numero     Int           // 1 = primer mes de atraso, 2 = segundo, ...
+  mes        String        // "YYYY-MM" del mes en que empieza a correr este cargo
+  fechaCorte DateTime      @db.Date // dia desde el que se cobra este cargo
+  base       Decimal       @db.Decimal(10, 2) // lo que faltaba pagar de la expensa al cortar
+  tipoValor  TipoValorMora // regla vigente al generarla
+  valor      Decimal       @db.Decimal(10, 2)
+  monto      Decimal       @db.Decimal(10, 2) // mora de este mes
+
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@map("moras_expensa")
+  @@unique([expensaId, numero])
+  @@index([expensaId])
+}
+
+// Factura mensual de agua del edificio (un solo medidor). Se reparte entre los departamentos
+// que pagan expensa segun el peso de su tipo; el reparto queda en `Expensa.montoAgua`.
+model FacturaAgua {
+  id              String   @id @default(uuid())
+  periodo         String   @unique // formato "YYYY-MM"
+
+  montoFactura    Decimal  @db.Decimal(10, 2)
+  totalPesos      Decimal  @db.Decimal(12, 3) // suma de pesos de las expensas del periodo
+  valorUnidad     Decimal  @db.Decimal(14, 6) // montoFactura / totalPesos
+  departamentos   Int      // expensas entre las que se repartio
+
+  registradoPor   Usuario? @relation(fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("facturas_agua")
 }
 
 // Una operacion de cobro: lo que el administrador recibe en un momento. Puede repartirse
