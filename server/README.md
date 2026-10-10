@@ -45,11 +45,16 @@ backend/
 4. Generar cliente Prisma y crear las tablas:
    ```
    npm run prisma:generate
-   npm run prisma:migrate
+   npm run prisma:deploy
    ```
 5. Sembrar el usuario administrador inicial (`admin@edificioxyz.com` / `Admin123!`):
    ```
    npm run seed
+   ```
+   Para probar expensas, agua y mora con datos de muestra (tipos A/B/C, departamentos, una
+   baulera, un parqueo y ocupantes), tambien:
+   ```
+   npm run seed:ejemplo
    ```
 6. Levantar el servidor:
    ```
