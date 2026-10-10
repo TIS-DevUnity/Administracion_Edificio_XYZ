@@ -138,6 +138,19 @@ export function esDepartamento(inmueble: Pick<Inmueble, "clase">): boolean {
   return inmueble.clase === "DEPARTAMENTO";
 }
 
+// El backend guarda solo el nombre del tipo; el tamaño que representa cada uno lo define la HU.
+const DESCRIPCION_TIPO: Record<string, string> = {
+  A: "pequeño",
+  B: "mediano",
+  C: "grande",
+};
+
+/** "Tipo A (pequeño)"; si el tipo no es A/B/C, solo "Tipo X". */
+export function etiquetaClasificacion(strNombreTipo: string): string {
+  const strDescripcion = DESCRIPCION_TIPO[strNombreTipo.trim().toUpperCase()];
+  return strDescripcion ? `Tipo ${strNombreTipo} (${strDescripcion})` : `Tipo ${strNombreTipo}`;
+}
+
 /** "Depto. Tipo A", "Baulera" o "Parqueo". */
 export function etiquetaTipoInmueble(inmueble: Pick<Inmueble, "clase" | "tipoInmueble">): string {
   return esDepartamento(inmueble) ? `Depto. Tipo ${inmueble.tipoInmueble.nombre}` : ETIQUETA_CLASE[inmueble.clase];

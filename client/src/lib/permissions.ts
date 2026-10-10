@@ -45,7 +45,8 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     // (ver server/src/modules/financiero/**: GESTION = autorizar('ADMINISTRADOR')).
     pagos: ["ver", "crear", "editar"],
     mantenimiento: ["ver", "crear", "editar", "eliminar"],
-    copropietarios: ["ver"],
+    // POST /api/copropietarios: ADMINISTRADOR y DIRECTORIO (copropietarios.routes.js).
+    copropietarios: ["ver", "crear"],
     usuarios: ["ver", "crear", "editar", "eliminar"],
     roles: ["ver", "editar"],
     morosidad: ["ver", "crear", "editar", "eliminar"],
@@ -65,7 +66,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     residentes: ["ver", "crear", "editar"],
     pagos: ["ver"],
     mantenimiento: ["ver", "crear", "editar"],
-    copropietarios: ["ver"],
+    copropietarios: ["ver", "crear"],
     usuarios: ["ver"],
     morosidad: ["ver"],
     documentos: ["ver", "crear"],

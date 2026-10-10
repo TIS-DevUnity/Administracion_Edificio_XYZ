@@ -1,21 +1,23 @@
 "use client";
 
-import { ChangeEvent, FormEvent, KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { DialogoRegistrarPersona } from "@/components/DialogoRegistrarPersona";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button, Spinner } from "@/components/ui/button";
 import {
-  Copropietario,
-  crearCopropietario,
-  esCorreoValido,
-  esTelefonoValido,
-  listarCopropietarios,
-} from "@/lib/copropietarios";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button, Spinner } from "@/components/ui/button";
+import { CampoPersona, Copropietario, listarCopropietarios } from "@/lib/copropietarios";
 import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import {
   CLASES_INMUEBLE,
@@ -23,6 +25,7 @@ import {
   Inmueble,
   Ocupante,
   asignarOcupante,
+  darDeBajaOcupante,
   esDepartamento,
   esOcupanteActivo,
   etiquetaRol,
@@ -72,7 +75,7 @@ function ResidentesContenido() {
   const [strInmuebleId, setStrInmuebleId] = useState(strInmuebleIdInicial);
   const [strCopropietarioId, setStrCopropietarioId] = useState("");
   const [bolAsignando, setBolAsignando] = useState(false);
-  const [objPrefillNuevo, setObjPrefillNuevo] = useState({ nombre: "", apellido: "", ci: "" });
+  const [objPrefillNuevo, setObjPrefillNuevo] = useState<Partial<Record<CampoPersona, string>>>({});
   const [strFechaInicio, setStrFechaInicio] = useState(fechaHoyISO());
   const [camposError, setCamposError] = useState<Set<string>>(new Set());
   const [strError, setStrError] = useState("");
@@ -80,13 +83,21 @@ function ResidentesContenido() {
   const [strExito, setStrExito] = useState("");
 
   const [bolDialogoNuevoCopropietario, setBolDialogoNuevoCopropietario] = useState(false);
-  const [strTelefonoNuevo, setStrTelefonoNuevo] = useState("");
-  const [camposErrorNuevo, setCamposErrorNuevo] = useState<Set<string>>(new Set());
-  const [strErrorNuevo, setStrErrorNuevo] = useState("");
-  const [bolGuardandoNuevo, setBolGuardandoNuevo] = useState(false);
+  const [strRolAsignacion, setStrRolAsignacion] = useState<"" | "PROPIETARIO" | "INQUILINO">("");
+  const [ocupanteParaRetirar, setOcupanteParaRetirar] = useState<Ocupante | null>(null);
+  const [bolRetirando, setBolRetirando] = useState(false);
 
+  const bolPuedeRetirar = puedeEjecutar(rol, "residentes", "editar");
   const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
   const inmuebleSeleccionado = inmuebles.find((inmueble) => inmueble.id === strInmuebleId) ?? null;
+  // El backend deja un solo propietario y un solo inquilino vigentes por inmueble: asignar otro
+  // con el mismo rol cierra la asociación anterior (inmuebles.service.js → asignarOcupante).
+  const ocupanteQueSeReemplaza =
+    strRolAsignacion &&
+    residentesDelInmueble.find(
+      (ocupante) =>
+        ocupante.esPropietario === (strRolAsignacion === "PROPIETARIO") && ocupante.copropietarioId !== strCopropietarioId
+    );
 
   async function cargarBase() {
     try {
@@ -151,8 +162,7 @@ function ResidentesContenido() {
     }
     setStrMensajePermiso("");
 
-    const objFormulario = new FormData(event.currentTarget);
-    const strRol = String(objFormulario.get("rol") ?? "");
+    const strRol = strRolAsignacion;
 
     const camposFaltantes = new Set<string>();
     if (!strInmuebleId) camposFaltantes.add("inmuebleId");
@@ -177,12 +187,18 @@ function ResidentesContenido() {
       (ocupante) => ocupante.copropietarioId === strCopropietarioId && ocupante.esPropietario === bolEsPropietario
     );
     if (bolYaActivo) {
+      const persona = obtenerCopropietarioPorId(strCopropietarioId);
       setCamposError(new Set(["copropietarioId"]));
-      setStrError("Esta persona ya se encuentra asignada activamente a este inmueble con este rol.");
+      setStrError(
+        `${persona ? `${persona.nombre} ${persona.apellido}` : "Esta persona"} ya se encuentra asociada a este inmueble como ${
+          bolEsPropietario ? "propietario" : "inquilino"
+        }.`
+      );
       return;
     }
 
     const objForm = event.currentTarget;
+    const persona = obtenerCopropietarioPorId(strCopropietarioId);
     setBolAsignando(true);
     try {
       await asignarOcupante(strInmuebleId, {
@@ -193,8 +209,13 @@ function ResidentesContenido() {
 
       setCamposError(new Set());
       setStrError("");
-      setStrExito("Persona asignada correctamente.");
+      setStrExito(
+        `Asignación registrada con éxito: ${persona ? `${persona.nombre} ${persona.apellido}` : "la persona"} como ${
+          bolEsPropietario ? "propietario" : "inquilino"
+        } de ${inmuebleSeleccionado?.codigo ?? "el inmueble"}.`
+      );
       setStrCopropietarioId("");
+      setStrRolAsignacion("");
       setStrFechaInicio(fechaHoyISO());
       objForm.reset();
       // Se recargan los inmuebles para refrescar `asignado` (define si genera expensa).
@@ -216,58 +237,43 @@ function ResidentesContenido() {
       const [strNombre = "", ...arrResto] = strLimpio.split(/\s+/);
       setObjPrefillNuevo({ nombre: strNombre, apellido: arrResto.join(" "), ci: "" });
     }
-    setStrTelefonoNuevo("");
-    setCamposErrorNuevo(new Set());
-    setStrErrorNuevo("");
     setBolDialogoNuevoCopropietario(true);
   }
 
-  function handleTelefonoNuevoChange(event: ChangeEvent<HTMLInputElement>) {
-    setStrTelefonoNuevo(event.target.value.replace(/[^0-9]/g, ""));
+  function handlePersonaRegistrada(nuevo: Copropietario, strMensaje: string) {
+    setCopropietarios((prev) => [nuevo, ...prev]);
+    setStrCopropietarioId(nuevo.id);
+    limpiarError("copropietarioId");
+    setStrError("");
+    setStrExito(`${strMensaje} Ahora elige su rol y presiona "Asignar".`);
+    setBolDialogoNuevoCopropietario(false);
   }
 
-  async function handleCrearCopropietario(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleConfirmarRetiro() {
+    if (!ocupanteParaRetirar || !inmuebleSeleccionado) return;
 
-    const objFormulario = new FormData(event.currentTarget);
-    const strNombre = String(objFormulario.get("nombre") ?? "").trim();
-    const strApellido = String(objFormulario.get("apellido") ?? "").trim();
-    const strCi = String(objFormulario.get("ci") ?? "").trim();
-    const strEmail = String(objFormulario.get("email") ?? "").trim();
-
-    const camposFaltantes = new Set<string>();
-    if (!strNombre) camposFaltantes.add("nombre");
-    if (!strApellido) camposFaltantes.add("apellido");
-    if (!strCi) camposFaltantes.add("ci");
-    if (strEmail && !esCorreoValido(strEmail)) camposFaltantes.add("email");
-    if (strTelefonoNuevo && !esTelefonoValido(strTelefonoNuevo)) camposFaltantes.add("telefono");
-
-    if (camposFaltantes.size > 0) {
-      setCamposErrorNuevo(camposFaltantes);
-      setStrErrorNuevo("Completa los campos obligatorios destacados.");
+    const objValidacion = validarAccion(rol, "residentes", "editar");
+    if (!objValidacion.permitido) {
+      setStrMensajePermiso(objValidacion.mensaje);
+      setOcupanteParaRetirar(null);
       return;
     }
 
-    setBolGuardandoNuevo(true);
-    setStrErrorNuevo("");
-
+    setBolRetirando(true);
     try {
-      const nuevo = await crearCopropietario({
-        nombre: strNombre,
-        apellido: strApellido,
-        ci: strCi,
-        email: strEmail || undefined,
-        telefono: strTelefonoNuevo || undefined,
-      });
-
-      setCopropietarios((prev) => [nuevo, ...prev]);
-      setStrCopropietarioId(nuevo.id);
-      limpiarError("copropietarioId");
-      setBolDialogoNuevoCopropietario(false);
+      await darDeBajaOcupante(inmuebleSeleccionado.id, ocupanteParaRetirar.id, {});
+      setStrError("");
+      setStrExito(
+        `Asociación retirada: ${ocupanteParaRetirar.copropietario.nombre} ${ocupanteParaRetirar.copropietario.apellido} ya no está vigente en ${inmuebleSeleccionado.codigo}. Queda en el historial.`
+      );
+      setOcupanteParaRetirar(null);
+      const [arrInmuebles] = await Promise.all([listarInmuebles(), cargarResidentes(inmuebleSeleccionado.id)]);
+      setInmuebles(arrInmuebles);
     } catch (error: unknown) {
-      setStrErrorNuevo(obtenerMensajeError(error, "Ocurrió un error al registrar al copropietario."));
+      setStrError(obtenerMensajeError(error, "Ocurrió un error al retirar la asociación."));
+      setOcupanteParaRetirar(null);
     } finally {
-      setBolGuardandoNuevo(false);
+      setBolRetirando(false);
     }
   }
 
@@ -369,9 +375,11 @@ function ResidentesContenido() {
                 </label>
                 <select
                   id="rol"
-                  name="rol"
-                  defaultValue=""
-                  onChange={() => limpiarError("rol")}
+                  value={strRolAsignacion}
+                  onChange={(event) => {
+                    setStrRolAsignacion(event.target.value as "PROPIETARIO" | "INQUILINO");
+                    limpiarError("rol");
+                  }}
                   className={claseCampo(camposError.has("rol"))}
                 >
                   <option value="" disabled>
@@ -394,6 +402,19 @@ function ResidentesContenido() {
                 />
               </div>
             </div>
+
+            {ocupanteQueSeReemplaza && (
+              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[12px] leading-[1.45] text-muted-foreground">
+                <span className="font-medium text-foreground">Atención:</span> {inmuebleSeleccionado?.codigo} ya tiene como{" "}
+                {strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"} vigente a{" "}
+                <span className="font-medium text-foreground">
+                  {ocupanteQueSeReemplaza.copropietario.nombre} {ocupanteQueSeReemplaza.copropietario.apellido}
+                </span>
+                . El sistema permite un solo {strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"} vigente por
+                inmueble: al asignar, su asociación pasará al historial como finalizada. Para tener a ambas personas, asigna
+                a una como propietario y a la otra como inquilino.
+              </div>
+            )}
 
             {strExito && (
               <div className="animate-in fade-in slide-in-from-top-1 duration-300 rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">
@@ -442,12 +463,13 @@ function ResidentesContenido() {
               <th className="font-caption px-5 py-2.5 text-left text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">Teléfono</th>
               <th className="font-caption px-5 py-2.5 text-left text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">Correo</th>
               <th className="font-caption px-5 py-2.5 text-left text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">Rol</th>
+              <th className="px-5 py-2.5" />
             </tr>
           </thead>
           <tbody>
             {bolCargandoResidentes && (
               <tr>
-                <td colSpan={4} className="px-5 py-8 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="px-5 py-8 text-center text-[13px] text-muted-foreground">
                   Cargando residentes...
                 </td>
               </tr>
@@ -473,12 +495,23 @@ function ResidentesContenido() {
                         {etiquetaRol(ocupante.esPropietario)}
                       </span>
                     </td>
+                    <td className="px-5 py-3 text-right">
+                      {bolPuedeRetirar && (
+                        <button
+                          type="button"
+                          onClick={() => setOcupanteParaRetirar(ocupante)}
+                          className="font-caption whitespace-nowrap text-[12px] font-medium text-destructive hover:text-destructive/80"
+                        >
+                          Retirar
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             {!bolCargandoResidentes && residentesDelInmueble.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-5 py-8 text-center text-[13px] text-muted-foreground">
+                <td colSpan={5} className="px-5 py-8 text-center text-[13px] text-muted-foreground">
                   {strInmuebleId ? "Este inmueble todavía no tiene residentes asignados." : "Selecciona un inmueble para ver sus residentes."}
                 </td>
               </tr>
@@ -487,105 +520,32 @@ function ResidentesContenido() {
         </table>
       </div>
 
-      <Dialog open={bolDialogoNuevoCopropietario} onOpenChange={setBolDialogoNuevoCopropietario}>
+      <DialogoRegistrarPersona
+        bolAbierto={bolDialogoNuevoCopropietario}
+        onCerrar={() => setBolDialogoNuevoCopropietario(false)}
+        prefill={objPrefillNuevo}
+        onRegistrado={handlePersonaRegistrada}
+      />
+
+      <Dialog open={ocupanteParaRetirar !== null} onOpenChange={(bolOpen) => !bolOpen && setOcupanteParaRetirar(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
-              Registrar copropietario
+              Retirar asociación
             </DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {ocupanteParaRetirar &&
+                `¿Confirmas retirar a ${ocupanteParaRetirar.copropietario.nombre} ${ocupanteParaRetirar.copropietario.apellido} (${etiquetaRol(ocupanteParaRetirar.esPropietario).toLowerCase()}) de ${inmuebleSeleccionado?.codigo ?? "este inmueble"}? No se elimina a la persona ni al inmueble: la asociación queda como finalizada en el historial.`}
+            </DialogDescription>
           </DialogHeader>
-
-          <form onSubmit={handleCrearCopropietario} autoComplete="off" className="flex flex-col gap-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="nombre" className="text-[12px] font-medium text-foreground">
-                  Nombre
-                </label>
-                <input
-                  id="nombre"
-                  name="nombre"
-                  autoComplete="off"
-                  defaultValue={objPrefillNuevo.nombre}
-                  autoFocus={!objPrefillNuevo.nombre}
-                  className={claseCampo(camposErrorNuevo.has("nombre"))}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="apellido" className="text-[12px] font-medium text-foreground">
-                  Apellido
-                </label>
-                <input
-                  id="apellido"
-                  name="apellido"
-                  autoComplete="off"
-                  defaultValue={objPrefillNuevo.apellido}
-                  autoFocus={!!objPrefillNuevo.nombre && !objPrefillNuevo.apellido}
-                  className={claseCampo(camposErrorNuevo.has("apellido"))}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="ci" className="text-[12px] font-medium text-foreground">
-                  CI
-                </label>
-                <input
-                  id="ci"
-                  name="ci"
-                  autoComplete="off"
-                  defaultValue={objPrefillNuevo.ci}
-                  autoFocus={!!objPrefillNuevo.nombre && !!objPrefillNuevo.apellido}
-                  className={claseCampo(camposErrorNuevo.has("ci"))}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="telefono" className="text-[12px] font-medium text-foreground">
-                  Teléfono <span className="text-muted-foreground">(opcional)</span>
-                </label>
-                <input
-                  id="telefono"
-                  name="telefono"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="Solo números"
-                  value={strTelefonoNuevo}
-                  onChange={handleTelefonoNuevoChange}
-                  className={claseCampo(camposErrorNuevo.has("telefono"))}
-                />
-              </div>
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <label htmlFor="email" className="text-[12px] font-medium text-foreground">
-                  Correo electrónico <span className="text-muted-foreground">(opcional)</span>
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="off"
-                  placeholder="nombre@correo.com"
-                  className={claseCampo(camposErrorNuevo.has("email"))}
-                />
-              </div>
-            </div>
-
-            {strErrorNuevo && (
-              <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-                {strErrorNuevo}
-              </p>
-            )}
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setBolDialogoNuevoCopropietario(false)}
-                disabled={bolGuardandoNuevo}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" cargando={bolGuardandoNuevo}>
-                {bolGuardandoNuevo ? "Guardando..." : "Registrar"}
-              </Button>
-            </DialogFooter>
-          </form>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOcupanteParaRetirar(null)} disabled={bolRetirando}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmarRetiro} cargando={bolRetirando}>
+              {bolRetirando ? "Retirando..." : "Retirar asociación"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

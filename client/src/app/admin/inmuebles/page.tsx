@@ -28,6 +28,8 @@ import {
   crearInmueble,
   crearTipoInmueble,
   esDepartamento,
+  etiquetaClasificacion,
+  etiquetaTipoInmueble,
   formatearBs,
   listarInmuebles,
   listarTiposInmueble,
@@ -177,16 +179,32 @@ export default function InmueblesPage() {
     const bolDepto = strClase === "DEPARTAMENTO";
 
     const camposFaltantes = new Set<string>();
-    if (!strCodigo) camposFaltantes.add("codigo");
-    if (bolDepto && !strTipoId) camposFaltantes.add("tipoInmuebleId");
+    const arrNombresFaltantes: string[] = [];
+    if (!strCodigo) {
+      camposFaltantes.add("codigo");
+      arrNombresFaltantes.push("código");
+    }
+    if (bolDepto && !strTipoId) {
+      camposFaltantes.add("tipoInmuebleId");
+      arrNombresFaltantes.push("clasificación (Tipo A, B o C)");
+    }
+    if (!strPiso) {
+      camposFaltantes.add("piso");
+      arrNombresFaltantes.push("ubicación (piso)");
+    }
 
     if (camposFaltantes.size > 0) {
       setCamposError(camposFaltantes);
-      setStrError(
-        camposFaltantes.has("tipoInmuebleId") && camposFaltantes.size === 1
-          ? "Selecciona el tipo de departamento (A, B, C...): define cuánto paga de expensa."
-          : "Completa los campos obligatorios destacados."
-      );
+      setStrError(`Completa los campos obligatorios: ${arrNombresFaltantes.join(", ")}.`);
+      return;
+    }
+
+    const objDuplicado = inmuebles.find(
+      (inmueble) => inmueble.codigo.trim().toLowerCase() === strCodigo.toLowerCase()
+    );
+    if (objDuplicado?.activo) {
+      setCamposError(new Set(["codigo"]));
+      setStrError(`El inmueble ${objDuplicado.codigo} ya existe (${etiquetaTipoInmueble(objDuplicado)}).`);
       return;
     }
 
@@ -196,7 +214,7 @@ export default function InmueblesPage() {
         codigo: strCodigo,
         clase: strClase,
         tipoInmuebleId: bolDepto ? strTipoId : undefined,
-        piso: strPiso || undefined,
+        piso: strPiso,
         areaM2: strAreaM2 ? Number(strAreaM2) : undefined,
       });
 
@@ -204,8 +222,8 @@ export default function InmueblesPage() {
       setStrError("");
       setStrExito(
         bolDepto
-          ? `Departamento ${nuevo.codigo} (Tipo ${nuevo.tipoInmueble.nombre}) registrado con éxito. Asígnale un propietario o inquilino para que empiece a generar expensa.`
-          : `${ETIQUETA_CLASE[strClase]} ${nuevo.codigo} registrado con éxito.`
+          ? `Inmueble registrado con éxito: ${nuevo.codigo}, ${etiquetaClasificacion(nuevo.tipoInmueble.nombre)}. Asígnale un propietario o inquilino para que empiece a generar expensa.`
+          : `Inmueble registrado con éxito: ${ETIQUETA_CLASE[strClase]} ${nuevo.codigo}.`
       );
       objForm.reset();
       setStrTipoId("");
@@ -227,7 +245,11 @@ export default function InmueblesPage() {
       }
 
       setCamposError(new Set(["codigo"]));
-      setStrError(obtenerMensajeError(error, "Ocurrió un error al registrar el inmueble."));
+      setStrError(
+        axios.isAxiosError(error) && error.response?.status === 409
+          ? `El inmueble ${strCodigo} ya existe.`
+          : obtenerMensajeError(error, "Ocurrió un error al registrar el inmueble.")
+      );
     } finally {
       setBolGuardando(false);
     }
@@ -389,6 +411,9 @@ export default function InmueblesPage() {
                   {tipo.nombre}
                 </div>
                 <div className="min-w-0 flex-1">
+                  <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+                    {etiquetaClasificacion(tipo.nombre)}
+                  </p>
                   <p className="text-[14px] font-medium text-foreground">
                     {formatearBs(tipo.montoBase)}
                     <span className="text-[12px] font-normal text-muted-foreground"> / mes</span>
@@ -486,7 +511,7 @@ export default function InmueblesPage() {
                     </option>
                     {tiposInmueble.map((tipo) => (
                       <option key={tipo.id} value={tipo.id}>
-                        Tipo {tipo.nombre} — {formatearBs(tipo.montoBase)}/mes
+                        {etiquetaClasificacion(tipo.nombre)} — {formatearBs(tipo.montoBase)}/mes
                       </option>
                     ))}
                   </select>
@@ -495,9 +520,16 @@ export default function InmueblesPage() {
 
               <div>
                 <label htmlFor="piso" className="mb-1 block text-[12px] font-medium text-foreground">
-                  Piso <span className="text-muted-foreground">(opcional)</span>
+                  Ubicación (piso)
                 </label>
-                <input id="piso" name="piso" autoComplete="off" className={claseCampo(false)} />
+                <input
+                  id="piso"
+                  name="piso"
+                  autoComplete="off"
+                  placeholder={strClase === "DEPARTAMENTO" ? "Ej. 1" : "Ej. Sótano 1"}
+                  onChange={() => limpiarError("piso")}
+                  className={claseCampo(camposError.has("piso"))}
+                />
               </div>
 
               <div>
