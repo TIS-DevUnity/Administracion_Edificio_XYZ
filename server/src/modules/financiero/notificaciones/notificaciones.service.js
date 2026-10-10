@@ -1,6 +1,9 @@
 const { Prisma } = require('@prisma/client')
 const { obtenerTransporter } = require('../../../config/mailer')
 const prisma = require('../../../config/prisma')
+const { pendientesDe } = require('../expensas/saldo.util')
+
+const Decimal = Prisma.Decimal
 
 /**
  * Envia un correo. Nunca debe interrumpir el flujo principal (generacion de
@@ -46,11 +49,13 @@ async function obtenerDestinatariosInmueble(inmuebleId) {
 async function notificarExpensaGenerada(expensa) {
   const destinatarios = await obtenerDestinatariosInmueble(expensa.inmuebleId)
   const codigo = expensa.inmueble?.codigo || expensa.inmuebleId
+  const tipo = expensa.tipoNombre ? ` (tipo ${expensa.tipoNombre})` : ''
 
   const html = `
-    <p>Se genero la expensa del periodo <strong>${expensa.periodo}</strong> para el inmueble <strong>${codigo}</strong>.</p>
-    <p>Monto: <strong>${Number(expensa.montoTotal).toFixed(2)}</strong></p>
-    <p>Fecha de vencimiento: <strong>${new Date(expensa.fechaVencimiento).toLocaleDateString('es-BO')}</strong></p>
+    <p>Se genero la expensa del periodo <strong>${expensa.periodo}</strong> para el inmueble <strong>${codigo}</strong>${tipo}.</p>
+    <p>Expensa fija: <strong>${new Decimal(expensa.montoBase).toFixed(2)}</strong></p>
+    <p>Total a la fecha: <strong>${new Decimal(expensa.montoTotal).toFixed(2)}</strong> (el agua se suma cuando llega la factura del mes)</p>
+    <p>Fecha de vencimiento: <strong>${new Date(expensa.fechaVencimiento).toLocaleDateString('es-BO', { timeZone: 'UTC' })}</strong></p>
   `
 
   await Promise.all(
@@ -64,14 +69,18 @@ async function notificarMoraAplicada(expensa) {
   const destinatarios = await obtenerDestinatariosInmueble(expensa.inmuebleId)
   const codigo = expensa.inmueble?.codigo || expensa.inmuebleId
 
-  // Saldo real: lo adeudado (expensa + mora) menos lo que ya se pago.
-  const pagado = (expensa.pagos || []).reduce((acc, p) => acc.plus(p.monto), new Prisma.Decimal(0))
-  const saldoPendiente = new Prisma.Decimal(expensa.montoTotal).plus(expensa.montoMora).minus(pagado)
+  // Saldo real: lo que falta pagar de la expensa y de la mora.
+  const pendientes = pendientesDe(expensa)
+  const ultima = (expensa.moras || [])[expensa.moras.length - 1]
+  const detalleUltima = ultima
+    ? `<p>Mora de ${ultima.mes}: <strong>${new Decimal(ultima.monto).toFixed(2)}</strong> (sobre ${new Decimal(ultima.base).toFixed(2)} pendientes)</p>`
+    : ''
 
   const html = `
     <p>La expensa del periodo <strong>${expensa.periodo}</strong> del inmueble <strong>${codigo}</strong> esta vencida y se le aplico un recargo por mora.</p>
-    <p>Monto de mora: <strong>${new Prisma.Decimal(expensa.montoMora).toFixed(2)}</strong></p>
-    <p>Saldo pendiente: <strong>${saldoPendiente.toFixed(2)}</strong></p>
+    ${detalleUltima}
+    <p>Mora acumulada: <strong>${new Decimal(expensa.montoMora).toFixed(2)}</strong></p>
+    <p>Saldo pendiente: <strong>${pendientes.total.toFixed(2)}</strong></p>
   `
 
   await Promise.all(

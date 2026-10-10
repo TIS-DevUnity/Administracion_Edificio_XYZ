@@ -55,6 +55,138 @@
         "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/api/auth/solo-admin"
       }
+    },
+    {
+      "name": "Tipos de departamento - listar",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/tipos-inmueble"
+      }
+    },
+    {
+      "name": "Tipos de departamento - crear (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/tipos-inmueble",
+        "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"D\",\n  \"montoBase\": 450,\n  \"pesoAgua\": 1.75\n}" }
+      }
+    },
+    {
+      "name": "Inmueble - crear baulera (sin tipo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/inmuebles",
+        "body": { "mode": "raw", "raw": "{\n  \"codigo\": \"BAU-10\",\n  \"clase\": \"BAULERA\"\n}" }
+      }
+    },
+    {
+      "name": "Configuracion de mora - crear (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/configuracion-mora",
+        "body": { "mode": "raw", "raw": "{\n  \"diaGeneracion\": 1,\n  \"diaVencimiento\": 10,\n  \"diasGracia\": 0,\n  \"tipoValor\": \"PORCENTAJE\",\n  \"valor\": 10,\n  \"modoMora\": \"MENSUAL\"\n}" }
+      }
+    },
+    {
+      "name": "Expensa - generar (solo departamentos asignados)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/expensas",
+        "body": { "mode": "raw", "raw": "{\n  \"inmuebleId\": \"<id del departamento>\",\n  \"periodo\": \"2026-10\"\n}" }
+      }
+    },
+    {
+      "name": "Agua - registrar factura del mes (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/agua",
+        "body": { "mode": "raw", "raw": "{\n  \"periodo\": \"2026-10\",\n  \"montoFactura\": 1000\n}" }
+      }
+    },
+    {
+      "name": "Agua - ver reparto de un periodo",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/agua/2026-10"
+      }
+    },
+    {
+      "name": "Pago por inmueble (cuota, mes atrasado o anticipado)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/pagos",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 100,\n  \"metodoPago\": \"EFECTIVO\",\n  \"fechaPago\": \"2026-10-10\"\n}" }
+      }
+    },
+    {
+      "name": "Expensa - cambiar vencimiento (solo Admin)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/expensas/<id de la expensa>/vencimiento",
+        "body": { "mode": "raw", "raw": "{\n  \"fechaVencimiento\": \"2026-10-15\",\n  \"motivo\": \"Feriado\"\n}" }
+      }
+    },
+    {
+      "name": "Generacion de expensas (informe de pendientes y excluidos)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/jobs/ejecutar-generacion?forzar=true"
+      }
+    },
+    {
+      "name": "Inmuebles de una persona (vigentes e historial)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/copropietarios/<id del copropietario>/inmuebles"
+      }
+    },
+    {
+      "name": "Saldo del inmueble (al dia, proximo pago)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/saldo"
+      }
+    },
+    {
+      "name": "Estado de cuenta (con detalle de mora por mes)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/estado-cuenta"
+      }
     }
   ]
 }

@@ -77,4 +77,22 @@ async function aplicarSaldoFavor(req, res, next) {
   }
 }
 
-module.exports = { generar, listar, aplicarMora, registrarPago, aplicarSaldoFavor }
+async function cambiarVencimiento(req, res, next) {
+  try {
+    const { fechaVencimiento, motivo } = req.body
+    if (!fechaVencimiento) {
+      return res.status(400).json({ error: 'fechaVencimiento es requerida (YYYY-MM-DD)' })
+    }
+    const expensa = await service.cambiarVencimiento(req.params.id, {
+      fechaVencimiento,
+      motivo,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(expensa)
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { generar, listar, aplicarMora, registrarPago, aplicarSaldoFavor, cambiarVencimiento }

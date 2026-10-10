@@ -10,8 +10,9 @@ const METODOS_PAGO_MANUALES = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE']
 const MONTO_MAXIMO = new Decimal('99999999.99') // limite de DECIMAL(10,2)
 const MAX_LARGO_REFERENCIA = 200
 
-function errorHttp(mensaje, status) {
-  return Object.assign(new Error(mensaje), { status })
+/** Error HTTP. `extra` (codigo, detalle) viaja al cliente junto con el mensaje. */
+function errorHttp(mensaje, status, extra = {}) {
+  return Object.assign(new Error(mensaje), { status, ...extra })
 }
 
 /** Convierte un monto recibido (numero o texto) a Decimal y lo valida. */
@@ -123,16 +124,38 @@ function sumarPagos(pagos = []) {
   return pagos.reduce((acc, p) => acc.plus(p.monto), new Decimal(0))
 }
 
+/** Suma de un campo numerico (montoMora, montoExpensa...) de una lista de pagos. */
+function sumarCampo(pagos = [], campo) {
+  return pagos.reduce((acc, p) => acc.plus(p[campo] ?? 0), new Decimal(0))
+}
+
 /**
- * Estado que le corresponde a una expensa segun lo pagado. Una expensa con mora
- * aplicada se mantiene VENCIDA hasta pagarse completa: asi un pago parcial no la
+ * Lo que falta pagar de una expensa, separado en mora y monto de la expensa (nunca negativo).
+ * `expensa` debe traer `pagos`; `montoMora` es la suma de sus lineas de mora.
+ */
+function pendientesDe(expensa) {
+  const pagos = expensa.pagos ?? []
+  const deExpensa = Decimal.max(
+    new Decimal(expensa.montoTotal).minus(sumarCampo(pagos, 'montoExpensa')),
+    new Decimal(0)
+  )
+  const deMora = Decimal.max(
+    new Decimal(expensa.montoMora ?? 0).minus(sumarCampo(pagos, 'montoMora')),
+    new Decimal(0)
+  )
+  return { expensa: deExpensa, mora: deMora, total: deExpensa.plus(deMora) }
+}
+
+/**
+ * Estado que le corresponde a una expensa segun lo pagado. Una expensa con mora generada
+ * se mantiene VENCIDA hasta pagarse completa (monto y mora): asi un pago parcial no la
  * devuelve a PARCIAL (lo que hacia que el cron la re-procesara y re-notificara).
  */
-function calcularEstado({ montoTotal, montoMora, totalPagado }) {
-  const adeudado = new Decimal(montoTotal).plus(montoMora)
-  if (new Decimal(totalPagado).gte(adeudado)) return 'PAGADA'
-  if (new Decimal(montoMora).gt(0)) return 'VENCIDA'
-  if (new Decimal(totalPagado).gt(0)) return 'PARCIAL'
+function calcularEstado({ montoTotal, montoMora, pagos }) {
+  const { total } = pendientesDe({ montoTotal, montoMora, pagos })
+  if (total.lte(0)) return 'PAGADA'
+  if (new Decimal(montoMora ?? 0).gt(0)) return 'VENCIDA'
+  if (sumarPagos(pagos).gt(0)) return 'PARCIAL'
   return 'PENDIENTE'
 }
 
@@ -184,37 +207,61 @@ function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fecha
 }
 
 /**
+ * Divide lo que se puede aplicar a una expensa: primero cubre la mora pendiente y despues el
+ * monto de la expensa. Devuelve cuanto va a cada parte.
+ */
+function dividirAplicacion(disponible, pendientes) {
+  const aMora = Decimal.min(disponible, pendientes.mora)
+  const aExpensa = Decimal.min(disponible.minus(aMora), pendientes.expensa)
+  return { aMora, aExpensa, total: aMora.plus(aExpensa) }
+}
+
+/**
  * Reparte `monto` entre las expensas recibidas, en el orden en que llegan (la mas antigua
- * primero): cada una se cubre completa antes de pasar a la siguiente. Crea un `Pago` por
- * expensa tocada y actualiza su estado. Devuelve lo que sobro. Debe llamarse dentro de una
+ * primero): en cada una se paga primero la mora y despues el monto, y se cubre completa antes
+ * de pasar a la siguiente. Crea un `Pago` por expensa tocada (con su parte de mora y de
+ * expensa) y actualiza su estado. Devuelve lo que sobro. Debe llamarse dentro de una
  * transaccion con inmueble y expensas ya bloqueados; cada expensa debe traer `pagos`.
+ * Las reglas de que pagos se aceptan viven en reglas-pago.util.js.
  */
 async function repartirPago(tx, { reciboId, expensas, monto, metodoPago, referencia, fechaPago, usuarioId }) {
   let restante = new Decimal(monto)
   const aplicaciones = []
 
   for (const expensa of expensas) {
-    const adeudado = new Decimal(expensa.montoTotal).plus(expensa.montoMora)
-    const pagado = sumarPagos(expensa.pagos)
-    const pendiente = Decimal.max(adeudado.minus(pagado), new Decimal(0))
+    const pendientes = pendientesDe(expensa)
 
-    if (pendiente.lte(0)) {
+    if (pendientes.total.lte(0)) {
       // Nada que cobrar: solo se corrige el estado si estaba desactualizado.
-      const estado = calcularEstado({ montoTotal: expensa.montoTotal, montoMora: expensa.montoMora, totalPagado: pagado })
+      const estado = calcularEstado({
+        montoTotal: expensa.montoTotal,
+        montoMora: expensa.montoMora,
+        pagos: expensa.pagos
+      })
       if (estado !== expensa.estado) {
         await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
-        aplicaciones.push({ expensa, pago: null, aplicado: new Decimal(0), estadoAnterior: expensa.estado, estado })
+        aplicaciones.push({
+          expensa,
+          pago: null,
+          aplicado: new Decimal(0),
+          aplicadoMora: new Decimal(0),
+          aplicadoExpensa: new Decimal(0),
+          estadoAnterior: expensa.estado,
+          estado
+        })
       }
       continue
     }
     if (restante.lte(0)) break
 
-    const aplicado = Decimal.min(restante, pendiente)
+    const { aMora, aExpensa, total: aplicado } = dividirAplicacion(restante, pendientes)
     const pago = await tx.pago.create({
       data: {
         expensaId: expensa.id,
         reciboId,
         monto: aplicado,
+        montoMora: aMora,
+        montoExpensa: aExpensa,
         metodoPago,
         referencia,
         fechaPago,
@@ -224,11 +271,20 @@ async function repartirPago(tx, { reciboId, expensas, monto, metodoPago, referen
     const estado = calcularEstado({
       montoTotal: expensa.montoTotal,
       montoMora: expensa.montoMora,
-      totalPagado: pagado.plus(aplicado)
+      pagos: [...(expensa.pagos ?? []), pago]
     })
     await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
 
-    aplicaciones.push({ expensa, pago, aplicado, estadoAnterior: expensa.estado, estado })
+    aplicaciones.push({
+      expensa,
+      pago,
+      aplicado,
+      aplicadoMora: aMora,
+      aplicadoExpensa: aExpensa,
+      pendienteAntes: pendientes.total,
+      estadoAnterior: expensa.estado,
+      estado
+    })
     restante = restante.minus(aplicado)
   }
 
@@ -250,20 +306,20 @@ async function saldoFavorDe(db, inmuebleId) {
  * `expensa` debe traer `pagos`.
  */
 async function aplicarSaldoAExpensa(tx, expensa, usuarioId = null) {
-  const adeudado = new Decimal(expensa.montoTotal).plus(expensa.montoMora)
-  const pagado = sumarPagos(expensa.pagos)
-  const pendiente = adeudado.minus(pagado)
-  if (pendiente.lte(0)) return { aplicado: new Decimal(0) }
+  const pendientes = pendientesDe(expensa)
+  if (pendientes.total.lte(0)) return { aplicado: new Decimal(0) }
 
   const saldo = await saldoFavorDe(tx, expensa.inmuebleId)
   if (saldo.lte(0)) return { aplicado: new Decimal(0) }
 
-  const aplicado = Decimal.min(saldo, pendiente)
+  const { aMora, aExpensa, total: aplicado } = dividirAplicacion(saldo, pendientes)
 
   const pago = await tx.pago.create({
     data: {
       expensaId: expensa.id,
       monto: aplicado,
+      montoMora: aMora,
+      montoExpensa: aExpensa,
       metodoPago: 'SALDO_A_FAVOR',
       referencia: 'Aplicacion de saldo a favor',
       registradoPorId: usuarioId
@@ -283,11 +339,21 @@ async function aplicarSaldoAExpensa(tx, expensa, usuarioId = null) {
   const estado = calcularEstado({
     montoTotal: expensa.montoTotal,
     montoMora: expensa.montoMora,
-    totalPagado: pagado.plus(aplicado)
+    pagos: [...(expensa.pagos ?? []), pago]
   })
   await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
 
   return { aplicado, pago, movimiento, estado }
+}
+
+/** Periodo (YYYY-MM) de la expensa mas reciente del inmueble, de cualquier estado. */
+async function periodoMasReciente(db, inmuebleId) {
+  const ultima = await db.expensa.findFirst({
+    where: { inmuebleId },
+    orderBy: { periodo: 'desc' },
+    select: { periodo: true }
+  })
+  return ultima ? ultima.periodo : null
 }
 
 module.exports = {
@@ -302,11 +368,14 @@ module.exports = {
   estadoPagoDe,
   resumenRecibo,
   sumarPagos,
+  sumarCampo,
+  pendientesDe,
   calcularEstado,
   bloquearInmueble,
   bloquearExpensa,
   bloquearExpensasConDeuda,
   expensasConDeudaOrdenadas,
+  periodoMasReciente,
   crearRecibo,
   repartirPago,
   saldoFavorDe,
