@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
@@ -16,17 +17,30 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
+  CLASES_INMUEBLE,
+  ClaseInmueble,
+  ETIQUETA_CLASE,
   Inmueble,
   Ocupante,
+  TipoInmueble,
   actualizarInmueble,
   darDeBajaOcupante,
+  esDepartamento,
   esOcupanteActivo,
   etiquetaRol,
+  formatearBs,
   formatearFecha,
   listarOcupantes,
+  listarTiposInmueble,
+  motivoExpensa,
   obtenerInmueble,
   obtenerMensajeError,
 } from "@/lib/inmuebles";
+
+const CLASE_CAMPO =
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground outline-none transition-colors focus:border-primary focus:ring-4 focus:ring-primary/15";
+
+const CLASE_DT = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 
 type Tab = "datos" | "historial";
 
@@ -53,7 +67,15 @@ export default function FichaInmueblePage() {
   const [strErrorBaja, setStrErrorBaja] = useState("");
   const [bolGuardandoBaja, setBolGuardandoBaja] = useState(false);
 
+  const [tiposInmueble, setTiposInmueble] = useState<TipoInmueble[]>([]);
+  const [bolDialogoEditar, setBolDialogoEditar] = useState(false);
+  const [strClaseEdicion, setStrClaseEdicion] = useState<ClaseInmueble>("DEPARTAMENTO");
+  const [strTipoEdicion, setStrTipoEdicion] = useState("");
+  const [strErrorEdicion, setStrErrorEdicion] = useState("");
+  const [bolGuardandoEdicion, setBolGuardandoEdicion] = useState(false);
+
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
+  const bolPuedeEditar = puedeEjecutar(rol, "inmuebles", "editar");
   const bolPuedeDarBaja = puedeEjecutar(rol, "residentes", "editar");
 
   async function cargarInmueble() {
@@ -61,9 +83,14 @@ export default function FichaInmueblePage() {
     try {
       setBolLoading(true);
       setStrErrorCarga("");
-      const [objInmueble, arrHistorial] = await Promise.all([obtenerInmueble(strId), listarOcupantes(strId)]);
+      const [objInmueble, arrHistorial, arrTipos] = await Promise.all([
+        obtenerInmueble(strId),
+        listarOcupantes(strId),
+        listarTiposInmueble(),
+      ]);
       setInmueble(objInmueble);
       setHistorial(arrHistorial);
+      setTiposInmueble(arrTipos);
     } catch (error: unknown) {
       console.error("Error al cargar el inmueble:", error);
       setStrErrorCarga("Este inmueble no existe o no se pudo cargar.");
@@ -92,6 +119,59 @@ export default function FichaInmueblePage() {
       await cargarInmueble();
     } catch (error: unknown) {
       setStrMensajePermiso(obtenerMensajeError(error, "Ocurrió un error al cambiar el estado del inmueble."));
+    }
+  }
+
+  function abrirDialogoEditar() {
+    if (!inmueble) return;
+    setStrClaseEdicion(inmueble.clase);
+    setStrTipoEdicion(inmueble.tipoInmuebleId ?? "");
+    setStrErrorEdicion("");
+    setBolDialogoEditar(true);
+  }
+
+  async function handleGuardarEdicion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!inmueble) return;
+
+    const objValidacion = validarAccion(rol, "inmuebles", "editar");
+    if (!objValidacion.permitido) {
+      setStrErrorEdicion(objValidacion.mensaje);
+      return;
+    }
+
+    const objFormulario = new FormData(event.currentTarget);
+    const strCodigo = String(objFormulario.get("codigoEdicion") ?? "").trim();
+    const strPiso = String(objFormulario.get("pisoEdicion") ?? "").trim();
+    const strAreaM2 = String(objFormulario.get("areaEdicion") ?? "").trim();
+    const bolDepto = strClaseEdicion === "DEPARTAMENTO";
+
+    if (!strCodigo) {
+      setStrErrorEdicion("El código es obligatorio.");
+      return;
+    }
+    if (bolDepto && !strTipoEdicion) {
+      setStrErrorEdicion("Selecciona el tipo de departamento (A, B, C...).");
+      return;
+    }
+
+    setBolGuardandoEdicion(true);
+    setStrErrorEdicion("");
+
+    try {
+      await actualizarInmueble(inmueble.id, {
+        codigo: strCodigo,
+        clase: strClaseEdicion,
+        tipoInmuebleId: bolDepto ? strTipoEdicion : undefined,
+        piso: strPiso || undefined,
+        areaM2: strAreaM2 ? Number(strAreaM2) : undefined,
+      });
+      setBolDialogoEditar(false);
+      await cargarInmueble();
+    } catch (error: unknown) {
+      setStrErrorEdicion(obtenerMensajeError(error, "Ocurrió un error al guardar los cambios."));
+    } finally {
+      setBolGuardandoEdicion(false);
     }
   }
 
@@ -153,10 +233,13 @@ export default function FichaInmueblePage() {
         ← Inmuebles
       </Link>
 
-      <div className="mb-4 mt-1 flex items-center justify-between">
-        <h1 className="font-title text-[20px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
-          {inmueble.codigo} · {inmueble.tipoInmueble.nombre}
-        </h1>
+      <div className="mb-4 mt-1 flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="font-title text-[20px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+            {inmueble.codigo}
+          </h1>
+          <BadgeTipoInmueble inmueble={inmueble} />
+        </div>
         <span
           className={`font-caption inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
             inmueble.activo ? "bg-success-subtle text-success" : "bg-danger-subtle text-destructive"
@@ -197,32 +280,73 @@ export default function FichaInmueblePage() {
         <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
           <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Código
-              </dt>
+              <dt className={CLASE_DT}>Código</dt>
               <dd className="mt-1 text-[14px] text-foreground">{inmueble.codigo}</dd>
             </div>
             <div>
-              <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Tipo
-              </dt>
-              <dd className="mt-1 text-[14px] text-foreground">{inmueble.tipoInmueble.nombre}</dd>
+              <dt className={CLASE_DT}>Clase</dt>
+              <dd className="mt-1 text-[14px] text-foreground">{ETIQUETA_CLASE[inmueble.clase]}</dd>
             </div>
             <div>
-              <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Piso
-              </dt>
+              <dt className={CLASE_DT}>Tipo de departamento</dt>
+              <dd className="mt-1 text-[14px] text-foreground">
+                {esDepartamento(inmueble) ? `Tipo ${inmueble.tipoInmueble.nombre}` : "No aplica"}
+              </dd>
+            </div>
+            <div>
+              <dt className={CLASE_DT}>Expensa fija mensual</dt>
+              <dd className="mt-1 text-[14px] tabular-nums text-foreground">
+                {esDepartamento(inmueble) ? formatearBs(inmueble.tipoInmueble.montoBase) : "No paga"}
+              </dd>
+            </div>
+            <div>
+              <dt className={CLASE_DT}>Peso en el reparto de agua</dt>
+              <dd className="mt-1 text-[14px] text-foreground">
+                {esDepartamento(inmueble) ? Number(inmueble.tipoInmueble.pesoAgua) : "No aplica"}
+              </dd>
+            </div>
+            <div>
+              <dt className={CLASE_DT}>Piso</dt>
               <dd className="mt-1 text-[14px] text-foreground">{inmueble.piso || "—"}</dd>
             </div>
             <div>
-              <dt className="font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Área m²
-              </dt>
+              <dt className={CLASE_DT}>Área m²</dt>
               <dd className="mt-1 text-[14px] text-foreground">{inmueble.areaM2 || "—"}</dd>
+            </div>
+            <div>
+              <dt className={CLASE_DT}>Ocupación</dt>
+              <dd className="mt-1 text-[14px] text-foreground">
+                {inmueble.asignado ? "Con propietario/inquilino" : "Sin asignar"}
+              </dd>
             </div>
           </dl>
 
+          {(() => {
+            const { paga, motivo } = motivoExpensa(inmueble);
+            return (
+              <div
+                className={`mt-5 rounded-lg border px-3 py-2 text-[13px] ${
+                  paga
+                    ? "border-success/20 bg-success-subtle text-success"
+                    : "border-border bg-muted/30 text-muted-foreground"
+                }`}
+              >
+                <span className="font-medium">{paga ? "Genera expensa." : "No genera expensa."}</span> {motivo}
+              </div>
+            );
+          })()}
+
           <div className="mt-5 flex flex-wrap gap-3">
+            {bolPuedeEditar && (
+              <button
+                type="button"
+                onClick={abrirDialogoEditar}
+                className="flex h-9 items-center justify-center rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                Editar datos
+              </button>
+            )}
+
             {bolPuedeCambiarEstado && (
               <button
                 type="button"
@@ -318,6 +442,117 @@ export default function FichaInmueblePage() {
         </div>
       )}
 
+      <Dialog open={bolDialogoEditar} onOpenChange={setBolDialogoEditar}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+              Editar {inmueble.codigo}
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              Cambiar el tipo solo afecta a las expensas que se generen después.
+            </DialogDescription>
+          </DialogHeader>
+
+          {bolDialogoEditar && (
+            <form onSubmit={handleGuardarEdicion} autoComplete="off" className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="codigoEdicion" className="text-[12px] font-medium text-foreground">
+                    Código
+                  </label>
+                  <input id="codigoEdicion" name="codigoEdicion" defaultValue={inmueble.codigo} className={CLASE_CAMPO} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="claseEdicion" className="text-[12px] font-medium text-foreground">
+                    Clase
+                  </label>
+                  <select
+                    id="claseEdicion"
+                    value={strClaseEdicion}
+                    onChange={(event) => setStrClaseEdicion(event.target.value as ClaseInmueble)}
+                    className={CLASE_CAMPO}
+                  >
+                    {CLASES_INMUEBLE.map((clase) => (
+                      <option key={clase} value={clase}>
+                        {ETIQUETA_CLASE[clase]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {strClaseEdicion === "DEPARTAMENTO" && (
+                  <div className="flex flex-col gap-1 sm:col-span-2">
+                    <label htmlFor="tipoEdicion" className="text-[12px] font-medium text-foreground">
+                      Tipo de departamento
+                    </label>
+                    <select
+                      id="tipoEdicion"
+                      value={strTipoEdicion}
+                      onChange={(event) => setStrTipoEdicion(event.target.value)}
+                      className={CLASE_CAMPO}
+                    >
+                      <option value="" disabled>
+                        Selecciona A, B, C...
+                      </option>
+                      {tiposInmueble.map((tipo) => (
+                        <option key={tipo.id} value={tipo.id}>
+                          Tipo {tipo.nombre} — {formatearBs(tipo.montoBase)}/mes
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="pisoEdicion" className="text-[12px] font-medium text-foreground">
+                    Piso <span className="text-muted-foreground">(opcional)</span>
+                  </label>
+                  <input id="pisoEdicion" name="pisoEdicion" defaultValue={inmueble.piso ?? ""} className={CLASE_CAMPO} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="areaEdicion" className="text-[12px] font-medium text-foreground">
+                    Área m² <span className="text-muted-foreground">(opcional)</span>
+                  </label>
+                  <input
+                    id="areaEdicion"
+                    name="areaEdicion"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={inmueble.areaM2 ? Number(inmueble.areaM2) : ""}
+                    className={CLASE_CAMPO}
+                  />
+                </div>
+              </div>
+
+              {strClaseEdicion !== "DEPARTAMENTO" && (
+                <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+                  Bauleras y parqueos no tienen tipo y no pagan expensa.
+                </p>
+              )}
+
+              {strErrorEdicion && (
+                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
+                  {strErrorEdicion}
+                </p>
+              )}
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setBolDialogoEditar(false)}
+                  disabled={bolGuardandoEdicion}
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" cargando={bolGuardandoEdicion}>
+                  {bolGuardandoEdicion ? "Guardando..." : "Guardar cambios"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={ocupanteParaBaja !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoBaja()}>
         <DialogContent>
           <DialogHeader>
@@ -354,7 +589,7 @@ export default function FichaInmueblePage() {
             <Button variant="outline" onClick={cerrarDialogoBaja} disabled={bolGuardandoBaja}>
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={handleConfirmarBaja} disabled={bolGuardandoBaja}>
+            <Button variant="destructive" onClick={handleConfirmarBaja} cargando={bolGuardandoBaja}>
               {bolGuardandoBaja ? "Guardando..." : "Confirmar baja"}
             </Button>
           </DialogFooter>

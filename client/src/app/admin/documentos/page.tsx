@@ -850,7 +850,7 @@ export default function DocumentosPage() {
                 <Button type="button" variant="outline" onClick={cerrarDialogoSubir} disabled={bolSubiendo}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={bolSubiendo}>
+                <Button type="submit" cargando={bolSubiendo}>
                   {bolSubiendo ? "Subiendo..." : "Subir"}
                 </Button>
               </DialogFooter>
@@ -958,9 +958,8 @@ export default function DocumentosPage() {
                 </Button>
                 <Button
                   onClick={handleGuardarDescripcion}
-                  disabled={
-                    bolGuardandoDescripcion || strDescripcionEditada === (documentoDetalle.descripcion ?? "")
-                  }
+                  cargando={bolGuardandoDescripcion}
+                  disabled={strDescripcionEditada === (documentoDetalle.descripcion ?? "")}
                 >
                   {bolGuardandoDescripcion ? "Guardando..." : "Guardar descripción"}
                 </Button>
@@ -991,7 +990,7 @@ export default function DocumentosPage() {
             <Button variant="outline" onClick={() => setDocumentoEliminar(null)} disabled={bolEliminando}>
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={handleConfirmarEliminar} disabled={bolEliminando}>
+            <Button variant="destructive" onClick={handleConfirmarEliminar} cargando={bolEliminando}>
               {bolEliminando ? "Eliminando..." : "Eliminar"}
             </Button>
           </DialogFooter>
@@ -1067,7 +1066,7 @@ export default function DocumentosPage() {
               <Button type="button" variant="outline" onClick={cerrarDialogoEditar} disabled={bolGuardandoEdicion}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={bolGuardandoEdicion}>
+              <Button type="submit" cargando={bolGuardandoEdicion}>
                 {bolGuardandoEdicion ? "Guardando..." : "Guardar cambios"}
               </Button>
             </DialogFooter>

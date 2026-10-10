@@ -15,14 +15,21 @@ import {
   esTelefonoValido,
   listarCopropietarios,
 } from "@/lib/copropietarios";
+import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import {
+  CLASES_INMUEBLE,
+  ETIQUETA_CLASE,
   Inmueble,
   Ocupante,
   asignarOcupante,
+  esDepartamento,
   esOcupanteActivo,
   etiquetaRol,
+  etiquetaTipoInmueble,
+  formatearBs,
   listarInmuebles,
   listarOcupantes,
+  motivoExpensa,
   obtenerMensajeError,
 } from "@/lib/inmuebles";
 
@@ -196,7 +203,9 @@ function ResidentesContenido() {
       setStrCopropietarioId("");
       setStrFechaInicio(fechaHoyISO());
       event.currentTarget.reset();
-      await cargarResidentes(strInmuebleId);
+      // Se recargan los inmuebles para refrescar `asignado` (define si genera expensa).
+      const [arrInmuebles] = await Promise.all([listarInmuebles(), cargarResidentes(strInmuebleId)]);
+      setInmuebles(arrInmuebles);
     } catch (error: unknown) {
       setStrError(obtenerMensajeError(error, "Ocurrió un error al asignar a la persona."));
     }
@@ -281,11 +290,19 @@ function ResidentesContenido() {
             className={claseCampo(camposError.has("inmuebleId")) + " sm:max-w-xs"}
           >
             <option value="">Selecciona un inmueble activo...</option>
-            {inmueblesActivos.map((inmueble) => (
-              <option key={inmueble.id} value={inmueble.id}>
-                {inmueble.codigo} · {inmueble.tipoInmueble.nombre}
-              </option>
-            ))}
+            {CLASES_INMUEBLE.map((clase) => {
+              const arrDeClase = inmueblesActivos.filter((inmueble) => inmueble.clase === clase);
+              if (arrDeClase.length === 0) return null;
+              return (
+                <optgroup key={clase} label={`${ETIQUETA_CLASE[clase]}s`}>
+                  {arrDeClase.map((inmueble) => (
+                    <option key={inmueble.id} value={inmueble.id}>
+                      {inmueble.codigo} · {etiquetaTipoInmueble(inmueble)}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
           {!bolLoading && inmuebles.length === 0 && (
             <p className="font-caption mt-1 text-[11px] leading-[1.3] text-muted-foreground">
@@ -295,19 +312,32 @@ function ResidentesContenido() {
         </div>
 
         {inmuebleSeleccionado && (
-          <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 rounded-lg border border-border bg-muted/30 p-3 text-[12px] text-muted-foreground">
-            <span>
-              <span className="font-medium text-foreground">Código:</span> {inmuebleSeleccionado.codigo}
-            </span>
-            <span>
-              <span className="font-medium text-foreground">Tipo:</span> {inmuebleSeleccionado.tipoInmueble.nombre}
-            </span>
-            <span>
-              <span className="font-medium text-foreground">Piso:</span> {inmuebleSeleccionado.piso || "—"}
-            </span>
-            <span>
-              <span className="font-medium text-foreground">Área m²:</span> {inmuebleSeleccionado.areaM2 || "—"}
-            </span>
+          <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-muted-foreground">
+              <span className="flex items-center gap-2">
+                <span className="font-medium text-foreground">{inmuebleSeleccionado.codigo}</span>
+                <BadgeTipoInmueble inmueble={inmuebleSeleccionado} />
+              </span>
+              <span>
+                <span className="font-medium text-foreground">Expensa fija:</span>{" "}
+                {esDepartamento(inmuebleSeleccionado)
+                  ? `${formatearBs(inmuebleSeleccionado.tipoInmueble.montoBase)}/mes + agua`
+                  : "No paga"}
+              </span>
+              <span>
+                <span className="font-medium text-foreground">Piso:</span> {inmuebleSeleccionado.piso || "—"}
+              </span>
+              <span>
+                <span className="font-medium text-foreground">Área m²:</span> {inmuebleSeleccionado.areaM2 || "—"}
+              </span>
+            </div>
+            {esDepartamento(inmuebleSeleccionado) && (
+              <p className="font-caption mt-2 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+                {inmuebleSeleccionado.asignado
+                  ? motivoExpensa(inmuebleSeleccionado).motivo
+                  : "Todavía sin asignar: al asignar un propietario o inquilino empezará a generar expensa (aunque nadie viva ahí)."}
+              </p>
+            )}
           </div>
         )}
 
@@ -410,6 +440,7 @@ function ResidentesContenido() {
           <h2 className="font-subtitle text-[15px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
             Residentes actuales {inmuebleSeleccionado ? `— ${inmuebleSeleccionado.codigo}` : ""}
           </h2>
+          {inmuebleSeleccionado && <BadgeTipoInmueble inmueble={inmuebleSeleccionado} className="ml-2 mr-auto" />}
           {inmuebleSeleccionado && (
             <Link
               href={`/admin/inmuebles/${inmuebleSeleccionado.id}`}
@@ -554,7 +585,7 @@ function ResidentesContenido() {
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={bolGuardandoNuevo}>
+              <Button type="submit" cargando={bolGuardandoNuevo}>
                 {bolGuardandoNuevo ? "Guardando..." : "Registrar"}
               </Button>
             </DialogFooter>

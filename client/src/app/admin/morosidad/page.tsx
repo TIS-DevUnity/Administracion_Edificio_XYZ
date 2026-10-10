@@ -456,7 +456,8 @@ export default function GeneracionExpensasAdminPage() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleGenerarMes}
-              disabled={bolGenerandoMes}
+              cargando={bolGenerandoMes}
+              disabled={bolRevisandoMora || bolForzandoMora}
             >
               <CalendarPlus className="mr-2 h-4 w-4" />
               {bolGenerandoMes ? "Generando..." : "Generar expensas del mes"}
@@ -466,9 +467,10 @@ export default function GeneracionExpensasAdminPage() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleRevisarMora}
-              disabled={bolRevisandoMora}
+              cargando={bolRevisandoMora}
+              disabled={bolGenerandoMes || bolForzandoMora}
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
+              <RefreshCw className="mr-2 h-4 w-4" />
               {bolRevisandoMora ? "Revisando..." : "Revisar deudas ahora"}
             </Button>
 
@@ -476,9 +478,10 @@ export default function GeneracionExpensasAdminPage() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleForzarMora}
-              disabled={bolForzandoMora}
+              cargando={bolForzandoMora}
+              disabled={bolGenerandoMes || bolRevisandoMora}
             >
-              <CircleDollarSign className={`mr-2 h-4 w-4 ${bolForzandoMora ? "animate-pulse" : ""}`} />
+              <CircleDollarSign className="mr-2 h-4 w-4" />
               {bolForzandoMora ? "Forzando..." : "Forzar mora"}
             </Button>
 
@@ -572,7 +575,7 @@ export default function GeneracionExpensasAdminPage() {
               )}
 
               <DialogFooter>
-                <Button onClick={handleSaveConfig} disabled={isSaving} className="w-full">
+                <Button onClick={handleSaveConfig} cargando={isSaving} className="w-full">
                   <Save className="mr-2 h-4 w-4" />
                   {isSaving ? "Guardando..." : "Guardar configuración"}
                 </Button>
@@ -960,7 +963,7 @@ export default function GeneracionExpensasAdminPage() {
                 <Button type="button" variant="outline" onClick={cerrarDialogoPago} disabled={bolGuardandoPago}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={bolGuardandoPago}>
+                <Button type="submit" cargando={bolGuardandoPago}>
                   {bolGuardandoPago ? "Guardando..." : "Confirmar pago"}
                 </Button>
               </DialogFooter>

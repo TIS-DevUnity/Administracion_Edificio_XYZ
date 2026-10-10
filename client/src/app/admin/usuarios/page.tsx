@@ -12,7 +12,7 @@ import {
   puedeEjecutar,
   validarAccion,
 } from "@/lib/permissions";
-import { Button } from "@/components/ui/button";
+import { Button, Spinner } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -136,6 +136,8 @@ export default function UsuariosPage() {
     useState(false);
   const [strIdEnEdicion, setStrIdEnEdicion] = useState<string | null>(null);
   const [usuarioDetalle, setUsuarioDetalle] = useState<UsuarioApi | null>(null);
+  // "crear", "editar:<id>" o "estado:<id>": bloquea el botón mientras la petición está en curso.
+  const [strAccionEnCurso, setStrAccionEnCurso] = useState<string | null>(null);
 
   const bolPuedeCrear = puedeEjecutar(rol, "usuarios", "crear");
   const bolPuedeEditar = puedeEjecutar(rol, "usuarios", "editar");
@@ -241,6 +243,7 @@ export default function UsuariosPage() {
       return;
     }
 
+    setStrAccionEnCurso("crear");
     try {
       const response = await api.post<{ usuario: UsuarioApi }>(
         "/usuarios",
@@ -262,6 +265,8 @@ export default function UsuariosPage() {
       setStrMensajePermiso("");
     } catch (error: unknown) {
       manejarErrorApi(error, "Error al crear usuario:");
+    } finally {
+      setStrAccionEnCurso(null);
     }
   }
 
@@ -285,6 +290,7 @@ export default function UsuariosPage() {
 
     const objFormulario = new FormData(event.currentTarget);
 
+    setStrAccionEnCurso(`editar:${strId}`);
     try {
       const response = await api.put<{ usuario: UsuarioApi }>(
         `/usuarios/${strId}`,
@@ -307,6 +313,8 @@ export default function UsuariosPage() {
       setStrMensajePermiso("");
     } catch (error: unknown) {
       manejarErrorApi(error, "Error al editar usuario:");
+    } finally {
+      setStrAccionEnCurso(null);
     }
   }
 
@@ -324,6 +332,7 @@ export default function UsuariosPage() {
       return;
     }
 
+    setStrAccionEnCurso(`estado:${objUsuarioFila.id}`);
     try {
       const response = await api.patch<{ usuario: UsuarioApi }>(
         `/usuarios/${objUsuarioFila.id}/estado`,
@@ -345,6 +354,8 @@ export default function UsuariosPage() {
         error,
         "Error al cambiar el estado del usuario:"
       );
+    } finally {
+      setStrAccionEnCurso(null);
     }
   }
 
@@ -411,9 +422,11 @@ export default function UsuariosPage() {
 
               <button
                 type="submit"
-                className="h-9 w-full rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 sm:col-span-2 lg:w-auto"
+                disabled={strAccionEnCurso === "crear"}
+                className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70 sm:col-span-2 lg:w-auto"
               >
-                Guardar
+                {strAccionEnCurso === "crear" && <Spinner />}
+                {strAccionEnCurso === "crear" ? "Guardando..." : "Guardar"}
               </button>
             </form>
           )}
@@ -489,9 +502,11 @@ export default function UsuariosPage() {
 
                         <button
                           type="submit"
-                          className="h-9 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                          disabled={strAccionEnCurso === `editar:${registro.id}`}
+                          className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
                         >
-                          Guardar
+                          {strAccionEnCurso === `editar:${registro.id}` && <Spinner />}
+                          {strAccionEnCurso === `editar:${registro.id}` ? "Guardando..." : "Guardar"}
                         </button>
 
                         <button
@@ -564,8 +579,10 @@ export default function UsuariosPage() {
                               onClick={() =>
                                 cambiarEstado(registro)
                               }
-                              className="font-caption text-[12px] font-medium text-destructive hover:text-destructive/80"
+                              disabled={strAccionEnCurso === `estado:${registro.id}`}
+                              className="font-caption inline-flex items-center gap-1 text-[12px] font-medium text-destructive hover:text-destructive/80 disabled:cursor-wait disabled:opacity-70"
                             >
+                              {strAccionEnCurso === `estado:${registro.id}` && <Spinner className="size-3" />}
                               {registro.activo
                                 ? "Desactivar"
                                 : "Activar"}
@@ -641,9 +658,11 @@ export default function UsuariosPage() {
                     <div className="flex flex-col gap-2 pt-1 sm:flex-row">
                       <button
                         type="submit"
-                        className="h-9 w-full rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        disabled={strAccionEnCurso === `editar:${registro.id}`}
+                        className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
                       >
-                        Guardar
+                        {strAccionEnCurso === `editar:${registro.id}` && <Spinner />}
+                        {strAccionEnCurso === `editar:${registro.id}` ? "Guardando..." : "Guardar"}
                       </button>
 
                       <button
@@ -738,8 +757,10 @@ export default function UsuariosPage() {
                             onClick={() =>
                               cambiarEstado(registro)
                             }
-                            className="h-9 w-full rounded-lg border border-border px-3 text-[12px] font-medium text-destructive transition-colors hover:bg-muted sm:w-auto"
+                            disabled={strAccionEnCurso === `estado:${registro.id}`}
+                            className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border px-3 text-[12px] font-medium text-destructive transition-colors hover:bg-muted disabled:cursor-wait disabled:opacity-70 sm:w-auto"
                           >
+                            {strAccionEnCurso === `estado:${registro.id}` && <Spinner />}
                             {registro.activo
                               ? "Desactivar"
                               : "Activar"}

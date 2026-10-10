@@ -2,37 +2,59 @@ import axios from "axios";
 import { api } from "@/lib/api";
 import { Copropietario } from "@/lib/copropietarios";
 
+export type ClaseInmueble = "DEPARTAMENTO" | "BAULERA" | "PARQUEO";
+
+export const CLASES_INMUEBLE: ClaseInmueble[] = ["DEPARTAMENTO", "BAULERA", "PARQUEO"];
+
+export const ETIQUETA_CLASE: Record<ClaseInmueble, string> = {
+  DEPARTAMENTO: "Departamento",
+  BAULERA: "Baulera",
+  PARQUEO: "Parqueo",
+};
+
 export interface TipoInmueble {
   id: string;
   nombre: string;
   montoBase: string;
+  pesoAgua: string;
 }
 
 export interface Inmueble {
   id: string;
   codigo: string;
+  clase: ClaseInmueble;
   piso: string | null;
   areaM2: string | null;
   activo: boolean;
-  tipoInmuebleId: string;
-  tipoInmueble: TipoInmueble;
+  asignado: boolean;
+  tipoInmuebleId: string | null;
+  // Para baulera/parqueo el backend devuelve un objeto de compatibilidad con id null y monto 0.
+  tipoInmueble: Omit<TipoInmueble, "id"> & { id: string | null };
   createdAt: string;
   updatedAt: string;
 }
 
 export interface DatosInmueble {
   codigo: string;
-  tipoInmuebleId: string;
+  clase: ClaseInmueble;
+  tipoInmuebleId?: string;
   piso?: string;
   areaM2?: number;
 }
 
 export interface DatosActualizarInmueble {
   codigo?: string;
+  clase?: ClaseInmueble;
   tipoInmuebleId?: string;
   piso?: string;
   areaM2?: number;
   activo?: boolean;
+}
+
+export interface DatosTipoInmueble {
+  nombre: string;
+  montoBase: number;
+  pesoAgua?: number;
 }
 
 export interface Ocupante {
@@ -58,6 +80,16 @@ export interface DatosDarDeBajaOcupante {
 export async function listarTiposInmueble(): Promise<TipoInmueble[]> {
   const response = await api.get<{ tiposInmueble: TipoInmueble[] }>("/tipos-inmueble");
   return response.data.tiposInmueble;
+}
+
+export async function crearTipoInmueble(datos: DatosTipoInmueble): Promise<TipoInmueble> {
+  const response = await api.post<{ tipoInmueble: TipoInmueble }>("/tipos-inmueble", datos);
+  return response.data.tipoInmueble;
+}
+
+export async function actualizarTipoInmueble(id: string, datos: Partial<DatosTipoInmueble>): Promise<TipoInmueble> {
+  const response = await api.put<{ tipoInmueble: TipoInmueble }>(`/tipos-inmueble/${id}`, datos);
+  return response.data.tipoInmueble;
 }
 
 export async function listarInmuebles(): Promise<Inmueble[]> {
@@ -100,6 +132,36 @@ export async function darDeBajaOcupante(
     datos
   );
   return response.data.ocupante;
+}
+
+export function esDepartamento(inmueble: Pick<Inmueble, "clase">): boolean {
+  return inmueble.clase === "DEPARTAMENTO";
+}
+
+/** "Depto. Tipo A", "Baulera" o "Parqueo". */
+export function etiquetaTipoInmueble(inmueble: Pick<Inmueble, "clase" | "tipoInmueble">): string {
+  return esDepartamento(inmueble) ? `Depto. Tipo ${inmueble.tipoInmueble.nombre}` : ETIQUETA_CLASE[inmueble.clase];
+}
+
+/** Regla del backend (asignacion.util.js): solo paga el departamento activo con un ocupante vigente. */
+export function motivoExpensa(inmueble: Pick<Inmueble, "clase" | "activo" | "asignado">): {
+  paga: boolean;
+  motivo: string;
+} {
+  if (!esDepartamento(inmueble)) {
+    return { paga: false, motivo: "Bauleras y parqueos no pagan expensa." };
+  }
+  if (!inmueble.activo) {
+    return { paga: false, motivo: "Inactivo: no genera expensa." };
+  }
+  if (!inmueble.asignado) {
+    return { paga: false, motivo: "Sin propietario ni inquilino asignado: no genera expensa." };
+  }
+  return { paga: true, motivo: "Paga la expensa fija de su tipo más su parte del agua." };
+}
+
+export function formatearBs(valor: string | number): string {
+  return `Bs ${Number(valor).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function esOcupanteActivo(ocupante: Ocupante): boolean {
