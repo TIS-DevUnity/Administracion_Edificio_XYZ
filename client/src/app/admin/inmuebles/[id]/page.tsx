@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, Spinner } from "@/components/ui/button";
 import {
   CLASES_INMUEBLE,
   ClaseInmueble,
@@ -73,6 +73,7 @@ export default function FichaInmueblePage() {
   const [strTipoEdicion, setStrTipoEdicion] = useState("");
   const [strErrorEdicion, setStrErrorEdicion] = useState("");
   const [bolGuardandoEdicion, setBolGuardandoEdicion] = useState(false);
+  const [bolCambiandoEstado, setBolCambiandoEstado] = useState(false);
 
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
   const bolPuedeEditar = puedeEjecutar(rol, "inmuebles", "editar");
@@ -114,11 +115,14 @@ export default function FichaInmueblePage() {
     }
     setStrMensajePermiso("");
 
+    setBolCambiandoEstado(true);
     try {
       await actualizarInmueble(inmueble.id, { activo: !inmueble.activo });
       await cargarInmueble();
     } catch (error: unknown) {
       setStrMensajePermiso(obtenerMensajeError(error, "Ocurrió un error al cambiar el estado del inmueble."));
+    } finally {
+      setBolCambiandoEstado(false);
     }
   }
 
@@ -351,8 +355,10 @@ export default function FichaInmueblePage() {
               <button
                 type="button"
                 onClick={handleAlternarEstado}
-                className="flex h-9 items-center justify-center rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+                disabled={bolCambiandoEstado}
+                className="flex h-9 items-center justify-center gap-2 rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-wait disabled:opacity-70"
               >
+                {bolCambiandoEstado && <Spinner />}
                 {inmueble.activo ? "Desactivar inmueble" : "Activar inmueble"}
               </button>
             )}

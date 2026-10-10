@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, Spinner } from "@/components/ui/button";
 import {
   CLASES_INMUEBLE,
   ClaseInmueble,
@@ -82,6 +82,9 @@ export default function InmueblesPage() {
     piso: string;
     areaM2: string;
   } | null>(null);
+
+  const [bolGuardando, setBolGuardando] = useState(false);
+  const [strIdCambiandoEstado, setStrIdCambiandoEstado] = useState<string | null>(null);
 
   const [objDialogoTipo, setObjDialogoTipo] = useState<{ tipo: TipoInmueble | null } | null>(null);
   const [strErrorTipo, setStrErrorTipo] = useState("");
@@ -187,6 +190,7 @@ export default function InmueblesPage() {
       return;
     }
 
+    setBolGuardando(true);
     try {
       const nuevo = await crearInmueble({
         codigo: strCodigo,
@@ -224,6 +228,8 @@ export default function InmueblesPage() {
 
       setCamposError(new Set(["codigo"]));
       setStrError(obtenerMensajeError(error, "Ocurrió un error al registrar el inmueble."));
+    } finally {
+      setBolGuardando(false);
     }
   }
 
@@ -232,6 +238,7 @@ export default function InmueblesPage() {
 
     const { inmueble, piso, areaM2 } = objInmuebleInactivoDuplicado;
 
+    setBolGuardando(true);
     try {
       await actualizarInmueble(inmueble.id, {
         activo: true,
@@ -246,6 +253,8 @@ export default function InmueblesPage() {
       await cargarDatos();
     } catch (error: unknown) {
       setStrError(obtenerMensajeError(error, "Ocurrió un error al reactivar el inmueble."));
+    } finally {
+      setBolGuardando(false);
     }
   }
 
@@ -257,11 +266,14 @@ export default function InmueblesPage() {
     }
     setStrMensajePermiso("");
 
+    setStrIdCambiandoEstado(inmueble.id);
     try {
       await actualizarInmueble(inmueble.id, { activo: !inmueble.activo });
       await cargarDatos();
     } catch (error: unknown) {
       setStrError(obtenerMensajeError(error, "Ocurrió un error al cambiar el estado del inmueble."));
+    } finally {
+      setStrIdCambiandoEstado(null);
     }
   }
 
@@ -534,9 +546,11 @@ export default function InmueblesPage() {
                   <button
                     type="button"
                     onClick={handleReactivar}
-                    className="font-caption whitespace-nowrap rounded-md border border-destructive/30 px-2 py-1 text-[12px] font-medium text-destructive hover:bg-destructive/10"
+                    disabled={bolGuardando}
+                    className="font-caption inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-destructive/30 px-2 py-1 text-[12px] font-medium text-destructive hover:bg-destructive/10 disabled:cursor-wait disabled:opacity-70"
                   >
-                    Reactivar inmueble
+                    {bolGuardando && <Spinner className="size-3" />}
+                    {bolGuardando ? "Reactivando..." : "Reactivar inmueble"}
                   </button>
                 )}
               </div>
@@ -545,9 +559,11 @@ export default function InmueblesPage() {
             <div>
               <button
                 type="submit"
-                className="flex h-11 w-full items-center justify-center rounded-lg bg-primary px-5 text-[14px] font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98] sm:h-10 sm:w-auto sm:text-[13px]"
+                disabled={bolGuardando}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-[14px] font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70 disabled:active:scale-100 sm:h-10 sm:w-auto sm:text-[13px]"
               >
-                Guardar {ETIQUETA_CLASE[strClase].toLowerCase()}
+                {bolGuardando && <Spinner />}
+                {bolGuardando ? "Guardando..." : `Guardar ${ETIQUETA_CLASE[strClase].toLowerCase()}`}
               </button>
             </div>
           </form>
@@ -656,8 +672,10 @@ export default function InmueblesPage() {
                         <button
                           type="button"
                           onClick={() => handleAlternarEstado(inmueble)}
-                          className="font-caption text-[12px] font-medium text-destructive hover:text-destructive/80"
+                          disabled={strIdCambiandoEstado === inmueble.id}
+                          className="font-caption inline-flex items-center gap-1 text-[12px] font-medium text-destructive hover:text-destructive/80 disabled:cursor-wait disabled:opacity-70"
                         >
+                          {strIdCambiandoEstado === inmueble.id && <Spinner className="size-3" />}
                           {inmueble.activo ? "Desactivar" : "Activar"}
                         </button>
                       )}
@@ -752,8 +770,10 @@ export default function InmueblesPage() {
                   <button
                     type="button"
                     onClick={() => handleAlternarEstado(inmueble)}
-                    className="flex h-10 w-full items-center justify-center rounded-lg border border-border text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/5"
+                    disabled={strIdCambiandoEstado === inmueble.id}
+                    className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-border text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/5 disabled:cursor-wait disabled:opacity-70"
                   >
+                    {strIdCambiandoEstado === inmueble.id && <Spinner />}
                     {inmueble.activo ? "Desactivar" : "Activar"}
                   </button>
                 )}

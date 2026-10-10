@@ -1,13 +1,14 @@
 "use client";
 
-import { ChangeEvent, FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, Spinner } from "@/components/ui/button";
 import {
   Copropietario,
   crearCopropietario,
@@ -70,7 +71,8 @@ function ResidentesContenido() {
 
   const [strInmuebleId, setStrInmuebleId] = useState(strInmuebleIdInicial);
   const [strCopropietarioId, setStrCopropietarioId] = useState("");
-  const [strBusquedaCopropietario, setStrBusquedaCopropietario] = useState("");
+  const [bolAsignando, setBolAsignando] = useState(false);
+  const [objPrefillNuevo, setObjPrefillNuevo] = useState({ nombre: "", apellido: "", ci: "" });
   const [strFechaInicio, setStrFechaInicio] = useState(fechaHoyISO());
   const [camposError, setCamposError] = useState<Set<string>>(new Set());
   const [strError, setStrError] = useState("");
@@ -85,16 +87,6 @@ function ResidentesContenido() {
 
   const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
   const inmuebleSeleccionado = inmuebles.find((inmueble) => inmueble.id === strInmuebleId) ?? null;
-
-  const copropietariosFiltrados = useMemo(() => {
-    const strBusqueda = strBusquedaCopropietario.trim().toLowerCase();
-    if (!strBusqueda) return copropietarios;
-
-    return copropietarios.filter((copropietario) => {
-      const strNombreCompleto = `${copropietario.nombre} ${copropietario.apellido}`.toLowerCase();
-      return strNombreCompleto.includes(strBusqueda) || copropietario.ci.toLowerCase().includes(strBusqueda);
-    });
-  }, [copropietarios, strBusquedaCopropietario]);
 
   async function cargarBase() {
     try {
@@ -190,6 +182,8 @@ function ResidentesContenido() {
       return;
     }
 
+    const objForm = event.currentTarget;
+    setBolAsignando(true);
     try {
       await asignarOcupante(strInmuebleId, {
         copropietarioId: strCopropietarioId,
@@ -202,16 +196,26 @@ function ResidentesContenido() {
       setStrExito("Persona asignada correctamente.");
       setStrCopropietarioId("");
       setStrFechaInicio(fechaHoyISO());
-      event.currentTarget.reset();
+      objForm.reset();
       // Se recargan los inmuebles para refrescar `asignado` (define si genera expensa).
       const [arrInmuebles] = await Promise.all([listarInmuebles(), cargarResidentes(strInmuebleId)]);
       setInmuebles(arrInmuebles);
     } catch (error: unknown) {
       setStrError(obtenerMensajeError(error, "Ocurrió un error al asignar a la persona."));
+    } finally {
+      setBolAsignando(false);
     }
   }
 
-  function abrirDialogoNuevoCopropietario() {
+  function abrirDialogoNuevoCopropietario(strTexto: string) {
+    const strLimpio = strTexto.trim();
+    // Si escribió un CI (tiene dígitos y no espacios) se precarga en CI; si no, se reparte en nombre/apellido.
+    if (strLimpio && /\d/.test(strLimpio) && !/\s/.test(strLimpio)) {
+      setObjPrefillNuevo({ nombre: "", apellido: "", ci: strLimpio });
+    } else {
+      const [strNombre = "", ...arrResto] = strLimpio.split(/\s+/);
+      setObjPrefillNuevo({ nombre: strNombre, apellido: arrResto.join(" "), ci: "" });
+    }
     setStrTelefonoNuevo("");
     setCamposErrorNuevo(new Set());
     setStrErrorNuevo("");
@@ -348,37 +352,16 @@ function ResidentesContenido() {
                 <label htmlFor="copropietario" className="text-[12px] font-medium text-foreground">
                   Copropietario
                 </label>
-                <input
-                  placeholder="Buscar por nombre o CI..."
-                  value={strBusquedaCopropietario}
-                  onChange={(event) => setStrBusquedaCopropietario(event.target.value)}
-                  className={claseCampo(false) + " mb-1"}
+                <SelectorCopropietario
+                  copropietarios={copropietarios}
+                  strSeleccionadoId={strCopropietarioId}
+                  bolError={camposError.has("copropietarioId")}
+                  onSeleccionar={(strId) => {
+                    setStrCopropietarioId(strId);
+                    limpiarError("copropietarioId");
+                  }}
+                  onCrear={abrirDialogoNuevoCopropietario}
                 />
-                <div className="flex gap-2">
-                  <select
-                    id="copropietario"
-                    value={strCopropietarioId}
-                    onChange={(event) => {
-                      setStrCopropietarioId(event.target.value);
-                      limpiarError("copropietarioId");
-                    }}
-                    className={claseCampo(camposError.has("copropietarioId"))}
-                  >
-                    <option value="">Selecciona un copropietario...</option>
-                    {copropietariosFiltrados.map((copropietario) => (
-                      <option key={copropietario.id} value={copropietario.id}>
-                        {copropietario.nombre} {copropietario.apellido} · CI {copropietario.ci}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={abrirDialogoNuevoCopropietario}
-                    className="font-caption h-9 shrink-0 whitespace-nowrap rounded-lg border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-muted"
-                  >
-                    + Nuevo
-                  </button>
-                </div>
               </div>
               <div className="flex flex-col gap-1">
                 <label htmlFor="rol" className="text-[12px] font-medium text-foreground">
@@ -426,9 +409,11 @@ function ResidentesContenido() {
             <div>
               <button
                 type="submit"
-                className="flex h-10 items-center justify-center rounded-lg bg-primary px-5 text-[13px] font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98]"
+                disabled={bolAsignando}
+                className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-[13px] font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70 disabled:active:scale-100"
               >
-                Asignar
+                {bolAsignando && <Spinner />}
+                {bolAsignando ? "Asignando..." : "Asignar"}
               </button>
             </div>
           </form>
@@ -520,6 +505,8 @@ function ResidentesContenido() {
                   id="nombre"
                   name="nombre"
                   autoComplete="off"
+                  defaultValue={objPrefillNuevo.nombre}
+                  autoFocus={!objPrefillNuevo.nombre}
                   className={claseCampo(camposErrorNuevo.has("nombre"))}
                 />
               </div>
@@ -531,6 +518,8 @@ function ResidentesContenido() {
                   id="apellido"
                   name="apellido"
                   autoComplete="off"
+                  defaultValue={objPrefillNuevo.apellido}
+                  autoFocus={!!objPrefillNuevo.nombre && !objPrefillNuevo.apellido}
                   className={claseCampo(camposErrorNuevo.has("apellido"))}
                 />
               </div>
@@ -538,7 +527,14 @@ function ResidentesContenido() {
                 <label htmlFor="ci" className="text-[12px] font-medium text-foreground">
                   CI
                 </label>
-                <input id="ci" name="ci" autoComplete="off" className={claseCampo(camposErrorNuevo.has("ci"))} />
+                <input
+                  id="ci"
+                  name="ci"
+                  autoComplete="off"
+                  defaultValue={objPrefillNuevo.ci}
+                  autoFocus={!!objPrefillNuevo.nombre && !!objPrefillNuevo.apellido}
+                  className={claseCampo(camposErrorNuevo.has("ci"))}
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <label htmlFor="telefono" className="text-[12px] font-medium text-foreground">
@@ -592,6 +588,192 @@ function ResidentesContenido() {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+const MAX_SUGERENCIAS = 8;
+
+function normalizar(strTexto: string): string {
+  return strTexto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function SelectorCopropietario({
+  copropietarios,
+  strSeleccionadoId,
+  bolError,
+  onSeleccionar,
+  onCrear,
+}: {
+  copropietarios: Copropietario[];
+  strSeleccionadoId: string;
+  bolError: boolean;
+  onSeleccionar: (strId: string) => void;
+  onCrear: (strTexto: string) => void;
+}) {
+  const [strTexto, setStrTexto] = useState("");
+  const [bolEscribiendo, setBolEscribiendo] = useState(false);
+  const [bolAbierto, setBolAbierto] = useState(false);
+  const [intActivo, setIntActivo] = useState(0);
+  const refInput = useRef<HTMLInputElement>(null);
+
+  const seleccionado = copropietarios.find((copropietario) => copropietario.id === strSeleccionadoId) ?? null;
+  const strValor =
+    seleccionado && !bolEscribiendo ? `${seleccionado.nombre} ${seleccionado.apellido} · CI ${seleccionado.ci}` : strTexto;
+
+  const sugerencias = useMemo(() => {
+    const strBusqueda = normalizar(strTexto);
+    const arrFiltrados = strBusqueda
+      ? copropietarios.filter((copropietario) =>
+          normalizar(`${copropietario.nombre} ${copropietario.apellido} ${copropietario.ci}`).includes(strBusqueda)
+        )
+      : copropietarios;
+    return arrFiltrados.slice(0, MAX_SUGERENCIAS);
+  }, [copropietarios, strTexto]);
+
+  const intTotalOpciones = sugerencias.length + 1; // +1 = "Registrar nuevo"
+
+  function seleccionar(copropietario: Copropietario) {
+    onSeleccionar(copropietario.id);
+    setStrTexto("");
+    setBolEscribiendo(false);
+    setBolAbierto(false);
+  }
+
+  function crear() {
+    setBolAbierto(false);
+    setBolEscribiendo(false);
+    onCrear(strTexto);
+  }
+
+  function limpiar() {
+    onSeleccionar("");
+    setStrTexto("");
+    setBolEscribiendo(true);
+    setBolAbierto(true);
+    setIntActivo(0);
+    refInput.current?.focus();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setBolAbierto(true);
+      setIntActivo((intPrevio) =>
+        event.key === "ArrowDown"
+          ? (intPrevio + 1) % intTotalOpciones
+          : (intPrevio - 1 + intTotalOpciones) % intTotalOpciones
+      );
+    } else if (event.key === "Enter" && bolAbierto) {
+      // Sin esto, Enter enviaría el formulario de asignación.
+      event.preventDefault();
+      if (intActivo < sugerencias.length) seleccionar(sugerencias[intActivo]);
+      else crear();
+    } else if (event.key === "Escape") {
+      setBolAbierto(false);
+    }
+  }
+
+  const strTextoLimpio = strTexto.trim();
+
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <input
+        ref={refInput}
+        id="copropietario"
+        role="combobox"
+        aria-expanded={bolAbierto}
+        aria-controls="lista-copropietarios"
+        aria-autocomplete="list"
+        autoComplete="off"
+        placeholder="Busca por nombre o CI, o escribe uno nuevo..."
+        value={strValor}
+        onChange={(event) => {
+          setStrTexto(event.target.value);
+          setBolEscribiendo(true);
+          setBolAbierto(true);
+          setIntActivo(0);
+          if (strSeleccionadoId) onSeleccionar("");
+        }}
+        onFocus={() => setBolAbierto(true)}
+        onBlur={() => setBolAbierto(false)}
+        onKeyDown={handleKeyDown}
+        className={`${claseCampo(bolError)} pl-9 ${seleccionado ? "pr-9 font-medium" : ""}`}
+      />
+      {seleccionado && (
+        <button
+          type="button"
+          onClick={limpiar}
+          aria-label="Quitar copropietario seleccionado"
+          className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      {bolAbierto && (
+        <div
+          id="lista-copropietarios"
+          role="listbox"
+          // Evita que el input pierda el foco (y cierre la lista) antes de que el click llegue a la opción.
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+        >
+          {sugerencias.length === 0 && strTextoLimpio && (
+            <p className="px-2.5 py-2 text-[12px] text-muted-foreground">
+              No hay ningún copropietario que coincida con «{strTextoLimpio}».
+            </p>
+          )}
+
+          {sugerencias.map((copropietario, intIndice) => (
+            <button
+              key={copropietario.id}
+              type="button"
+              role="option"
+              aria-selected={copropietario.id === strSeleccionadoId}
+              onClick={() => seleccionar(copropietario)}
+              onMouseEnter={() => setIntActivo(intIndice)}
+              className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-[13px] ${
+                intActivo === intIndice ? "bg-muted" : ""
+              }`}
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-foreground">
+                  {copropietario.nombre} {copropietario.apellido}
+                </span>
+                <span className="font-caption block truncate text-[11px] tracking-[0.01em] text-muted-foreground">
+                  CI {copropietario.ci}
+                  {copropietario.email ? ` · ${copropietario.email}` : ""}
+                </span>
+              </span>
+              {copropietario.id === strSeleccionadoId && <Check className="h-4 w-4 shrink-0 text-primary" />}
+            </button>
+          ))}
+
+          <div className={sugerencias.length > 0 ? "mt-1 border-t border-border pt-1" : ""}>
+            <button
+              type="button"
+              role="option"
+              aria-selected={false}
+              onClick={crear}
+              onMouseEnter={() => setIntActivo(sugerencias.length)}
+              className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[13px] font-medium text-primary ${
+                intActivo === sugerencias.length ? "bg-primary/10" : ""
+              }`}
+            >
+              <UserPlus className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {strTextoLimpio ? `Registrar «${strTextoLimpio}» como nuevo copropietario` : "Registrar nuevo copropietario"}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
