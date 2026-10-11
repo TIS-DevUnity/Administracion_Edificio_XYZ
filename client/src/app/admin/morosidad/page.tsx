@@ -546,7 +546,7 @@ function ContenidoMorosidad() {
               className="w-full md:w-auto"
               onClick={handleGenerarMes}
               cargando={bolGenerandoMes}
-              disabled={bolRevisandoMora || bolForzandoMora}
+              disabled={bolRevisandoMora}
             >
               <CalendarPlus className="mr-2 h-4 w-4" />
               {bolGenerandoMes ? "Generando..." : "Generar expensas del mes"}
@@ -557,23 +557,9 @@ function ContenidoMorosidad() {
               className="w-full md:w-auto"
               onClick={handleRevisarMora}
               cargando={bolRevisandoMora}
-              disabled={bolGenerandoMes || bolForzandoMora}
+              disabled={bolGenerandoMes}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
-              {bolRevisandoMora ? "Revisando..." : "Revisar deudas ahora"}
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full md:w-auto"
-              onClick={handleForzarMora}
-              cargando={bolForzandoMora}
-              disabled={bolGenerandoMes || bolRevisandoMora}
-            >
-              <CircleDollarSign className="mr-2 h-4 w-4" />
-              {bolForzandoMora ? "Forzando..." : "Forzar mora"}
-            </Button>
-              <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
               {bolRevisandoMora ? "Revisando..." : "Revisar mora"}
             </Button>
 
@@ -769,7 +755,7 @@ function ContenidoMorosidad() {
                 <ul className="mt-2 list-inside list-disc space-y-1 text-[12px]">
                   {resultadoGeneracion.pendientes?.map((item) => <li key={item.inmuebleId}>{item.codigo}: {item.motivo}</li>)}
                 </ul>
-                <Button variant="outline" className="mt-3" onClick={handleGenerarMes} disabled={bolGenerandoMes}>Reintentar generación del mes</Button>
+                <Button variant="outline" className="mt-3" onClick={handleGenerarMes} cargando={bolGenerandoMes}>Reintentar generación del mes</Button>
               </div>
             )}
             {(resultadoGeneracion.excluidos?.length ?? 0) > 0 && (
