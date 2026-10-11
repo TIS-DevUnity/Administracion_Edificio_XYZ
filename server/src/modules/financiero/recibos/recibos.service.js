@@ -69,7 +69,7 @@ async function obtener(id) {
     inmueble: {
       id: recibo.inmueble.id,
       codigo: recibo.inmueble.codigo,
-      tipo: recibo.inmueble.tipoInmueble.nombre
+      tipo: recibo.inmueble.tipoInmueble?.nombre ?? recibo.inmueble.clase
     },
     estadoPago: estadoPagoDe(pagos.map((p) => p.expensa.estado)),
     pagos: pagos.map((p) => ({
@@ -188,7 +188,7 @@ async function datosParaPdf(id) {
   return {
     folio: formatearFolio(recibo.folioNumero),
     fechaPago: recibo.fechaPago,
-    inmueble: { codigo: recibo.inmueble.codigo, tipo: recibo.inmueble.tipoInmueble.nombre },
+    inmueble: { codigo: recibo.inmueble.codigo, tipo: recibo.inmueble.tipoInmueble?.nombre ?? recibo.inmueble.clase },
     recibidoDe: ocupantes.map((o) => `${o.copropietario.nombre} ${o.copropietario.apellido}`),
     montoTotal: new Decimal(recibo.montoTotal),
     metodoPago: recibo.metodoPago,

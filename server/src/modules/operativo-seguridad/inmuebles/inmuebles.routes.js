@@ -13,12 +13,20 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
  * /api/inmuebles:
  *   get:
  *     summary: Lista todos los inmuebles (departamentos, parqueos, bauleras)
+ *     description: |
+ *       Cada inmueble trae `clase` (DEPARTAMENTO, BAULERA o PARQUEO) y `asignado` (tiene un
+ *       ocupante vigente). Solo el departamento tiene tipo (A, B, C...). En baulera y parqueo
+ *       `tipoInmuebleId` es null y `tipoInmueble` es un objeto de compatibilidad con la clase
+ *       como nombre y monto 0.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200: { description: OK }
  *   post:
  *     summary: Registra un nuevo inmueble
+ *     description: |
+ *       Un departamento (clase por defecto) requiere `tipoInmuebleId`. Una baulera o un parqueo
+ *       no tienen tipo: no se debe enviar `tipoInmuebleId`.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -27,14 +35,16 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [codigo]
  *             properties:
  *               codigo: { type: string }
- *               tipoInmuebleId: { type: string, description: "id de un registro en /api/tipos-inmueble" }
+ *               clase: { type: string, enum: [DEPARTAMENTO, BAULERA, PARQUEO], default: DEPARTAMENTO }
+ *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble" }
  *               piso: { type: string }
  *               areaM2: { type: number }
  *     responses:
  *       201: { description: Inmueble creado }
- *       400: { description: Datos invalidos }
+ *       400: { description: Datos invalidos (falta el tipo de un departamento, o se envio tipo a una baulera o parqueo) }
  *       404: { description: Tipo de inmueble no encontrado }
  *       409: { description: Codigo ya registrado }
  */
@@ -73,12 +83,14 @@ router.post("/", autenticar, GESTION, controller.crear);
  *             type: object
  *             properties:
  *               codigo: { type: string }
- *               tipoInmuebleId: { type: string, description: "id de un registro en /api/tipos-inmueble" }
+ *               clase: { type: string, enum: [DEPARTAMENTO, BAULERA, PARQUEO] }
+ *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble. Al pasar a baulera o parqueo el tipo se quita." }
  *               piso: { type: string }
  *               areaM2: { type: number }
  *               activo: { type: boolean }
  *     responses:
  *       200: { description: Inmueble actualizado }
+ *       400: { description: Datos invalidos (un departamento necesita tipo; baulera y parqueo no lo tienen) }
  *       404: { description: Inmueble o tipo de inmueble no encontrado }
  *       409: { description: Codigo ya registrado }
  */
@@ -122,6 +134,7 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *     responses:
  *       201: { description: Ocupante asignado }
  *       404: { description: Inmueble o copropietario no encontrado }
+ *       409: { description: "El inmueble esta inactivo (codigo INMUEBLE_INACTIVO) o la persona ya esta asociada con esa misma relacion (codigo ASOCIACION_DUPLICADA)" }
  */
 router.get("/:id/ocupantes", autenticar, LECTURA, controller.listarOcupantes);
 router.post("/:id/ocupantes", autenticar, GESTION, controller.asignarOcupante);

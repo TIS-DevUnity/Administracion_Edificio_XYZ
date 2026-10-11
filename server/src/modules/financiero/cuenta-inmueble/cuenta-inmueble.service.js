@@ -13,15 +13,20 @@ const {
   crearRecibo,
   repartirPago,
   sumarPagos,
+  sumarCampo,
+  pendientesDe,
+  periodoMasReciente,
   bloquearInmueble,
   bloquearExpensasConDeuda,
   expensasConDeudaOrdenadas,
   saldoFavorDe
 } = require('../expensas/saldo.util')
+const reglas = require('../expensas/reglas-pago.util')
 
 const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
 const MAX_MOVIMIENTOS = 200
 const OPCIONES_TX = { timeout: 15000 }
+const ETIQUETA_CLASE = { DEPARTAMENTO: 'Departamento', BAULERA: 'Baulera', PARQUEO: 'Parqueo' }
 
 async function obtenerInmueble(inmuebleId) {
   const inmueble = await prisma.inmueble.findUnique({
@@ -38,15 +43,47 @@ function resumenInmueble(inmueble) {
   return {
     id: inmueble.id,
     codigo: inmueble.codigo,
-    tipo: inmueble.tipoInmueble.nombre,
+    clase: inmueble.clase,
+    // Baulera y parqueo no tienen tipo (A, B, C...): se muestra su clase.
+    tipo: inmueble.tipoInmueble?.nombre ?? ETIQUETA_CLASE[inmueble.clase] ?? inmueble.clase,
     activo: inmueble.activo
   }
 }
 
-/** Lo que falta pagar de una expensa (nunca negativo). */
+/** Solo los departamentos pagan expensa y tienen cuenta que cobrar. */
+function exigirDepartamento(inmueble) {
+  if (inmueble.clase !== 'DEPARTAMENTO') {
+    throw errorHttp(
+      `El inmueble ${inmueble.codigo} es ${inmueble.clase === 'BAULERA' ? 'una baulera' : 'un parqueo'}: solo los departamentos pagan expensa`,
+      409
+    )
+  }
+}
+
+/** Lo que falta pagar de una expensa, mora y monto juntos (nunca negativo). */
 function pendienteDe(expensa) {
-  const adeudado = new Decimal(expensa.montoTotal).plus(expensa.montoMora)
-  return Decimal.max(adeudado.minus(sumarPagos(expensa.pagos)), new Decimal(0))
+  return pendientesDe(expensa).total
+}
+
+/** Reparte lo pagado de mora entre las lineas de mora, de la mas antigua a la mas nueva. */
+function detalleMoras(lineas = [], pagadoMora) {
+  let restante = new Decimal(pagadoMora)
+  return lineas.map((linea) => {
+    const monto = new Decimal(linea.monto)
+    const pagado = Decimal.min(restante, monto)
+    restante = restante.minus(pagado)
+    return {
+      numero: linea.numero,
+      mes: linea.mes,
+      fechaCorte: new Date(linea.fechaCorte).toISOString().slice(0, 10),
+      base: new Decimal(linea.base).toFixed(2),
+      tipoValor: linea.tipoValor,
+      valor: new Decimal(linea.valor).toString(),
+      monto: monto.toFixed(2),
+      pagado: pagado.toFixed(2),
+      pendiente: monto.minus(pagado).toFixed(2)
+    }
+  })
 }
 
 function situacionDe(saldoNeto) {
@@ -78,9 +115,13 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
   const fecha = parsearFechaPago(fechaPago)
 
   const inmueble = await obtenerInmueble(inmuebleId)
+  exigirDepartamento(inmueble)
 
   const { recibo, movimiento, saldoFavor } = await prisma.$transaction(async (tx) => {
     await bloquearInmueble(tx, inmuebleId)
+
+    // El pago anticipado solo aplica cuando no se debe nada; con deuda se usa el pago normal.
+    reglas.validarPagoAnticipado({ deudas: await reglas.cargarDeudas(tx, inmuebleId) })
 
     const reciboCreado = await crearRecibo(tx, {
       inmuebleId,
@@ -142,6 +183,7 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
     movimiento,
     recibo: resumenRecibo(recibo),
     saldoFavor: saldoFavor.toFixed(2),
+    tipoPago: 'ANTICIPADO',
     mensaje:
       'Pago anticipado registrado como saldo a favor. Se descuenta solo en la proxima expensa que se genere, o a mano con POST /api/financiero/expensas/{id}/aplicar-saldo'
   }
@@ -149,9 +191,10 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
 
 /**
  * Registra un pago a nivel de inmueble: el monto se reparte entre sus expensas con deuda,
- * de la mas antigua a la mas nueva (cada una se cubre completa antes de pasar a la
- * siguiente). Si sobra, la diferencia queda como saldo a favor; si el inmueble no debe
- * nada, todo es saldo a favor.
+ * de la mas antigua a la mas nueva (en cada una, primero la mora y luego el monto; cada una
+ * se cubre completa antes de pasar a la siguiente). Si sobra, la diferencia queda como saldo
+ * a favor; si el inmueble no debe nada, todo es saldo a favor.
+ * Los meses atrasados solo se aceptan completos (ver reglas-pago.util.js).
  */
 async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia, fechaPago, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
@@ -160,11 +203,16 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
   const fecha = parsearFechaPago(fechaPago, { obligatoria: true })
 
   const inmueble = await obtenerInmueble(inmuebleId)
+  exigirDepartamento(inmueble)
 
   const resultado = await prisma.$transaction(async (tx) => {
     await bloquearInmueble(tx, inmuebleId)
     await bloquearExpensasConDeuda(tx, inmuebleId)
     const expensas = await expensasConDeudaOrdenadas(tx, inmuebleId)
+
+    // Reglas de pago: orden de meses, meses atrasados completos, cuotas solo estando al dia.
+    const deudas = reglas.clasificarDeudas(expensas, await periodoMasReciente(tx, inmuebleId))
+    const plan = reglas.planificarPago({ deudas, monto: montoRecibido })
 
     const recibo = await crearRecibo(tx, {
       inmuebleId,
@@ -204,7 +252,15 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
       })
     }
 
-    return { recibo, aplicaciones, conPago, restante, movimiento, saldoFavor: await saldoFavorDe(tx, inmuebleId) }
+    return {
+      recibo,
+      aplicaciones,
+      conPago,
+      restante,
+      movimiento,
+      tipoPago: plan.tipoPago,
+      saldoFavor: await saldoFavorDe(tx, inmuebleId)
+    }
   }, OPCIONES_TX)
 
   const { recibo, aplicaciones, conPago, restante, movimiento, saldoFavor } = resultado
@@ -225,7 +281,13 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
       fechaPago: recibo.fechaPago.toISOString(),
       metodoPago,
       referencia: referenciaLimpia,
-      expensas: conPago.map((a) => ({ periodo: a.expensa.periodo, monto: a.aplicado.toFixed(2) }))
+      tipoPago: resultado.tipoPago,
+      expensas: conPago.map((a) => ({
+        periodo: a.expensa.periodo,
+        monto: a.aplicado.toFixed(2),
+        aMora: a.aplicadoMora.toFixed(2),
+        aExpensa: a.aplicadoExpensa.toFixed(2)
+      }))
     },
     ip
   })
@@ -241,6 +303,8 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
         expensaId: a.expensa.id,
         periodo: a.expensa.periodo,
         montoAplicado: a.aplicado.toFixed(2),
+        aMora: a.aplicadoMora.toFixed(2),
+        aExpensa: a.aplicadoExpensa.toFixed(2),
         metodoPago,
         referencia: referenciaLimpia
       },
@@ -281,6 +345,7 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
   return {
     recibo: resumenRecibo(recibo),
     estadoPago: estadoPagoDe(conPago.map((a) => a.estado)),
+    tipoPago: resultado.tipoPago,
     montoRecibido: montoRecibido.toFixed(2),
     montoAplicado: montoAplicado.toFixed(2),
     saldoFavorGenerado: restante.toFixed(2),
@@ -290,6 +355,8 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
       periodo: a.expensa.periodo,
       pagoId: a.pago.id,
       montoAplicado: a.aplicado.toFixed(2),
+      montoMora: a.aplicadoMora.toFixed(2),
+      montoExpensa: a.aplicadoExpensa.toFixed(2),
       estado: a.estado
     })),
     mensaje: 'Pago registrado exitosamente'
@@ -331,6 +398,8 @@ async function listarPagos(inmuebleId, { desde, hasta } = {}) {
       reciboId: p.reciboId,
       tieneComprobante: Boolean(p.recibo?.comprobantePath),
       monto: new Decimal(p.monto).toFixed(2),
+      montoMora: new Decimal(p.montoMora).toFixed(2),
+      montoExpensa: new Decimal(p.montoExpensa).toFixed(2),
       metodoPago: p.metodoPago,
       referencia: p.referencia,
       fechaPago: p.fechaPago,
@@ -343,19 +412,14 @@ async function listarPagos(inmuebleId, { desde, hasta } = {}) {
 async function obtenerSaldo(inmuebleId) {
   const inmueble = await obtenerInmueble(inmuebleId)
 
-  const expensas = await prisma.expensa.findMany({
-    where: { inmuebleId, estado: { not: 'PAGADA' } },
-    include: { pagos: true },
-    orderBy: { fechaVencimiento: 'asc' }
-  })
+  const expensas = await expensasConDeudaOrdenadas(prisma, inmuebleId)
+  const deudas = reglas.clasificarDeudas(expensas, await periodoMasReciente(prisma, inmuebleId))
+  const situacionPago = reglas.resumirSituacion(deudas)
 
-  const detalle = expensas
-    .map((e) => ({ id: e.id, periodo: e.periodo, estado: e.estado, pendiente: pendienteDe(e) }))
-    .filter((e) => e.pendiente.gt(0))
-
-  const deudaPendiente = detalle.reduce((acc, e) => acc.plus(e.pendiente), new Decimal(0))
+  const deudaPendiente = deudas.reduce((acc, d) => acc.plus(d.pendiente.total), new Decimal(0))
   const saldoFavor = await saldoFavorDe(prisma, inmuebleId)
   const saldoNeto = deudaPendiente.minus(saldoFavor)
+  const proximo = situacionPago.proximoPago
 
   return {
     inmueble: resumenInmueble(inmueble),
@@ -363,7 +427,29 @@ async function obtenerSaldo(inmuebleId) {
     saldoFavor: saldoFavor.toFixed(2),
     saldoNeto: saldoNeto.toFixed(2), // positivo = debe, negativo = a favor
     situacion: situacionDe(saldoNeto),
-    expensasPendientes: detalle.map((e) => ({ ...e, pendiente: e.pendiente.toFixed(2) }))
+    // Reglas de pago: al dia = sin deuda de meses anteriores. Con deuda atrasada hay que
+    // pagar completo el mes mas antiguo antes de pagar en cuotas o por adelantado.
+    alDia: situacionPago.alDia,
+    deudaAtrasada: situacionPago.deudaAtrasada.toFixed(2),
+    proximoPago: proximo
+      ? {
+          expensaId: proximo.expensaId,
+          periodo: proximo.periodo,
+          atrasada: proximo.atrasada,
+          pendiente: proximo.pendiente.toFixed(2),
+          montoMinimo: proximo.montoMinimo.toFixed(2)
+        }
+      : null,
+    expensasPendientes: deudas.map((d) => ({
+      id: d.expensa.id,
+      periodo: d.expensa.periodo,
+      estado: d.expensa.estado,
+      tipo: d.expensa.tipoNombre,
+      atrasada: d.atrasada,
+      pendiente: d.pendiente.total.toFixed(2),
+      pendienteMora: d.pendiente.mora.toFixed(2),
+      pendienteExpensa: d.pendiente.expensa.toFixed(2)
+    }))
   }
 }
 
@@ -387,13 +473,17 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta } = {}) {
     ...(finMov ? { lte: finMov } : {})
   }
 
-  const [expensas, movimientos, saldoFavor] = await Promise.all([
+  const [expensas, movimientos, saldoFavor, periodoReciente] = await Promise.all([
     prisma.expensa.findMany({
       where: {
         inmuebleId,
         ...(Object.keys(filtroVencimiento).length ? { fechaVencimiento: filtroVencimiento } : {})
       },
-      include: { pagos: { orderBy: { fechaPago: 'asc' } } },
+      include: {
+        pagos: { orderBy: { fechaPago: 'asc' } },
+        moras: { orderBy: { numero: 'asc' } },
+        cambiosVencimiento: { orderBy: { createdAt: 'asc' } }
+      },
       orderBy: { periodo: 'asc' }
     }),
     prisma.movimientoSaldo.findMany({
@@ -403,30 +493,48 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta } = {}) {
       },
       orderBy: { createdAt: 'asc' }
     }),
-    saldoFavorDe(prisma, inmuebleId)
+    saldoFavorDe(prisma, inmuebleId),
+    periodoMasReciente(prisma, inmuebleId)
   ])
 
   let totalFacturado = new Decimal(0)
+  let totalAgua = new Decimal(0)
   let totalMora = new Decimal(0)
   let totalPagado = new Decimal(0)
   let deudaPendiente = new Decimal(0)
 
   const filas = expensas.map((e) => {
     const pagado = sumarPagos(e.pagos)
-    const pendiente = e.estado === 'PAGADA' ? new Decimal(0) : pendienteDe(e)
+    const pendientes = pendientesDe(e)
     totalFacturado = totalFacturado.plus(e.montoTotal)
+    totalAgua = totalAgua.plus(e.montoAgua)
     totalMora = totalMora.plus(e.montoMora)
     totalPagado = totalPagado.plus(pagado)
-    deudaPendiente = deudaPendiente.plus(pendiente)
+    deudaPendiente = deudaPendiente.plus(pendientes.total)
     return {
       id: e.id,
       periodo: e.periodo,
+      tipo: e.tipoNombre,
+      fechaGeneracion: e.createdAt,
+      // Persona responsable cuando se genero (propietario vigente; si no, el inquilino).
+      responsable: e.responsableNombre
+        ? { id: e.responsableId, nombre: e.responsableNombre, rol: e.responsableRol }
+        : null,
       fechaVencimiento: e.fechaVencimiento,
+      cambiosVencimiento: e.cambiosVencimiento,
       estado: e.estado,
-      montoTotal: e.montoTotal,
+      atrasada: periodoReciente !== null && e.periodo < periodoReciente && pendientes.total.gt(0),
+      montoBase: e.montoBase,
+      montoAgua: e.montoAgua,
+      montoTotal: e.montoTotal, // expensa fija + agua (sin mora)
       montoMora: e.montoMora,
       pagado: pagado.toFixed(2),
-      pendiente: pendiente.toFixed(2),
+      pagadoMora: sumarCampo(e.pagos, 'montoMora').toFixed(2),
+      pagadoExpensa: sumarCampo(e.pagos, 'montoExpensa').toFixed(2),
+      pendiente: pendientes.total.toFixed(2),
+      pendienteMora: pendientes.mora.toFixed(2),
+      pendienteExpensa: pendientes.expensa.toFixed(2),
+      moras: detalleMoras(e.moras, sumarCampo(e.pagos, 'montoMora')),
       pagos: e.pagos
     }
   })
@@ -440,6 +548,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta } = {}) {
     movimientosSaldo: movimientos,
     resumen: {
       totalFacturado: totalFacturado.toFixed(2),
+      totalAgua: totalAgua.toFixed(2),
       totalMora: totalMora.toFixed(2),
       totalPagado: totalPagado.toFixed(2),
       deudaPendiente: deudaPendiente.toFixed(2),
