@@ -1,33 +1,45 @@
-name: Respaldo Automático Supabase
+name: Respaldo Completo Base de Datos Supabase
 
 on:
   schedule:
-    # Se ejecuta cada 3 días a las 7:00 AM UTC (3:00 AM hora local)
-    - cron: '0 7 */3 * *'
-  workflow_dispatch: # Permite ejecutar el respaldo con un botón manual si hay emergencia
+    # Todos los días a las 3:00 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Ejecución manual con botón
 
 jobs:
   backup:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Instalar cliente de PostgreSQL 17
+      - name: 1. Instalar PostgreSQL Client 17
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
           sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
-          
-      - name: Extraer datos de Supabase
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          FECHA=$(date +'%Y-%m-%d')
-          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" > respaldo_AdminEdificio_$FECHA.sql
 
-      - name: Guardar archivo de respaldo
+      - name: 2. Exportar esquemas completos (Negocio + Auth + Storage)
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          FECHA=$(date +'%Y-%m-%d_%H%M%S')
+          
+          # Respaldamos:
+          # - public: tablas del sistema y reglas de negocio
+          # - auth: cuentas, hashes de contraseñas y sesiones
+          # - storage: referencias a buckets y archivos
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" \
+            --schema=public \
+            --schema=auth \
+            --schema=storage \
+            --no-owner \
+            --clean \
+            --if-exists | gzip > "backup_completo_${FECHA}.sql.gz"
+
+      - name: 3. Subir respaldo como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: backup-AdminEdificio
-          path: respaldo_AdminEdificio_*.sql
-          retention-days: 30
+          name: backup-completo-${{ github.run_id }}
+          path: backup_completo_*.sql.gz
+          retention-days: 14
