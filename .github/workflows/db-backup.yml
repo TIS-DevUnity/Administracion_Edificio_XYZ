@@ -43,3 +43,37 @@ jobs:
           name: backup-completo-${{ github.run_id }}
           path: backup_completo_*.sql.gz
           retention-days: 14
+
+  backup-storage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Instalar dependencias del backend
+        working-directory: ./server
+        run: npm ci
+
+      - name: Descargar archivos desde Supabase Storage
+        working-directory: ./server
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+        run: |
+          node scripts/backup-storage.js
+          tar -czvf storage_backup.tar.gz -C temp_storage_backup .
+
+      - name: Subir artefacto de Archivos
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-storage-${{ github.run_id }}
+          path: server/storage_backup.tar.gz
+          retention-days: 14
