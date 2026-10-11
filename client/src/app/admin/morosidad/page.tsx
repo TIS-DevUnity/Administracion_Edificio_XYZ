@@ -545,7 +545,8 @@ function ContenidoMorosidad() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleGenerarMes}
-              disabled={bolGenerandoMes}
+              cargando={bolGenerandoMes}
+              disabled={bolRevisandoMora}
             >
               <CalendarPlus className="mr-2 h-4 w-4" />
               {bolGenerandoMes ? "Generando..." : "Generar expensas del mes"}
@@ -555,9 +556,10 @@ function ContenidoMorosidad() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleRevisarMora}
-              disabled={bolRevisandoMora}
+              cargando={bolRevisandoMora}
+              disabled={bolGenerandoMes}
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
+              <RefreshCw className="mr-2 h-4 w-4" />
               {bolRevisandoMora ? "Revisando..." : "Revisar mora"}
             </Button>
 
@@ -698,7 +700,7 @@ function ContenidoMorosidad() {
               )}
 
               <DialogFooter>
-                <Button onClick={handleSaveConfig} disabled={isSaving} className="w-full">
+                <Button onClick={handleSaveConfig} cargando={isSaving} className="w-full">
                   <Save className="mr-2 h-4 w-4" />
                   {isSaving ? "Guardando..." : "Guardar configuración"}
                 </Button>
@@ -753,7 +755,7 @@ function ContenidoMorosidad() {
                 <ul className="mt-2 list-inside list-disc space-y-1 text-[12px]">
                   {resultadoGeneracion.pendientes?.map((item) => <li key={item.inmuebleId}>{item.codigo}: {item.motivo}</li>)}
                 </ul>
-                <Button variant="outline" className="mt-3" onClick={handleGenerarMes} disabled={bolGenerandoMes}>Reintentar generación del mes</Button>
+                <Button variant="outline" className="mt-3" onClick={handleGenerarMes} cargando={bolGenerandoMes}>Reintentar generación del mes</Button>
               </div>
             )}
             {(resultadoGeneracion.excluidos?.length ?? 0) > 0 && (
@@ -1066,7 +1068,7 @@ function ContenidoMorosidad() {
                 <Button type="button" variant="outline" onClick={cerrarDialogoPago} disabled={bolGuardandoPago}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={bolGuardandoPago}>
+                <Button type="submit" cargando={bolGuardandoPago}>
                   {bolGuardandoPago ? "Guardando..." : "Confirmar pago"}
                 </Button>
               </DialogFooter>

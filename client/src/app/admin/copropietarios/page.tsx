@@ -1,9 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, RefreshCw, Eye, Users, AlertCircle } from "lucide-react";
+import { Search, RefreshCw, Eye, Users, AlertCircle, UserPlus } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { DialogoRegistrarPersona } from "@/components/DialogoRegistrarPersona";
+import { InmueblesDeLaPersona } from "@/components/InmueblesDeLaPersona";
+import { useSesionActual } from "@/lib/session";
+import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
+import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +75,23 @@ export default function CopropietariosPage() {
     useState<Copropietario | null>(null);
 
   const [bolDialogOpen, setBolDialogOpen] = useState(false);
+
+  const { usuario } = useSesionActual();
+  const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
+  const bolPuedeRegistrar = puedeEjecutar(rol, "copropietarios", "crear");
+  const bolPuedeAsignar = puedeEjecutar(rol, "residentes", "crear");
+  const bolPuedeRetirar = puedeEjecutar(rol, "residentes", "editar");
+
+  const [arrInmuebles, setArrInmuebles] = useState<Inmueble[]>([]);
+  const [bolDialogoRegistrar, setBolDialogoRegistrar] = useState(false);
+  const [strExito, setStrExito] = useState("");
+  const [strMensajePermiso, setStrMensajePermiso] = useState("");
+
+  useEffect(() => {
+    listarInmuebles()
+      .then(setArrInmuebles)
+      .catch((error) => console.error("Error al cargar inmuebles:", error));
+  }, []);
 
   /**
    * Obtiene la lista de copropietarios desde el backend.
@@ -176,21 +199,48 @@ export default function CopropietariosPage() {
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          onClick={cargarCopropietarios}
-          disabled={bolLoading}
-          className="w-full md:w-auto"
-        >
-          <RefreshCw
-            className={`mr-2 h-4 w-4 ${
-              bolLoading ? "animate-spin" : ""
-            }`}
-          />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            variant="outline"
+            onClick={cargarCopropietarios}
+            disabled={bolLoading}
+            className="w-full md:w-auto"
+          >
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${
+                bolLoading ? "animate-spin" : ""
+              }`}
+            />
 
-          Actualizar
-        </Button>
+            Actualizar
+          </Button>
+
+          {bolPuedeRegistrar && (
+            <Button
+              onClick={() => {
+                const objValidacion = validarAccion(rol, "copropietarios", "crear");
+                if (!objValidacion.permitido) {
+                  setStrMensajePermiso(objValidacion.mensaje);
+                  return;
+                }
+                setStrExito("");
+                setBolDialogoRegistrar(true);
+              }}
+              className="w-full md:w-auto"
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              Registrar persona
+            </Button>
+          )}
+        </div>
       </div>
+
+      {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
+      {strExito && (
+        <div className="mb-4 rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">
+          {strExito}
+        </div>
+      )}
 
       {/* Tarjeta principal */}
       <Card className="shadow-sm">
@@ -431,12 +481,24 @@ export default function CopropietariosPage() {
         </CardContent>
       </Card>
 
+      <DialogoRegistrarPersona
+        bolAbierto={bolDialogoRegistrar}
+        onCerrar={() => setBolDialogoRegistrar(false)}
+        inmueblesParaAsignar={arrInmuebles}
+        onRegistrado={(_nuevo, strMensaje) => {
+          setBolDialogoRegistrar(false);
+          setStrExito(strMensaje);
+          cargarCopropietarios();
+          listarInmuebles().then(setArrInmuebles).catch(() => undefined);
+        }}
+      />
+
       {/* Dialog de detalle */}
       <Dialog
         open={bolDialogOpen}
         onOpenChange={setBolDialogOpen}
       >
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className={CLASE_TITULO_DIALOGO}>
               Información del copropietario
@@ -502,6 +564,16 @@ export default function CopropietariosPage() {
                 </div>
 
               </div>
+
+              <InmueblesDeLaPersona
+                key={objCopropietarioSeleccionado.id}
+                copropietario={objCopropietarioSeleccionado}
+                inmuebles={arrInmuebles}
+                bolPuedeAsignar={bolPuedeAsignar}
+                bolPuedeRetirar={bolPuedeRetirar}
+                rol={rol}
+                onCambio={() => listarInmuebles().then(setArrInmuebles).catch(() => undefined)}
+              />
 
               <div className="flex justify-end">
                 <Button
