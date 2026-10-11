@@ -738,7 +738,7 @@ export default function PagosPage() {
                 <Button type="button" variant="outline" onClick={cerrarDialogoPago} disabled={bolRegistrando}>
                   Cancelar
                 </Button>
-                <Button type="button" onClick={handleConfirmarPago} disabled={bolRegistrando}>
+                <Button type="button" onClick={handleConfirmarPago} cargando={bolRegistrando}>
                   {bolRegistrando ? "Registrando..." : "Confirmar pago"}
                 </Button>
               </DialogFooter>
@@ -805,7 +805,8 @@ export default function PagosPage() {
                       variant="outline"
                       size="sm"
                       onClick={handleSubirComprobante}
-                      disabled={!archivoComprobante || bolSubiendoComprobante}
+                      cargando={bolSubiendoComprobante}
+                      disabled={!archivoComprobante}
                     >
                       <Paperclip className="mr-2 h-4 w-4" />
                       {bolSubiendoComprobante ? "Subiendo..." : "Adjuntar foto del comprobante"}
