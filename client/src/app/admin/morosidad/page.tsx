@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 
 import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
+import { SaldoFavorInmueble } from "@/components/SaldoFavorInmueble";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { listarInmuebles } from "@/lib/inmuebles";
@@ -140,6 +142,7 @@ function ContenidoMorosidad() {
 
   // Detalle de expensa
   const [expensaDetalle, setExpensaDetalle] = useState<ExpensaDTO | null>(null);
+  const [strInmuebleCuentaId, setStrInmuebleCuentaId] = useState<string | null>(null);
 
   // Registro de pago
   const [expensaParaPago, setExpensaParaPago] = useState<ExpensaDTO | null>(null);
@@ -1173,6 +1176,12 @@ function ContenidoMorosidad() {
                 </div>
               </div>
 
+              <SaldoFavorInmueble
+                strInmuebleId={expensaDetalle.inmuebleId}
+                strCodigo={expensaDetalle.inmueble.codigo}
+                onVerEstadoCuenta={() => setStrInmuebleCuentaId(expensaDetalle.inmuebleId)}
+              />
+
               <div>
                 <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Recargos de mora individuales</p>
                 {expensaDetalle.moras?.length ? (
@@ -1242,6 +1251,8 @@ function ContenidoMorosidad() {
           )}
         </DialogContent>
       </Dialog>
+
+      <DialogoEstadoCuenta strInmuebleId={strInmuebleCuentaId} onCerrar={() => setStrInmuebleCuentaId(null)} />
 
       <Dialog open={expensaVencimiento !== null} onOpenChange={(abierto) => !abierto && !guardandoVencimiento && setExpensaVencimiento(null)}>
         <DialogContent className="sm:max-w-[430px]">

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
+import { SaldoFavorInmueble } from "@/components/SaldoFavorInmueble";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
@@ -372,6 +373,16 @@ export default function FichaInmueblePage() {
               </div>
             );
           })()}
+
+          {esDepartamento(inmueble) && (
+            <div className="mt-4">
+              <SaldoFavorInmueble
+                strInmuebleId={inmueble.id}
+                strCodigo={inmueble.codigo}
+                onVerEstadoCuenta={() => setBolVerCargos(true)}
+              />
+            </div>
+          )}
 
           <div className="mt-5 flex flex-wrap gap-3">
             {bolPuedeEditar && (
