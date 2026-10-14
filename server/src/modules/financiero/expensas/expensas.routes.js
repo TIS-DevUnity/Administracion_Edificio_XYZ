@@ -13,6 +13,10 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  * /api/financiero/expensas:
  *   get:
  *     summary: Lista las expensas generadas (con filtros opcionales; con `pagina` devuelve { expensas, paginacion })
+ *     description: |
+ *       Cada expensa trae `cargos` (una linea por concepto: departamento, parqueo, baulera),
+ *       `saldoFavorInmueble` (saldo a favor vigente del inmueble) y `pagadoConSaldoFavor` (lo
+ *       que ya se cubrio de esa expensa con saldo a favor).
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -40,9 +44,13 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *     description: |
  *       Solo pagan expensa los departamentos activos con alguien asignado (propietario o
  *       inquilino); baulera, parqueo y departamentos sin asignar se rechazan con 409. El monto es
- *       la expensa fija del tipo (`montoBase`); el agua (`montoAgua`) se suma cuando se registra
- *       la factura del mes en `/api/financiero/agua`. Si no se envia `fechaVencimiento` se usa el
- *       dia de vencimiento de la configuracion de mora.
+ *       la expensa fija del tipo mas la cuota de cada baulera y parqueo con cobro que ocupa la
+ *       persona responsable (`montoBase`, desglosado en `cargos`; ver `/api/tarifas-inmueble`).
+ *       Quien tiene mas de un departamento paga baulera y parqueo una sola vez, en el primero
+ *       por codigo. El agua (`montoAgua`) se suma cuando se registra la factura del mes en
+ *       `/api/financiero/agua` y solo se reparte entre departamentos: baulera y parqueo no
+ *       llevan agua. Si no se envia `fechaVencimiento` se usa el dia de vencimiento de la
+ *       configuracion de mora.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -57,7 +65,7 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *               periodo: { type: string, example: "2026-09" }
  *               fechaVencimiento: { type: string, example: "2026-09-10", description: "Opcional: por defecto el dia de vencimiento configurado dentro del periodo" }
  *     responses:
- *       201: { description: "Expensa generada (incluye saldoFavorAplicado, montoBase, montoAgua, tipoNombre y moras)" }
+ *       201: { description: "Expensa generada (incluye saldoFavorAplicado, montoBase, cargos, montoAgua, tipoNombre y moras)" }
  *       400: { description: Datos invalidos }
  *       404: { description: Inmueble no encontrado }
  *       409: { description: "Inmueble inactivo, no es departamento, sin nadie asignado, o expensa duplicada" }

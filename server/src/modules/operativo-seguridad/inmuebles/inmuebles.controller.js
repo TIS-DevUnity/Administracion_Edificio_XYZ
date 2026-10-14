@@ -20,7 +20,7 @@ async function obtener(req, res, next) {
 
 async function crear(req, res, next) {
   try {
-    const { codigo, clase, tipoInmuebleId, piso, areaM2 } = req.body;
+    const { codigo, clase, tipoInmuebleId, piso, areaM2, cuotaMensual } = req.body;
     if (!codigo) {
       return res.status(400).json({ error: "codigo es requerido" });
     }
@@ -31,6 +31,7 @@ async function crear(req, res, next) {
       tipoInmuebleId,
       piso,
       areaM2,
+      cuotaMensual,
       actorId: req.usuario.id,
       ip: req.ip,
     });
@@ -42,11 +43,11 @@ async function crear(req, res, next) {
 
 async function actualizar(req, res, next) {
   try {
-    const { codigo, clase, tipoInmuebleId, piso, areaM2, activo } = req.body;
+    const { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual } = req.body;
 
     const inmueble = await inmueblesService.actualizar(
       req.params.id,
-      { codigo, clase, tipoInmuebleId, piso, areaM2, activo },
+      { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual },
       { actorId: req.usuario.id, ip: req.ip }
     );
     res.json({ inmueble });

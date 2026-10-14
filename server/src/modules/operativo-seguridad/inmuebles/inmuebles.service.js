@@ -1,7 +1,11 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
 const { diferencias } = require("../../../utils/diferencias");
 const { filtroOcupanteVigente } = require("./asignacion.util");
+const { obtenerMapa, montoEfectivo, validarMonto } = require("../tarifas-inmueble/tarifas-inmueble.service");
+
+const Decimal = Prisma.Decimal;
 
 const CLASES_VALIDAS = ["DEPARTAMENTO", "BAULERA", "PARQUEO"];
 const ETIQUETA_CLASE = { DEPARTAMENTO: "Departamento", BAULERA: "Baulera", PARQUEO: "Parqueo" };
@@ -15,6 +19,7 @@ function camposPublicos() {
     piso: true,
     areaM2: true,
     activo: true,
+    cuotaMensual: true,
     tipoInmuebleId: true,
     tipoInmueble: {
       select: { id: true, nombre: true, montoBase: true, pesoAgua: true },
@@ -30,11 +35,23 @@ function camposPublicos() {
  * baulera y parqueo, que no tienen tipo, entrega un `tipoInmueble` de compatibilidad con la
  * clase como nombre y monto 0: quien ya consume la API espera siempre ese objeto. La marca
  * real es `clase` (y `tipoInmuebleId` en null).
+ *
+ * Tambien agrega `cargoMensual`: lo que el inmueble suma cada mes a la cuenta de quien lo
+ * ocupa. En un departamento es la expensa fija de su tipo; en baulera y parqueo es su
+ * `cuotaMensual` propia o, si no tiene, la tarifa de su clase (0 = no se cobra).
+ * `tarifas` es el mapa de obtenerMapa().
  */
-function presentar(inmueble) {
+function presentar(inmueble, tarifas) {
   const { _count, ...resto } = inmueble;
+  const esDepartamento = resto.clase === "DEPARTAMENTO";
+  const cargoMensual = esDepartamento
+    ? new Decimal(resto.tipoInmueble?.montoBase ?? 0)
+    : montoEfectivo(resto, tarifas);
+
   return {
     ...resto,
+    cuotaMensual: resto.cuotaMensual === null ? null : new Decimal(resto.cuotaMensual).toFixed(2),
+    cargoMensual: cargoMensual.toFixed(2),
     asignado: (_count?.ocupaciones ?? 0) > 0,
     tipoInmueble: resto.tipoInmueble ?? {
       id: null,
@@ -76,25 +93,46 @@ function validarClase(clase) {
 }
 
 async function listar() {
-  const inmuebles = await prisma.inmueble.findMany({
-    select: camposPublicos(),
-    orderBy: { codigo: "asc" },
-  });
-  return inmuebles.map(presentar);
+  const [inmuebles, tarifas] = await Promise.all([
+    prisma.inmueble.findMany({
+      select: camposPublicos(),
+      orderBy: { codigo: "asc" },
+    }),
+    obtenerMapa(),
+  ]);
+  return inmuebles.map((inmueble) => presentar(inmueble, tarifas));
 }
 
 async function obtenerPorId(id) {
-  const inmueble = await prisma.inmueble.findUnique({
-    where: { id },
-    select: camposPublicos(),
-  });
+  const [inmueble, tarifas] = await Promise.all([
+    prisma.inmueble.findUnique({
+      where: { id },
+      select: camposPublicos(),
+    }),
+    obtenerMapa(),
+  ]);
   if (!inmueble) {
     throw Object.assign(new Error("Inmueble no encontrado"), { status: 404 });
   }
-  return presentar(inmueble);
+  return presentar(inmueble, tarifas);
 }
 
-async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, areaM2, actorId, ip }) {
+/**
+ * Monto propio de un inmueble (`cuotaMensual`): solo baulera y parqueo. Devuelve undefined si no
+ * se envio (sin cambio), null para quitarlo (vuelve a la tarifa de su clase) o el Decimal.
+ */
+function parsearCuotaMensual(cuotaMensual, clase) {
+  if (cuotaMensual === undefined) return undefined;
+  if (cuotaMensual === null || cuotaMensual === "") return null;
+  if (clase === "DEPARTAMENTO") {
+    throw errorValidacion(
+      "Un departamento no tiene cuotaMensual: su expensa fija sale de su tipo (A, B, C...)"
+    );
+  }
+  return validarMonto(cuotaMensual, "cuotaMensual");
+}
+
+async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, areaM2, cuotaMensual, actorId, ip }) {
   validarClase(clase);
 
   const existente = await prisma.inmueble.findUnique({ where: { codigo } });
@@ -112,6 +150,8 @@ async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, are
     throw errorValidacion("Baulera y parqueo no tienen tipo: no envie tipoInmuebleId");
   }
 
+  const cuota = parsearCuotaMensual(cuotaMensual, clase);
+
   const inmueble = await prisma.inmueble.create({
     data: {
       codigo,
@@ -119,6 +159,7 @@ async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, are
       tipoInmuebleId: clase === "DEPARTAMENTO" ? tipoInmuebleId : null,
       piso,
       areaM2,
+      cuotaMensual: cuota ?? null,
     },
     select: camposPublicos(),
   });
@@ -128,14 +169,25 @@ async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, are
     accion: "CREATE",
     entidad: "Inmueble",
     entidadId: inmueble.id,
-    detalle: { codigo, clase, tipoInmuebleId: inmueble.tipoInmuebleId, piso, areaM2 },
+    detalle: {
+      codigo,
+      clase,
+      tipoInmuebleId: inmueble.tipoInmuebleId,
+      piso,
+      areaM2,
+      cuotaMensual: cuota ? cuota.toFixed(2) : null,
+    },
     ip,
   });
 
-  return presentar(inmueble);
+  return presentar(inmueble, await obtenerMapa());
 }
 
-async function actualizar(id, { codigo, clase, tipoInmuebleId, piso, areaM2, activo }, { actorId, ip }) {
+async function actualizar(
+  id,
+  { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual },
+  { actorId, ip }
+) {
   const antes = await obtenerPorId(id);
 
   if (codigo) {
@@ -162,22 +214,44 @@ async function actualizar(id, { codigo, clase, tipoInmuebleId, piso, areaM2, act
     throw errorValidacion("Baulera y parqueo no tienen tipo: no envie tipoInmuebleId");
   }
 
+  // El monto propio solo existe en baulera y parqueo: al pasar a departamento se quita.
+  const cuota = parsearCuotaMensual(cuotaMensual, claseFinal);
+  const cuotaFinal = claseFinal === "DEPARTAMENTO" ? null : cuota;
+
   const inmueble = await prisma.inmueble.update({
     where: { id },
-    data: { codigo, clase: claseFinal, tipoInmuebleId: tipoFinal, piso, areaM2, activo },
+    data: {
+      codigo,
+      clase: claseFinal,
+      tipoInmuebleId: tipoFinal,
+      piso,
+      areaM2,
+      activo,
+      cuotaMensual: cuotaFinal,
+    },
     select: camposPublicos(),
   });
+
+  const despues = presentar(inmueble, await obtenerMapa());
 
   await registrarAuditoria({
     usuarioId: actorId,
     accion: "UPDATE",
     entidad: "Inmueble",
     entidadId: inmueble.id,
-    detalle: diferencias(antes, inmueble, ["codigo", "clase", "tipoInmuebleId", "piso", "areaM2", "activo"]),
+    detalle: diferencias(antes, despues, [
+      "codigo",
+      "clase",
+      "tipoInmuebleId",
+      "piso",
+      "areaM2",
+      "activo",
+      "cuotaMensual",
+    ]),
     ip,
   });
 
-  return presentar(inmueble);
+  return despues;
 }
 
 async function listarOcupantes(inmuebleId) {

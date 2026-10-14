@@ -119,7 +119,7 @@ async function ejecutarGeneracionAutomatica(
   if (nuevas.length > 0) {
     const vigentes = await prisma.expensa.findMany({
       where: { id: { in: nuevas.map((expensa) => expensa.id) } },
-      include: { inmueble: true }
+      include: { inmueble: true, cargos: { orderBy: [{ clase: 'asc' }, { codigo: 'asc' }] } }
     })
     for (const expensa of vigentes) {
       await notificacionesService.notificarExpensaGenerada(expensa)

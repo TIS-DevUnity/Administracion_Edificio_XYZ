@@ -51,9 +51,21 @@ async function notificarExpensaGenerada(expensa) {
   const codigo = expensa.inmueble?.codigo || expensa.inmuebleId
   const tipo = expensa.tipoNombre ? ` (tipo ${expensa.tipoNombre})` : ''
 
+  // Con baulera o parqueo a su cargo se detalla cada concepto; si solo hay departamento, no.
+  const detalleCargos =
+    (expensa.cargos || []).length > 1
+      ? `<ul>${expensa.cargos
+          .map(
+            (cargo) =>
+              `<li>${cargo.clase === 'DEPARTAMENTO' ? 'Departamento' : cargo.clase === 'PARQUEO' ? 'Parqueo' : 'Baulera'} ${cargo.codigo}: <strong>${new Decimal(cargo.monto).toFixed(2)}</strong></li>`
+          )
+          .join('')}</ul>`
+      : ''
+
   const html = `
     <p>Se genero la expensa del periodo <strong>${expensa.periodo}</strong> para el inmueble <strong>${codigo}</strong>${tipo}.</p>
     <p>Expensa fija: <strong>${new Decimal(expensa.montoBase).toFixed(2)}</strong></p>
+    ${detalleCargos}
     <p>Total a la fecha: <strong>${new Decimal(expensa.montoTotal).toFixed(2)}</strong> (el agua se suma cuando llega la factura del mes)</p>
     <p>Fecha de vencimiento: <strong>${new Date(expensa.fechaVencimiento).toLocaleDateString('es-BO', { timeZone: 'UTC' })}</strong></p>
   `

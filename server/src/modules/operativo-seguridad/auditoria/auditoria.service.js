@@ -6,7 +6,7 @@ const MODULOS = {
   Financiero: ["Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora", "MoraExpensa", "FacturaAgua"],
   Seguridad: ["Usuario"],
   Copropietarios: ["Copropietario"],
-  Inmuebles: ["Inmueble", "OcupanteInmueble", "TipoInmueble"],
+  Inmuebles: ["Inmueble", "OcupanteInmueble", "TipoInmueble", "TarifaClase"],
   Documentos: ["Documento"],
 };
 
