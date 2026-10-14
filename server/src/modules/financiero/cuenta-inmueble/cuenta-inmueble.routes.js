@@ -130,6 +130,9 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  * /api/financiero/inmuebles/{id}/estado-cuenta:
  *   get:
  *     summary: Estado de cuenta de un inmueble - expensas, pagos, mora, movimientos de saldo y resumen
+ *     description: |
+ *       Cada expensa trae `cargos` (una linea por concepto: departamento, parqueo, baulera) cuya
+ *       suma es `montoBase`. `resumen.saldoFavor` es el saldo a favor vigente del inmueble.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
