@@ -1,11 +1,15 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Search, UserPlus, X } from "lucide-react";
+import { Building2, Check, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
-import { DialogoRegistrarPersona } from "@/components/DialogoRegistrarPersona";
+import {
+  DialogoRegistrarPersona,
+  ListaInmueblesSeleccionables,
+  asignarAVarios,
+} from "@/components/DialogoRegistrarPersona";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
@@ -17,14 +21,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button, Spinner } from "@/components/ui/button";
-import { CampoPersona, Copropietario, listarCopropietarios } from "@/lib/copropietarios";
+import {
+  CampoPersona,
+  Copropietario,
+  InmueblesDePersona,
+  listarCopropietarios,
+  listarInmueblesDeCopropietario,
+} from "@/lib/copropietarios";
 import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import {
   CLASES_INMUEBLE,
   ETIQUETA_CLASE,
   Inmueble,
   Ocupante,
-  asignarOcupante,
   darDeBajaOcupante,
   esDepartamento,
   esOcupanteActivo,
@@ -87,17 +96,71 @@ function ResidentesContenido() {
   const [ocupanteParaRetirar, setOcupanteParaRetirar] = useState<Ocupante | null>(null);
   const [bolRetirando, setBolRetirando] = useState(false);
 
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(
+    () => new Set(strInmuebleIdInicial ? [strInmuebleIdInicial] : [])
+  );
+  const [inmueblesDePersona, setInmueblesDePersona] = useState<InmueblesDePersona | null>(null);
+  // Ocupantes vigentes de cada inmueble marcado, para avisar si la asignación reemplaza a alguien.
+  const [ocupantesPorInmueble, setOcupantesPorInmueble] = useState<Record<string, Ocupante[]>>({});
+  const [objAvisoConsulta, setObjAvisoConsulta] = useState<{ bolError: boolean; strTexto: string } | null>(null);
+  const [bolDialogoInmuebles, setBolDialogoInmuebles] = useState(false);
+  // Copia de trabajo del cuadro: "Cancelar" la descarta sin tocar la selección del formulario.
+  const [borradorSeleccion, setBorradorSeleccion] = useState<Set<string>>(new Set());
+
+  function abrirDialogoInmuebles() {
+    setBorradorSeleccion(new Set(seleccionados));
+    setBolDialogoInmuebles(true);
+  }
+
   const bolPuedeRetirar = puedeEjecutar(rol, "residentes", "editar");
   const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
   const inmuebleSeleccionado = inmuebles.find((inmueble) => inmueble.id === strInmuebleId) ?? null;
+
+  // No se puede volver a asociar a la persona a un inmueble con el mismo rol que ya tiene vigente.
+  const idsYaAsociados = useMemo(
+    () =>
+      new Set(
+        (inmueblesDePersona?.vigentes ?? [])
+          .filter((item) => !strRolAsignacion || item.rol === strRolAsignacion)
+          .map((item) => item.inmuebleId)
+      ),
+    [inmueblesDePersona, strRolAsignacion]
+  );
+
   // El backend deja un solo propietario y un solo inquilino vigentes por inmueble: asignar otro
   // con el mismo rol cierra la asociación anterior (inmuebles.service.js → asignarOcupante).
-  const ocupanteQueSeReemplaza =
-    strRolAsignacion &&
-    residentesDelInmueble.find(
-      (ocupante) =>
-        ocupante.esPropietario === (strRolAsignacion === "PROPIETARIO") && ocupante.copropietarioId !== strCopropietarioId
-    );
+  const reemplazos = strRolAsignacion
+    ? [...seleccionados].flatMap((strId) => {
+        const ocupante = (ocupantesPorInmueble[strId] ?? []).find(
+          (o) => o.esPropietario === (strRolAsignacion === "PROPIETARIO") && o.copropietarioId !== strCopropietarioId
+        );
+        const inmueble = inmuebles.find((i) => i.id === strId);
+        return ocupante && inmueble ? [{ inmueble, ocupante }] : [];
+      })
+    : [];
+
+  useEffect(() => {
+    if (!strCopropietarioId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInmueblesDePersona(null);
+      return;
+    }
+    let bolCancelado = false;
+    listarInmueblesDeCopropietario(strCopropietarioId)
+      .then((datos) => !bolCancelado && setInmueblesDePersona(datos))
+      .catch(() => !bolCancelado && setInmueblesDePersona(null));
+    return () => {
+      bolCancelado = true;
+    };
+  }, [strCopropietarioId]);
+
+  useEffect(() => {
+    const faltantes = [...seleccionados].filter((strId) => !(strId in ocupantesPorInmueble));
+    if (faltantes.length === 0) return;
+    Promise.all(faltantes.map((strId) => listarOcupantes(strId).then((arr) => [strId, arr.filter(esOcupanteActivo)] as const)))
+      .then((pares) => setOcupantesPorInmueble((prev) => ({ ...prev, ...Object.fromEntries(pares) })))
+      .catch(() => undefined);
+  }, [seleccionados, ocupantesPorInmueble]);
 
   async function cargarBase() {
     try {
@@ -165,62 +228,60 @@ function ResidentesContenido() {
     const strRol = strRolAsignacion;
 
     const camposFaltantes = new Set<string>();
-    if (!strInmuebleId) camposFaltantes.add("inmuebleId");
     if (!strCopropietarioId) camposFaltantes.add("copropietarioId");
     if (strRol !== "PROPIETARIO" && strRol !== "INQUILINO") camposFaltantes.add("rol");
+    if (seleccionados.size === 0) camposFaltantes.add("inmuebles");
 
-    if (camposFaltantes.size > 0) {
+    if (camposFaltantes.size > 0 || !strRol) {
       setCamposError(camposFaltantes);
       setStrError(
-        !strInmuebleId
-          ? "Selecciona un inmueble para continuar."
-          : !strCopropietarioId
-            ? "Selecciona un copropietario para continuar."
-            : "Selecciona un rol (Propietario o Inquilino)."
+        !strCopropietarioId
+          ? "Selecciona un copropietario para continuar."
+          : !strRol
+            ? "Selecciona un rol (Propietario o Inquilino)."
+            : "Selecciona al menos un inmueble (departamento, baulera o parqueo)."
       );
       return;
     }
 
-    const bolEsPropietario = strRol === "PROPIETARIO";
-
-    const bolYaActivo = residentesDelInmueble.some(
-      (ocupante) => ocupante.copropietarioId === strCopropietarioId && ocupante.esPropietario === bolEsPropietario
-    );
-    if (bolYaActivo) {
-      const persona = obtenerCopropietarioPorId(strCopropietarioId);
-      setCamposError(new Set(["copropietarioId"]));
-      setStrError(
-        `${persona ? `${persona.nombre} ${persona.apellido}` : "Esta persona"} ya se encuentra asociada a este inmueble como ${
-          bolEsPropietario ? "propietario" : "inquilino"
-        }.`
-      );
-      return;
-    }
-
-    const objForm = event.currentTarget;
     const persona = obtenerCopropietarioPorId(strCopropietarioId);
+    const strNombre = persona ? `${persona.nombre} ${persona.apellido}` : "La persona";
+
+    const duplicados = [...seleccionados].filter((strId) => idsYaAsociados.has(strId));
+    if (duplicados.length > 0) {
+      const strCodigos = duplicados.map((strId) => inmuebles.find((i) => i.id === strId)?.codigo ?? strId).join(", ");
+      setCamposError(new Set(["inmuebles"]));
+      setStrError(
+        `${strNombre} ya se encuentra asociada como ${strRol === "PROPIETARIO" ? "propietario" : "inquilino"} a: ${strCodigos}.`
+      );
+      return;
+    }
+
     setBolAsignando(true);
     try {
-      await asignarOcupante(strInmuebleId, {
-        copropietarioId: strCopropietarioId,
-        esPropietario: bolEsPropietario,
-        fechaInicio: strFechaInicio || undefined,
-      });
+      const elegidos = inmuebles.filter((inmueble) => seleccionados.has(inmueble.id));
+      const { asignados, errores } = await asignarAVarios(strCopropietarioId, elegidos, strRol, strFechaInicio);
 
       setCamposError(new Set());
-      setStrError("");
-      setStrExito(
-        `Asignación registrada con éxito: ${persona ? `${persona.nombre} ${persona.apellido}` : "la persona"} como ${
-          bolEsPropietario ? "propietario" : "inquilino"
-        } de ${inmuebleSeleccionado?.codigo ?? "el inmueble"}.`
-      );
-      setStrCopropietarioId("");
-      setStrRolAsignacion("");
-      setStrFechaInicio(fechaHoyISO());
-      objForm.reset();
+      setStrError(errores.length > 0 ? `No se pudo asignar ${errores.join("; ")}.` : "");
+      if (asignados.length > 0) {
+        setStrExito(
+          `Asignación registrada con éxito: ${strNombre} como ${strRol === "PROPIETARIO" ? "propietario" : "inquilino"} de ${asignados.join(", ")}.`
+        );
+        setSeleccionados(new Set());
+        setStrRolAsignacion("");
+        setStrFechaInicio(fechaHoyISO());
+        setOcupantesPorInmueble({});
+      }
+
       // Se recargan los inmuebles para refrescar `asignado` (define si genera expensa).
-      const [arrInmuebles] = await Promise.all([listarInmuebles(), cargarResidentes(strInmuebleId)]);
+      const [arrInmuebles, datosPersona] = await Promise.all([
+        listarInmuebles(),
+        listarInmueblesDeCopropietario(strCopropietarioId),
+        cargarResidentes(strInmuebleId),
+      ]);
       setInmuebles(arrInmuebles);
+      setInmueblesDePersona(datosPersona);
     } catch (error: unknown) {
       setStrError(obtenerMensajeError(error, "Ocurrió un error al asignar a la persona."));
     } finally {
@@ -245,7 +306,7 @@ function ResidentesContenido() {
     setStrCopropietarioId(nuevo.id);
     limpiarError("copropietarioId");
     setStrError("");
-    setStrExito(`${strMensaje} Ahora elige su rol y presiona "Asignar".`);
+    setStrExito(`${strMensaje} Ahora elige su rol, sus inmuebles y presiona "Asignar".`);
     setBolDialogoNuevoCopropietario(false);
   }
 
@@ -262,15 +323,17 @@ function ResidentesContenido() {
     setBolRetirando(true);
     try {
       await darDeBajaOcupante(inmuebleSeleccionado.id, ocupanteParaRetirar.id, {});
-      setStrError("");
-      setStrExito(
-        `Asociación retirada: ${ocupanteParaRetirar.copropietario.nombre} ${ocupanteParaRetirar.copropietario.apellido} ya no está vigente en ${inmuebleSeleccionado.codigo}. Queda en el historial.`
-      );
+      setObjAvisoConsulta({
+        bolError: false,
+        strTexto: `Asociación retirada: ${ocupanteParaRetirar.copropietario.nombre} ${ocupanteParaRetirar.copropietario.apellido} ya no está vigente en ${inmuebleSeleccionado.codigo}. Queda en el historial.`,
+      });
       setOcupanteParaRetirar(null);
+      setOcupantesPorInmueble({});
       const [arrInmuebles] = await Promise.all([listarInmuebles(), cargarResidentes(inmuebleSeleccionado.id)]);
       setInmuebles(arrInmuebles);
+      if (strCopropietarioId) setInmueblesDePersona(await listarInmueblesDeCopropietario(strCopropietarioId));
     } catch (error: unknown) {
-      setStrError(obtenerMensajeError(error, "Ocurrió un error al retirar la asociación."));
+      setObjAvisoConsulta({ bolError: true, strTexto: obtenerMensajeError(error, "Ocurrió un error al retirar la asociación.") });
       setOcupanteParaRetirar(null);
     } finally {
       setBolRetirando(false);
@@ -280,83 +343,23 @@ function ResidentesContenido() {
   return (
     <div className="px-6 py-6">
       <p className="mb-6 max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
-        Asigna propietarios o inquilinos a un inmueble ya registrado.
+        Asigna propietarios o inquilinos a uno o varios inmuebles: un departamento, una baulera, un parqueo o cualquier
+        combinación de ellos.
       </p>
 
       {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
 
-      <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex flex-col gap-1">
-          <label htmlFor="inmueble" className="text-[12px] font-medium text-foreground">
-            Inmueble
-          </label>
-          <select
-            id="inmueble"
-            value={strInmuebleId}
-            onChange={(event) => {
-              setStrInmuebleId(event.target.value);
-              limpiarError("inmuebleId");
-            }}
-            className={claseCampo(camposError.has("inmuebleId")) + " sm:max-w-xs"}
-          >
-            <option value="">Selecciona un inmueble activo...</option>
-            {CLASES_INMUEBLE.map((clase) => {
-              const arrDeClase = inmueblesActivos.filter((inmueble) => inmueble.clase === clase);
-              if (arrDeClase.length === 0) return null;
-              return (
-                <optgroup key={clase} label={`${ETIQUETA_CLASE[clase]}s`}>
-                  {arrDeClase.map((inmueble) => (
-                    <option key={inmueble.id} value={inmueble.id}>
-                      {inmueble.codigo} · {etiquetaTipoInmueble(inmueble)}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </select>
-          {!bolLoading && inmuebles.length === 0 && (
-            <p className="font-caption mt-1 text-[11px] leading-[1.3] text-muted-foreground">
-              Todavía no hay inmuebles registrados — ve a &quot;Inmuebles&quot; para crear uno primero.
-            </p>
-          )}
-        </div>
+      {bolPuedeAsignar && (
+        <div className="mb-6 rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <h2 className="font-subtitle mb-4 text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
+            Asignar persona a inmuebles
+          </h2>
 
-        {inmuebleSeleccionado && (
-          <div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[12px] text-muted-foreground">
-              <span className="flex items-center gap-2">
-                <span className="font-medium text-foreground">{inmuebleSeleccionado.codigo}</span>
-                <BadgeTipoInmueble inmueble={inmuebleSeleccionado} />
-              </span>
-              <span>
-                <span className="font-medium text-foreground">Expensa fija:</span>{" "}
-                {esDepartamento(inmuebleSeleccionado)
-                  ? `${formatearBs(inmuebleSeleccionado.tipoInmueble.montoBase)}/mes + agua`
-                  : "No paga"}
-              </span>
-              <span>
-                <span className="font-medium text-foreground">Piso:</span> {inmuebleSeleccionado.piso || "—"}
-              </span>
-              <span>
-                <span className="font-medium text-foreground">Área m²:</span> {inmuebleSeleccionado.areaM2 || "—"}
-              </span>
-            </div>
-            {esDepartamento(inmuebleSeleccionado) && (
-              <p className="font-caption mt-2 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                {inmuebleSeleccionado.asignado
-                  ? motivoExpensa(inmuebleSeleccionado).motivo
-                  : "Todavía sin asignar: al asignar un propietario o inquilino empezará a generar expensa (aunque nadie viva ahí)."}
-              </p>
-            )}
-          </div>
-        )}
-
-        {bolPuedeAsignar && (
-          <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col gap-3">
+          <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col gap-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="flex flex-col gap-1 lg:col-span-2">
                 <label htmlFor="copropietario" className="text-[12px] font-medium text-foreground">
-                  Copropietario
+                  1. Persona
                 </label>
                 <SelectorCopropietario
                   copropietarios={copropietarios}
@@ -371,7 +374,7 @@ function ResidentesContenido() {
               </div>
               <div className="flex flex-col gap-1">
                 <label htmlFor="rol" className="text-[12px] font-medium text-foreground">
-                  Rol
+                  2. Rol
                 </label>
                 <select
                   id="rol"
@@ -391,7 +394,7 @@ function ResidentesContenido() {
               </div>
               <div className="flex flex-col gap-1">
                 <label htmlFor="fechaInicio" className="text-[12px] font-medium text-foreground">
-                  Fecha de inicio de ocupación
+                  Fecha de inicio
                 </label>
                 <input
                   id="fechaInicio"
@@ -403,16 +406,88 @@ function ResidentesContenido() {
               </div>
             </div>
 
-            {ocupanteQueSeReemplaza && (
+            {inmueblesDePersona && inmueblesDePersona.vigentes.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+                <span className="font-medium text-foreground">Ya tiene asignados:</span>
+                {inmueblesDePersona.vigentes.map((item) => (
+                  <span
+                    key={item.ocupanteId}
+                    className="font-caption inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {item.codigo} · {ETIQUETA_CLASE[item.clase]} · {item.rol === "PROPIETARIO" ? "Propietario" : "Inquilino"}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <p className="text-[12px] font-medium text-foreground">3. Inmuebles</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-invalid={camposError.has("inmuebles") || undefined}
+                  onClick={abrirDialogoInmuebles}
+                  disabled={!bolLoading && inmueblesActivos.length === 0}
+                >
+                  <Building2 className="h-4 w-4" />
+                  {seleccionados.size === 0 ? "Asignar inmuebles" : `Cambiar selección (${seleccionados.size})`}
+                </Button>
+                {[...seleccionados].map((strId) => {
+                  const inmueble = inmuebles.find((i) => i.id === strId);
+                  if (!inmueble) return null;
+                  return (
+                    <span
+                      key={strId}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 py-0.5 pl-2.5 pr-1 text-[12px] text-foreground"
+                    >
+                      {inmueble.codigo}
+                      <span className="text-muted-foreground">· {etiquetaTipoInmueble(inmueble)}</span>
+                      <button
+                        type="button"
+                        aria-label={`Quitar ${inmueble.codigo}`}
+                        onClick={() => {
+                          const next = new Set(seleccionados);
+                          next.delete(strId);
+                          setSeleccionados(next);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+              {camposError.has("inmuebles") && seleccionados.size === 0 && (
+                <p className="text-[12px] text-destructive">Elige al menos un inmueble.</p>
+              )}
+              {!bolLoading && inmueblesActivos.length === 0 && (
+                <p className="font-caption text-[11px] leading-[1.3] text-muted-foreground">
+                  Todavía no hay inmuebles activos — ve a &quot;Inmuebles&quot; para registrar uno primero.
+                </p>
+              )}
+            </div>
+
+            {seleccionados.size > 0 && (
+              <ResumenExpensa inmuebles={inmuebles.filter((inmueble) => seleccionados.has(inmueble.id))} />
+            )}
+
+            {reemplazos.length > 0 && (
               <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[12px] leading-[1.45] text-muted-foreground">
-                <span className="font-medium text-foreground">Atención:</span> {inmuebleSeleccionado?.codigo} ya tiene como{" "}
-                {strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"} vigente a{" "}
-                <span className="font-medium text-foreground">
-                  {ocupanteQueSeReemplaza.copropietario.nombre} {ocupanteQueSeReemplaza.copropietario.apellido}
-                </span>
-                . El sistema permite un solo {strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"} vigente por
-                inmueble: al asignar, su asociación pasará al historial como finalizada. Para tener a ambas personas, asigna
-                a una como propietario y a la otra como inquilino.
+                <span className="font-medium text-foreground">Atención:</span> el sistema permite un solo{" "}
+                {strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"} vigente por inmueble. Al asignar, pasarán
+                al historial como finalizados:{" "}
+                {reemplazos.map(({ inmueble, ocupante }, intIndice) => (
+                  <span key={inmueble.id}>
+                    {intIndice > 0 && ", "}
+                    <span className="font-medium text-foreground">
+                      {ocupante.copropietario.nombre} {ocupante.copropietario.apellido}
+                    </span>{" "}
+                    en {inmueble.codigo}
+                  </span>
+                ))}
+                .
               </div>
             )}
 
@@ -434,28 +509,87 @@ function ResidentesContenido() {
                 className="flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-[13px] font-medium text-primary-foreground shadow-lg shadow-primary/20 transition-[background-color,transform] hover:bg-primary/90 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70 disabled:active:scale-100"
               >
                 {bolAsignando && <Spinner />}
-                {bolAsignando ? "Asignando..." : "Asignar"}
+                {bolAsignando
+                  ? "Asignando..."
+                  : `Asignar${seleccionados.size > 1 ? ` ${seleccionados.size} inmuebles` : ""}`}
               </button>
             </div>
           </form>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="font-subtitle text-[15px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
-            Residentes actuales {inmuebleSeleccionado ? `— ${inmuebleSeleccionado.codigo}` : ""}
-          </h2>
-          {inmuebleSeleccionado && <BadgeTipoInmueble inmueble={inmuebleSeleccionado} className="ml-2 mr-auto" />}
-          {inmuebleSeleccionado && (
-            <Link
-              href={`/admin/inmuebles/${inmuebleSeleccionado.id}`}
-              className="font-caption text-[12px] font-medium text-primary hover:text-primary/80"
+        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-subtitle text-[15px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
+              Residentes actuales
+            </h2>
+            {inmuebleSeleccionado && <BadgeTipoInmueble inmueble={inmuebleSeleccionado} />}
+          </div>
+          <div className="flex items-center gap-3">
+            <label htmlFor="inmueble" className="sr-only">
+              Inmueble a consultar
+            </label>
+            <select
+              id="inmueble"
+              value={strInmuebleId}
+              onChange={(event) => {
+                setStrInmuebleId(event.target.value);
+                setObjAvisoConsulta(null);
+              }}
+              className={claseCampo(false) + " sm:w-64"}
             >
-              Ver historial completo →
-            </Link>
-          )}
+              <option value="">Consultar un inmueble...</option>
+              {CLASES_INMUEBLE.map((clase) => {
+                const arrDeClase = inmuebles.filter((inmueble) => inmueble.clase === clase);
+                if (arrDeClase.length === 0) return null;
+                return (
+                  <optgroup key={clase} label={`${ETIQUETA_CLASE[clase]}s`}>
+                    {arrDeClase.map((inmueble) => (
+                      <option key={inmueble.id} value={inmueble.id}>
+                        {inmueble.codigo} · {etiquetaTipoInmueble(inmueble)}
+                        {inmueble.activo ? "" : " (inactivo)"}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+            {inmuebleSeleccionado && (
+              <Link
+                href={`/admin/inmuebles/${inmuebleSeleccionado.id}`}
+                className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
+              >
+                Historial →
+              </Link>
+            )}
+          </div>
         </div>
+        {inmuebleSeleccionado && (
+          <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border px-5 py-2.5 text-[12px] text-muted-foreground">
+            <span>
+              <span className="font-medium text-foreground">Expensa fija:</span>{" "}
+              {esDepartamento(inmuebleSeleccionado)
+                ? `${formatearBs(inmuebleSeleccionado.tipoInmueble.montoBase)}/mes + agua`
+                : "No paga"}
+            </span>
+            <span>
+              <span className="font-medium text-foreground">Piso:</span> {inmuebleSeleccionado.piso || "—"}
+            </span>
+            <span>{motivoExpensa(inmuebleSeleccionado).motivo}</span>
+          </div>
+        )}
+        {objAvisoConsulta && (
+          <div
+            className={`mx-5 mt-3 rounded-lg border px-3 py-2 text-[13px] ${
+              objAvisoConsulta.bolError
+                ? "border-destructive/20 bg-danger-subtle text-destructive"
+                : "border-success/20 bg-success-subtle text-success"
+            }`}
+          >
+            {objAvisoConsulta.strTexto}
+          </div>
+        )}
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-border">
@@ -520,6 +654,53 @@ function ResidentesContenido() {
         </table>
       </div>
 
+      <Dialog open={bolDialogoInmuebles} onOpenChange={setBolDialogoInmuebles}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+              Asignar inmuebles
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {obtenerCopropietarioPorId(strCopropietarioId)
+                ? `Elige los inmuebles para ${obtenerCopropietarioPorId(strCopropietarioId)?.nombre} ${obtenerCopropietarioPorId(strCopropietarioId)?.apellido}`
+                : "Elige uno o varios inmuebles"}
+              {strRolAsignacion ? ` como ${strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"}` : ""}: un
+              departamento, una baulera, un parqueo o cualquier combinación.
+              {strRolAsignacion && idsYaAsociados.size > 0 && " Los que ya tiene con ese rol aparecen deshabilitados."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ListaInmueblesSeleccionables
+            inmuebles={inmuebles}
+            seleccionados={borradorSeleccion}
+            setSeleccionados={setBorradorSeleccion}
+            idsDeshabilitados={strRolAsignacion ? idsYaAsociados : undefined}
+            className="max-h-[50vh]"
+          />
+
+          {borradorSeleccion.size > 0 && (
+            <ResumenExpensa inmuebles={inmuebles.filter((inmueble) => borradorSeleccion.has(inmueble.id))} />
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBolDialogoInmuebles(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={borradorSeleccion.size === 0}
+              onClick={() => {
+                setSeleccionados(new Set(borradorSeleccion));
+                limpiarError("inmuebles");
+                setBolDialogoInmuebles(false);
+              }}
+            >
+              Confirmar selección{borradorSeleccion.size > 0 ? ` (${borradorSeleccion.size})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <DialogoRegistrarPersona
         bolAbierto={bolDialogoNuevoCopropietario}
         onCerrar={() => setBolDialogoNuevoCopropietario(false)}
@@ -548,6 +729,34 @@ function ResidentesContenido() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Lo que pagará de expensa fija cada inmueble elegido (regla actual: solo departamentos). */
+function ResumenExpensa({ inmuebles }: { inmuebles: Inmueble[] }) {
+  const deptos = inmuebles.filter(esDepartamento);
+  const intTotal = deptos.reduce((acc, inmueble) => acc + Number(inmueble.tipoInmueble.montoBase), 0);
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[12px] leading-normal text-muted-foreground">
+      <p className="mb-1 font-medium text-foreground">Expensa fija mensual de lo seleccionado</p>
+      <ul className="flex flex-col gap-0.5">
+        {inmuebles.map((inmueble) => (
+          <li key={inmueble.id} className="flex justify-between gap-4">
+            <span>
+              {inmueble.codigo} · {etiquetaTipoInmueble(inmueble)}
+            </span>
+            <span className="tabular-nums">
+              {esDepartamento(inmueble) ? formatearBs(inmueble.tipoInmueble.montoBase) : "No paga expensa"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 flex justify-between gap-4 border-t border-border pt-1 font-medium text-foreground">
+        <span>Total (sin agua)</span>
+        <span className="tabular-nums">{formatearBs(intTotal)}</span>
+      </p>
     </div>
   );
 }

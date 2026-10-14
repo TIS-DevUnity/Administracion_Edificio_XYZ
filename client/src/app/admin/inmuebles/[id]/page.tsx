@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
+import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
+import { SaldoFavorInmueble } from "@/components/SaldoFavorInmueble";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
@@ -91,6 +93,7 @@ export default function FichaInmueblePage() {
   const [bolGuardandoEdicion, setBolGuardandoEdicion] = useState(false);
   const [bolCambiandoEstado, setBolCambiandoEstado] = useState(false);
   const [strExito, setStrExito] = useState("");
+  const [bolVerCargos, setBolVerCargos] = useState(false);
 
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
   const bolPuedeEditar = puedeEjecutar(rol, "inmuebles", "editar");
@@ -371,6 +374,16 @@ export default function FichaInmueblePage() {
             );
           })()}
 
+          {esDepartamento(inmueble) && (
+            <div className="mt-4">
+              <SaldoFavorInmueble
+                strInmuebleId={inmueble.id}
+                strCodigo={inmueble.codigo}
+                onVerEstadoCuenta={() => setBolVerCargos(true)}
+              />
+            </div>
+          )}
+
           <div className="mt-5 flex flex-wrap gap-3">
             {bolPuedeEditar && (
               <button
@@ -391,6 +404,16 @@ export default function FichaInmueblePage() {
               >
                 {bolCambiandoEstado && <Spinner />}
                 {inmueble.activo ? "Desactivar inmueble" : "Activar inmueble"}
+              </button>
+            )}
+
+            {esDepartamento(inmueble) && (
+              <button
+                type="button"
+                onClick={() => setBolVerCargos(true)}
+                className="flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Ver cargos y estado de cuenta
               </button>
             )}
 
@@ -544,6 +567,8 @@ export default function FichaInmueblePage() {
           )}
         </div>
       )}
+
+      <DialogoEstadoCuenta strInmuebleId={bolVerCargos ? inmueble.id : null} onCerrar={() => setBolVerCargos(false)} />
 
       <Dialog open={bolDialogoEditar} onOpenChange={setBolDialogoEditar}>
         <DialogContent>

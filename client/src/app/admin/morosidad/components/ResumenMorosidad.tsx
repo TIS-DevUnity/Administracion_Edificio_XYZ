@@ -5,7 +5,8 @@ import type { ExpensaDTO } from "@/types/finance";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCurrency, resumenSaldo } from "../utils/morosidad";
 
-const LABEL = "font-caption text-[11px] font-medium uppercase text-muted-foreground";
+const LABEL = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CIFRA = "font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums";
 
 export function ResumenMorosidad({ expensas }: { expensas: ExpensaDTO[] }) {
   // Totales únicamente de los registros de la página: NO simulan un resumen global.
@@ -20,21 +21,28 @@ export function ResumenMorosidad({ expensas }: { expensas: ExpensaDTO[] }) {
     return { vencidas, capital, mora };
   }, [expensas]);
 
+  const tarjetas = [
+    { etiqueta: "Expensas vencidas", valor: String(totales.vencidas), clase: "text-accent-secondary" },
+    { etiqueta: "Capital pendiente", valor: formatCurrency(totales.capital), clase: "text-foreground" },
+    { etiqueta: "Mora pendiente", valor: formatCurrency(totales.mora), clase: "text-destructive" },
+    { etiqueta: "Deuda pendiente", valor: formatCurrency(totales.capital + totales.mora), clase: "text-foreground" },
+  ];
+
   return (
     <section aria-label="Resumen de la página visible" className="mb-6">
-      <p className="mb-2 text-xs text-muted-foreground">
-        Resumen de las {expensas.length} expensas cargadas en esta página (no incluye otras páginas).
-      </p>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card><CardContent className="p-5"><p className={LABEL}>Expensas vencidas (esta página)</p>
-          <h3 className="mt-2 text-2xl font-bold">{totales.vencidas}</h3></CardContent></Card>
-        <Card><CardContent className="p-5"><p className={LABEL}>Capital pendiente (esta página)</p>
-          <h3 className="mt-2 text-2xl font-bold text-primary">{formatCurrency(totales.capital)}</h3></CardContent></Card>
-        <Card><CardContent className="p-5"><p className={LABEL}>Mora pendiente (esta página)</p>
-          <h3 className="mt-2 text-2xl font-bold text-destructive">{formatCurrency(totales.mora)}</h3></CardContent></Card>
-        <Card><CardContent className="p-5"><p className={LABEL}>Deuda pendiente (esta página)</p>
-          <h3 className="mt-2 text-2xl font-bold">{formatCurrency(totales.capital + totales.mora)}</h3></CardContent></Card>
+        {tarjetas.map((tarjeta) => (
+          <Card key={tarjeta.etiqueta} className="shadow-sm">
+            <CardContent className="p-5">
+              <p className={LABEL}>{tarjeta.etiqueta}</p>
+              <p className={`${CIFRA} ${tarjeta.clase}`}>{tarjeta.valor}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
+      <p className="font-caption mt-2 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+        Calculado sobre las {expensas.length} expensas de la página actual (no incluye otras páginas).
+      </p>
     </section>
   );
 }
