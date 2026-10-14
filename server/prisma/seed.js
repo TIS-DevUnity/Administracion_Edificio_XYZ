@@ -73,7 +73,21 @@ async function cargarEjemplo() {
     });
   }
 
-  // Inmuebles: departamentos con tipo, y una baulera y un parqueo (sin tipo, no pagan).
+  // Tarifa mensual general de baulera y parqueo (se suma a la expensa del departamento de
+  // quien los ocupa). Solo si todavia no esta definida.
+  for (const [clase, monto] of [
+    ["PARQUEO", 50],
+    ["BAULERA", 30],
+  ]) {
+    await prisma.tarifaClase.upsert({
+      where: { clase },
+      update: {},
+      create: { clase, monto },
+    });
+  }
+
+  // Inmuebles: departamentos con tipo, y bauleras y parqueos (sin tipo: pagan la tarifa de su
+  // clase, o su monto propio si lo tienen).
   const inmuebles = {};
   const definiciones = [
     { codigo: "A-101", clase: "DEPARTAMENTO", tipo: "A", piso: "1" },
@@ -84,6 +98,7 @@ async function cargarEjemplo() {
     { codigo: "C-302", clase: "DEPARTAMENTO", tipo: "C", piso: "3" },
     { codigo: "BAU-01", clase: "BAULERA" },
     { codigo: "PAR-01", clase: "PARQUEO" },
+    { codigo: "PAR-02", clase: "PARQUEO", cuotaMensual: 80 }, // monto propio
   ];
   for (const def of definiciones) {
     inmuebles[def.codigo] = await prisma.inmueble.upsert({
@@ -94,13 +109,18 @@ async function cargarEjemplo() {
         clase: def.clase,
         tipoInmuebleId: def.tipo ? tipos[def.tipo].id : null,
         piso: def.piso,
+        cuotaMensual: def.cuotaMensual ?? null,
       },
     });
   }
 
-  // Quien esta asignado: B-202 y C-302 quedan sin nadie (no pagan expensa).
+  // Quien esta asignado: B-202 y C-302 quedan sin nadie (no pagan expensa). "uno" tiene
+  // departamento, baulera y dos parqueos: su expensa suma los cuatro conceptos.
   const asignaciones = [
     ["A-101", "uno", true],
+    ["BAU-01", "uno", true],
+    ["PAR-01", "uno", true],
+    ["PAR-02", "uno", true],
     ["A-102", "dos", true],
     ["B-201", "tres", true],
     ["B-201", "cuatro", false], // inquilino del mismo departamento
@@ -126,7 +146,10 @@ async function cargarEjemplo() {
     }
   }
 
-  console.log("Datos de ejemplo listos: tipos A/B/C, 6 departamentos (4 asignados), 1 baulera y 1 parqueo");
+  console.log(
+    "Datos de ejemplo listos: tipos A/B/C, 6 departamentos (4 asignados), 1 baulera y 2 parqueos " +
+      "(tarifas: parqueo Bs 50, baulera Bs 30; PAR-02 con monto propio Bs 80, asignados a A-101)"
+  );
 }
 
 async function main() {

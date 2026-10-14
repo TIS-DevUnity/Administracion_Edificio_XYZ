@@ -187,6 +187,46 @@
         "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/estado-cuenta"
       }
+    },
+    {
+      "name": "Tarifas de baulera y parqueo - listar",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/tarifas-inmueble"
+      }
+    },
+    {
+      "name": "Tarifa de parqueo - editar (solo Admin)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/tarifas-inmueble/PARQUEO",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 50\n}" }
+      }
+    },
+    {
+      "name": "Inmueble - crear parqueo con monto propio",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/inmuebles",
+        "body": { "mode": "raw", "raw": "{\n  \"codigo\": \"PAR-02\",\n  \"clase\": \"PARQUEO\",\n  \"cuotaMensual\": 80\n}" }
+      }
+    },
+    {
+      "name": "Cuenta del residente (cargo por concepto, deuda y saldo a favor)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/copropietarios/<id del copropietario>/cuenta"
+      }
     }
   ]
 }
