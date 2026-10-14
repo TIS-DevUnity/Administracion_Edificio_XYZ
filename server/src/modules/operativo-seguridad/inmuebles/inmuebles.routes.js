@@ -18,6 +18,10 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
  *       ocupante vigente). Solo el departamento tiene tipo (A, B, C...). En baulera y parqueo
  *       `tipoInmuebleId` es null y `tipoInmueble` es un objeto de compatibilidad con la clase
  *       como nombre y monto 0.
+ *
+ *       `cargoMensual` es lo que el inmueble suma cada mes a la cuenta de quien lo ocupa: la
+ *       expensa fija del tipo en un departamento; en baulera y parqueo su `cuotaMensual`
+ *       propia o, si no tiene (null), la tarifa de su clase (`/api/tarifas-inmueble`).
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     responses:
@@ -26,7 +30,8 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
  *     summary: Registra un nuevo inmueble
  *     description: |
  *       Un departamento (clase por defecto) requiere `tipoInmuebleId`. Una baulera o un parqueo
- *       no tienen tipo: no se debe enviar `tipoInmuebleId`.
+ *       no tienen tipo: no se debe enviar `tipoInmuebleId`. Opcionalmente una baulera o un
+ *       parqueo puede llevar `cuotaMensual` propia, que reemplaza a la tarifa de su clase.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -42,9 +47,10 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
  *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble" }
  *               piso: { type: string }
  *               areaM2: { type: number }
+ *               cuotaMensual: { type: number, nullable: true, description: "Solo baulera y parqueo. Monto propio mensual (0 = exento). Sin valor usa la tarifa de la clase." }
  *     responses:
  *       201: { description: Inmueble creado }
- *       400: { description: Datos invalidos (falta el tipo de un departamento, o se envio tipo a una baulera o parqueo) }
+ *       400: { description: Datos invalidos (falta el tipo de un departamento, se envio tipo a una baulera o parqueo, o cuotaMensual en un departamento o invalida) }
  *       404: { description: Tipo de inmueble no encontrado }
  *       409: { description: Codigo ya registrado }
  */
@@ -88,6 +94,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  *               piso: { type: string }
  *               areaM2: { type: number }
  *               activo: { type: boolean }
+ *               cuotaMensual: { type: number, nullable: true, description: "Solo baulera y parqueo. Monto propio mensual (0 = exento); null lo quita y vuelve a la tarifa de la clase. Rige desde la proxima expensa." }
  *     responses:
  *       200: { description: Inmueble actualizado }
  *       400: { description: Datos invalidos (un departamento necesita tipo; baulera y parqueo no lo tienen) }
