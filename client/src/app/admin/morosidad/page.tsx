@@ -4,7 +4,7 @@ import React, { FormEvent, Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { QueryProvider } from "./QueryProvider";
-import { TablaExpensas } from "./components/TablaExpensas";
+import { BadgeEstadoExpensa, ETIQUETA_ESTADO, TablaExpensas } from "./components/TablaExpensas";
 import { ResumenMorosidad } from "./components/ResumenMorosidad";
 import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
 import axios from "axios";
@@ -12,7 +12,10 @@ import {
   CalendarClock,
   CalendarPlus,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   UserRound,
+  X,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -58,14 +61,16 @@ import {
   DetalleFacturaAguaDTO,
 } from "@/types/finance";
 
-const CLASE_BADGE_ESTADO: Record<EstadoExpensa, string> = {
-  PAGADA: "bg-success-subtle text-success", VENCIDA: "bg-danger-subtle text-destructive",
-  PENDIENTE: "bg-muted text-muted-foreground", PARCIAL: "bg-muted text-muted-foreground",
-};
 const CLASE_LABEL_CAMPO =
   "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_TITULO_DIALOGO =
   "font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground";
+const CLASE_DESCRIPCION_DIALOGO = "text-[13px] leading-[1.45] text-muted-foreground";
+// Encabezados de tarjetas, widgets y agrupadores (font-subtitle, ver client/CLAUDE.md).
+const CLASE_TITULO_SECCION = "font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground";
+const CLASE_AYUDA = "font-caption text-[12px] leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CLASE_CIFRA = "font-title text-[22px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums";
+const CLASE_AVISO_ERROR = "rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive";
 
 const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
   EFECTIVO: "Efectivo",
@@ -75,6 +80,15 @@ const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
 };
 
 const EXPENSAS_VACIAS: ExpensaDTO[] = [];
+
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+/** "2026-10" → "octubre 2026" */
+function etiquetaPeriodo(strPeriodo: string) {
+  const [strAnio, strMes] = strPeriodo.split("-");
+  const strNombre = MESES[Number(strMes) - 1];
+  return strNombre ? `${strNombre} ${strAnio}` : strPeriodo;
+}
 
 function ContenidoMorosidad() {
   const searchParams = useSearchParams();
@@ -535,6 +549,18 @@ function ContenidoMorosidad() {
     );
   }, [expensas, filtroTipo, searchTerm]);
 
+  const hayFiltrosActivos =
+    filtroPeriodo !== periodoActual() || filtroTipo !== "TODOS" || filtroEstado !== "TODOS" || Boolean(filtroInmuebleId) || Boolean(searchTerm.trim());
+
+  function limpiarFiltros() {
+    setPagina(1);
+    setFiltroPeriodo(periodoActual());
+    setFiltroTipo("TODOS");
+    setFiltroEstado("TODOS");
+    setFiltroInmuebleId("");
+    setSearchTerm("");
+  }
+
   return (
     <div className="px-4 py-6 sm:px-6">
       <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
@@ -676,19 +702,19 @@ function ContenidoMorosidad() {
                     onChange={(e) => setFormData((prev) => ({ ...prev, vigenteDesde: e.target.value }))} />
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className={CLASE_AYUDA}>
                 Sin fecha se aplica desde ahora. Una fecha futura programa la nueva regla.
                 Las expensas antiguas conservan su configuración histórica.
               </p>
               <div className="space-y-2 rounded-lg border border-border p-3">
-                <h4 className="text-sm font-semibold">Historial de configuraciones</h4>
+                <h4 className={CLASE_TITULO_SECCION}>Historial de configuraciones</h4>
                 {historialConfiguracion.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No hay historial disponible.</p>
+                  <p className={CLASE_AYUDA}>No hay historial disponible.</p>
                 ) : (
                   <div className="max-h-36 space-y-2 overflow-y-auto">
                     {historialConfiguracion.map((regla) => (
-                      <div key={regla.id} className="border-b pb-2 text-xs last:border-0">
-                        <strong>{formatearFecha(regla.vigenteDesde)}</strong> · {regla.modoMora === "UNICA" ? "Única" : "Mensual"} · {Number(regla.valor)}{regla.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
+                      <div key={regla.id} className="border-b border-border pb-2 text-[12px] leading-[1.45] text-foreground last:border-0">
+                        <span className="font-medium">{formatearFecha(regla.vigenteDesde)}</span> · {regla.modoMora === "UNICA" ? "Única" : "Mensual"} · {Number(regla.valor)}{regla.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
                         <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
                       </div>
                     ))}
@@ -696,11 +722,7 @@ function ContenidoMorosidad() {
                 )}
               </div>
 
-              {strErrorConfig && (
-                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-                  {strErrorConfig}
-                </p>
-              )}
+              {strErrorConfig && <p className={CLASE_AVISO_ERROR}>{strErrorConfig}</p>}
 
               <DialogFooter>
                 <Button onClick={handleSaveConfig} cargando={isSaving} className="w-full">
@@ -716,12 +738,12 @@ function ContenidoMorosidad() {
 
       {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
       {errorCarga && (
-        <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-danger-subtle p-3 text-sm text-destructive">
+        <div role="alert" className={`${CLASE_AVISO_ERROR} mb-4 flex flex-wrap items-center justify-between gap-3`}>
           <span>{errorCarga}</span>
           <Button type="button" variant="outline" size="sm" onClick={reintentarConsultas}>Reintentar carga</Button>
         </div>
       )}
-      {configQuery.isError && <p role="alert" className="mb-4 text-sm text-destructive">
+      {configQuery.isError && <p role="alert" className={`${CLASE_AVISO_ERROR} mb-4`}>
         No se pudo consultar la configuración de mora. Verifica los permisos o la conexión.
       </p>}
       {strExito && (
@@ -738,38 +760,38 @@ function ContenidoMorosidad() {
       {resultadoGeneracion && (
         <Card className="mb-6 border-primary/20 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-[15px]">Resultado de generación — {resultadoGeneracion.periodo ?? periodoActual()}</CardTitle>
-            <p className="text-[12px] text-muted-foreground">Es el resultado de la última ejecución desde esta pantalla. Repetir la generación no duplica los registros existentes.</p>
+            <CardTitle className={CLASE_TITULO_SECCION}>Resultado de generación — {resultadoGeneracion.periodo ?? periodoActual()}</CardTitle>
+            <p className={CLASE_AYUDA}>Es el resultado de la última ejecución desde esta pantalla. Repetir la generación no duplica los registros existentes.</p>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border p-3"><p className={CLASE_LABEL_CAMPO}>Generadas</p><p className="text-xl font-semibold">{resultadoGeneracion.generadas}</p></div>
-            <div className="rounded-lg border p-3"><p className={CLASE_LABEL_CAMPO}>Ya existentes</p><p className="text-xl font-semibold">{resultadoGeneracion.yaGeneradas?.length ?? 0}</p></div>
-            <div className="rounded-lg border p-3"><p className={CLASE_LABEL_CAMPO}>Pendientes por error</p><p className="text-xl font-semibold text-destructive">{resultadoGeneracion.pendientes?.length ?? 0}</p></div>
-            <div className="rounded-lg border p-3"><p className={CLASE_LABEL_CAMPO}>Excluidas</p><p className="text-xl font-semibold">{resultadoGeneracion.excluidos?.length ?? 0}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Generadas</p><p className={`${CLASE_CIFRA} mt-1 text-success`}>{resultadoGeneracion.generadas}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Ya existentes</p><p className={`${CLASE_CIFRA} mt-1 text-foreground`}>{resultadoGeneracion.yaGeneradas?.length ?? 0}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Pendientes por error</p><p className={`${CLASE_CIFRA} mt-1 text-destructive`}>{resultadoGeneracion.pendientes?.length ?? 0}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Excluidas</p><p className={`${CLASE_CIFRA} mt-1 text-muted-foreground`}>{resultadoGeneracion.excluidos?.length ?? 0}</p></div>
             {(resultadoGeneracion.yaGeneradas?.length ?? 0) > 0 && (
-              <details className="rounded-lg border p-3 sm:col-span-2 xl:col-span-4">
-                <summary className="cursor-pointer text-[13px] font-medium">Ver departamentos con expensa existente</summary>
-                <p className="mt-2 text-[12px] text-muted-foreground">{resultadoGeneracion.yaGeneradas?.join(", ")}</p>
+              <details className="rounded-lg border border-border p-3 sm:col-span-2 xl:col-span-4">
+                <summary className="cursor-pointer text-[13px] font-medium text-foreground">Ver departamentos con expensa existente</summary>
+                <p className={`${CLASE_AYUDA} mt-2`}>{resultadoGeneracion.yaGeneradas?.join(", ")}</p>
               </details>
             )}
             {(resultadoGeneracion.pendientes?.length ?? 0) > 0 && (
-              <div className="rounded-lg border border-destructive/20 p-3 sm:col-span-2 xl:col-span-4">
-                <p className="text-[13px] font-medium">Pendientes para reintentar</p>
-                <ul className="mt-2 list-inside list-disc space-y-1 text-[12px]">
+              <div className="rounded-lg border border-destructive/20 bg-danger-subtle p-3 sm:col-span-2 xl:col-span-4">
+                <p className="text-[13px] font-medium text-destructive">Pendientes para reintentar</p>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-[12px] text-foreground">
                   {resultadoGeneracion.pendientes?.map((item) => <li key={item.inmuebleId}>{item.codigo}: {item.motivo}</li>)}
                 </ul>
                 <Button variant="outline" className="mt-3" onClick={handleGenerarMes} cargando={bolGenerandoMes}>Reintentar generación del mes</Button>
               </div>
             )}
             {(resultadoGeneracion.excluidos?.length ?? 0) > 0 && (
-              <details className="rounded-lg border p-3 sm:col-span-2 xl:col-span-4">
-                <summary className="cursor-pointer text-[13px] font-medium">Ver departamentos excluidos</summary>
-                <ul className="mt-2 list-inside list-disc space-y-1 text-[12px]">
+              <details className="rounded-lg border border-border p-3 sm:col-span-2 xl:col-span-4">
+                <summary className="cursor-pointer text-[13px] font-medium text-foreground">Ver departamentos excluidos</summary>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-[12px] text-muted-foreground">
                   {resultadoGeneracion.excluidos?.map((item) => <li key={item.codigo}>{item.codigo}: {item.motivo}</li>)}
                 </ul>
               </details>
             )}
-            {resultadoGeneracion.motivo && <p className="text-[12px] text-muted-foreground sm:col-span-2 xl:col-span-4">Motivo: {resultadoGeneracion.motivo}</p>}
+            {resultadoGeneracion.motivo && <p className={`${CLASE_AYUDA} sm:col-span-2 xl:col-span-4`}>Motivo: {resultadoGeneracion.motivo}</p>}
           </CardContent>
         </Card>
       )}
@@ -777,24 +799,27 @@ function ContenidoMorosidad() {
       {/* Reglas actuales de mora */}
       {!isLoading && configMora && (
         <div className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-primary">
-            <CalendarClock className="h-5 w-5" />
-            <h4 className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em]">
-              Configuración vigente del cron job
-            </h4>
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-primary" />
+            <h4 className={CLASE_TITULO_SECCION}>Configuración vigente del cron job</h4>
           </div>
 
-          <p className="mt-1 text-[13px] leading-[1.45] text-primary/80">
+          <p className="mt-2 text-[13px] leading-[1.45] text-muted-foreground">
             Las expensas se generan automáticamente el día{" "}
-            <strong className="font-bold text-primary">{configMora.diaGeneracion}</strong> de cada mes. El
-            vencimiento está configurado para el día {configMora.diaVencimiento} y el
-            recargo por mora es de{" "}
-            <strong className="font-bold text-primary">
+            <span className="font-medium text-foreground">{configMora.diaGeneracion}</span> de cada mes. El
+            vencimiento está configurado para el día{" "}
+            <span className="font-medium text-foreground">{configMora.diaVencimiento}</span> y el recargo por mora es
+            de{" "}
+            <span className="font-medium text-foreground">
               {Number(configMora.valor)}
               {configMora.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
-            </strong>{" "}
-            aplicable tras <strong className="font-bold text-primary">{configMora.diasGracia} días</strong> de
-            gracia desde el vencimiento. Modalidad: <strong>{configMora.modoMora === "UNICA" ? "recargo único" : "recargo mensual"}</strong>.
+            </span>{" "}
+            aplicable tras <span className="font-medium text-foreground">{configMora.diasGracia} días</span> de
+            gracia desde el vencimiento. Modalidad:{" "}
+            <span className="font-medium text-foreground">
+              {configMora.modoMora === "UNICA" ? "recargo único" : "recargo mensual"}
+            </span>
+            .
           </p>
         </div>
       )}
@@ -802,21 +827,29 @@ function ContenidoMorosidad() {
       {/* Tarifas y agua. Los importes oficiales siempre los calcula el backend. */}
       <Card className="mb-6 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-[15px]">Tarifas de departamentos y factura de agua</CardTitle>
-          <p className="text-xs text-muted-foreground">Las tarifas se aplican a nuevas expensas. El agua se reparte sobre las expensas existentes del período, según el peso del tipo.</p>
+          <CardTitle className={CLASE_TITULO_SECCION}>Tarifas de departamentos y factura de agua</CardTitle>
+          <p className={CLASE_AYUDA}>Las tarifas se aplican a nuevas expensas. El agua se reparte sobre las expensas existentes del período, según el peso del tipo.</p>
         </CardHeader>
         <CardContent className="grid gap-5 lg:grid-cols-2">
           <section className="space-y-3">
-            <h3 className="font-semibold text-sm">Tipos y tarifas fijas</h3>
+            <h3 className={CLASE_LABEL_CAMPO}>Tipos y tarifas fijas</h3>
             {tiposInmueble.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No se cargaron tipos de departamento.</p>
+              <p className={CLASE_AYUDA}>No se cargaron tipos de departamento.</p>
             ) : (
               <div className="space-y-2">
                 {tiposInmueble.map((tipo) => (
-                  <div key={tipo.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Tipo {tipo.nombre}</p>
-                      <p className="text-xs text-muted-foreground">Tarifa: {formatCurrency(Number(tipo.montoBase))} · Peso agua: {Number(tipo.pesoAgua)}</p>
+                  <div key={tipo.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-title flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-[16px] font-bold text-primary">
+                        {tipo.nombre}
+                      </span>
+                      <div>
+                        <p className="text-[13px] font-medium tabular-nums text-foreground">
+                          {formatCurrency(Number(tipo.montoBase))}
+                          <span className="font-normal text-muted-foreground"> / mes</span>
+                        </p>
+                        <p className={CLASE_AYUDA}>Peso agua: {Number(tipo.pesoAgua)}</p>
+                      </div>
                     </div>
                     {bolPuedeGestionar && <Button size="sm" variant="outline" onClick={() => abrirFormularioTipo(tipo)}>Editar</Button>}
                   </div>
@@ -826,7 +859,7 @@ function ContenidoMorosidad() {
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Agua del edificio por período</h3>
+            <h3 className={CLASE_LABEL_CAMPO}>Agua del edificio por período</h3>
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
               <Input type="month" aria-label="Período del agua" value={periodoAgua}
                 onChange={(e) => { setPeriodoAgua(e.target.value); setDetalleAgua(null); setErrorAgua(""); }} />
@@ -838,22 +871,24 @@ function ContenidoMorosidad() {
               <form className="flex gap-2" onSubmit={handleRegistrarAgua}>
                 <Input aria-label="Importe de la factura de agua en bolivianos" placeholder="Factura total Bs" type="number" min="0" step="0.01"
                   value={montoFactura} onChange={(e) => setMontoFactura(e.target.value)} />
-                <Button type="submit" disabled={guardandoAgua}>{guardandoAgua ? "Guardando..." : "Registrar agua"}</Button>
+                <Button type="submit" cargando={guardandoAgua}>{guardandoAgua ? "Guardando..." : "Registrar agua"}</Button>
               </form>
             )}
-            <p className="text-xs text-muted-foreground">Si ya existe una factura de ese mes, registrar un nuevo monto la corrige y recalcula el reparto. El servidor puede rechazarlo si afecta importes ya pagados.</p>
-            {errorAgua && <p role="alert" className="text-xs text-destructive">{errorAgua}</p>}
+            <p className={CLASE_AYUDA}>Si ya existe una factura de ese mes, registrar un nuevo monto la corrige y recalcula el reparto. El servidor puede rechazarlo si afecta importes ya pagados.</p>
+            {errorAgua && <p role="alert" className={CLASE_AVISO_ERROR}>{errorAgua}</p>}
             {facturasAgua.length > 0 && (
-              <p className="text-xs text-muted-foreground">Facturas registradas: {facturasAgua.map((f) => f.periodo).slice(0, 6).join(", ")}</p>
+              <p className={CLASE_AYUDA}>Facturas registradas: {facturasAgua.map((f) => f.periodo).slice(0, 6).join(", ")}</p>
             )}
             {detalleAgua && (
-              <details open className="rounded-lg border p-3">
-                <summary className="cursor-pointer text-sm font-semibold">Reparto {detalleAgua.factura.periodo}: {formatCurrency(Number(detalleAgua.factura.montoFactura))}</summary>
+              <details open className="rounded-lg border border-border p-3">
+                <summary className="cursor-pointer text-[13px] font-medium text-foreground">
+                  Reparto {detalleAgua.factura.periodo}: <span className="tabular-nums">{formatCurrency(Number(detalleAgua.factura.montoFactura))}</span>
+                </summary>
                 <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
                   {detalleAgua.reparto.map((fila) => (
-                    <div key={fila.expensaId} className="flex justify-between border-b pb-2 text-xs gap-2">
-                      <span>{fila.inmuebleCodigo} · Tipo {fila.tipo} · Peso {fila.peso}</span>
-                      <strong>{formatCurrency(Number(fila.montoAgua))}</strong>
+                    <div key={fila.expensaId} className="flex justify-between gap-2 border-b border-border pb-2 text-[12px] last:border-0">
+                      <span className="text-muted-foreground">{fila.inmuebleCodigo} · Tipo {fila.tipo} · Peso {fila.peso}</span>
+                      <span className="font-medium tabular-nums text-foreground">{formatCurrency(Number(fila.montoAgua))}</span>
                     </div>
                   ))}
                 </div>
@@ -864,7 +899,7 @@ function ContenidoMorosidad() {
       </Card>
 
       {!configQuery.isPending && !configQuery.isError && !configMora && (
-        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+        <div role="alert" className={`${CLASE_AVISO_ERROR} mb-6`}>
           No existe una configuración de mora vigente. Antes de ejecutar el proceso mensual,
           un Administrador debe guardar las reglas de generación, vencimiento y mora.
         </div>
@@ -873,104 +908,140 @@ function ContenidoMorosidad() {
       <ResumenMorosidad expensas={expensas} />
 
       {/* Registro general */}
-      <Card className="shadow-sm">
-        <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
-            Registro general de expensas
-          </CardTitle>
-          <Button variant="outline" size="sm" disabled={expensasQuery.isFetching}
-            onClick={() => { void expensasQuery.refetch(); }}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar expensas
-          </Button>
+      <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className={CLASE_TITULO_SECCION}>Registro general de expensas</h2>
+            <p className={`${CLASE_AYUDA} mt-1`}>
+              {paginacion ? `${paginacion.total} expensa${paginacion.total === 1 ? "" : "s"}` : `${expensas.length} expensas`}{" "}
+              en {etiquetaPeriodo(filtroPeriodo)}
+              {filteredExpensas.length !== expensas.length && ` · ${filteredExpensas.length} visibles con los filtros de esta página`}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {hayFiltrosActivos && (
+              <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
+                <X className="h-4 w-4" />
+                Limpiar filtros
+              </Button>
+            )}
+            <Button variant="outline" size="sm" cargando={expensasQuery.isFetching} onClick={() => { void expensasQuery.refetch(); }}>
+              <RefreshCw className="h-4 w-4" />
+              Actualizar
+            </Button>
+          </div>
+        </div>
 
-          <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
-            <Input
-              id="filtro-mes"
-              aria-label="Filtrar expensas por mes y año"
-              title="Seleccionar otro mes"
-              type="month"
-              className="h-8 w-full cursor-pointer sm:w-[175px]"
-              value={filtroPeriodo}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                setPagina(1);
-                setFiltroPeriodo(e.target.value);
-              }}
-            />
-            <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-              <SelectTrigger className="w-full sm:w-[135px]"><SelectValue placeholder="Tipo" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TODOS">Todos los tipos</SelectItem>
-                {tiposInmueble.map((tipo) => <SelectItem key={tipo.id} value={tipo.nombre}>{tipo.nombre}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filtroEstado} onValueChange={(valor) => { setPagina(1); setFiltroEstado(valor); }}>
-              <SelectTrigger className="w-full sm:w-[165px]"><SelectValue placeholder="Estado" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TODOS">Todos los estados</SelectItem>
-                {(["PENDIENTE", "PARCIAL", "PAGADA", "VENCIDA"] as EstadoExpensa[]).map((estado) => <SelectItem key={estado} value={estado}>{estado}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filtroInmuebleId || "TODOS"} onValueChange={(val) => { setPagina(1); setFiltroInmuebleId(val === "TODOS" ? "" : val); }}>
-              <SelectTrigger className="w-full sm:w-[220px]">
-                <SelectValue placeholder="Consultar por departamento" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TODOS">Todos los departamentos</SelectItem>
-                {inmuebles.map((inmueble) => (
-                  <SelectItem key={inmueble.id} value={inmueble.id}>
-                    {inmueble.codigo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="relative w-full sm:w-[260px]">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-5 py-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[170px_150px_170px_minmax(0,1fr)_minmax(0,1.4fr)]">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="filtro-mes" className={CLASE_LABEL_CAMPO}>Mes</label>
               <Input
-                placeholder="Buscar en esta página..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
+                id="filtro-mes"
+                type="month"
+                className="h-9 cursor-pointer"
+                value={filtroPeriodo}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setPagina(1);
+                  setFiltroPeriodo(e.target.value);
+                }}
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <span className={CLASE_LABEL_CAMPO}>Tipo</span>
+              <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+                <SelectTrigger aria-label="Filtrar por tipo" className="h-9 w-full"><SelectValue placeholder="Tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos los tipos</SelectItem>
+                  {tiposInmueble.map((tipo) => <SelectItem key={tipo.id} value={tipo.nombre}>Tipo {tipo.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className={CLASE_LABEL_CAMPO}>Estado</span>
+              <Select value={filtroEstado} onValueChange={(valor) => { setPagina(1); setFiltroEstado(valor); }}>
+                <SelectTrigger aria-label="Filtrar por estado" className="h-9 w-full"><SelectValue placeholder="Estado" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos los estados</SelectItem>
+                  {(["PENDIENTE", "PARCIAL", "PAGADA", "VENCIDA"] as EstadoExpensa[]).map((estado) => (
+                    <SelectItem key={estado} value={estado}>{ETIQUETA_ESTADO[estado]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className={CLASE_LABEL_CAMPO}>Departamento</span>
+              <Select value={filtroInmuebleId || "TODOS"} onValueChange={(val) => { setPagina(1); setFiltroInmuebleId(val === "TODOS" ? "" : val); }}>
+                <SelectTrigger aria-label="Filtrar por departamento" className="h-9 w-full">
+                  <SelectValue placeholder="Todos los departamentos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos los departamentos</SelectItem>
+                  {inmuebles.map((inmueble) => (
+                    <SelectItem key={inmueble.id} value={inmueble.id}>
+                      {inmueble.codigo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
+              <label htmlFor="buscar-expensa" className={CLASE_LABEL_CAMPO}>Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="buscar-expensa"
+                  placeholder="Código, responsable o tipo..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground sm:basis-full">
-            Período, estado e inmueble filtran en el servidor. Tipo y búsqueda de texto solo filtran las {porPagina} expensas de esta página.
+          <p className={CLASE_AYUDA}>
+            Mes, estado y departamento se consultan en el servidor. Tipo y búsqueda filtran solo las {porPagina} expensas de esta página.
           </p>
-        </CardHeader>
+        </div>
 
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="space-y-4 p-5">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+            <div className="space-y-3 p-5">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
             </div>
           ) : (
-            <>
-              <TablaExpensas
-                filteredExpensas={filteredExpensas}
-                totalCargadas={expensas.length}
-                historialConfiguracion={historialConfiguracion}
-                bolPuedeGestionar={bolPuedeGestionar}
-                errorCarga={errorCarga}
-                onDetalle={setExpensaDetalle}
-                onPago={abrirDialogoPago}
-              />
-            </>
+            <TablaExpensas
+              filteredExpensas={filteredExpensas}
+              totalCargadas={expensas.length}
+              historialConfiguracion={historialConfiguracion}
+              bolPuedeGestionar={bolPuedeGestionar}
+              errorCarga={errorCarga}
+              onDetalle={setExpensaDetalle}
+              onPago={abrirDialogoPago}
+            />
           )}
         </CardContent>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-xs text-muted-foreground">
-          <span>
-            Página {paginacion?.pagina ?? pagina} de {Math.max(paginacion?.totalPaginas ?? 1, 1)}
-            {paginacion ? ` · ${paginacion.total} expensas coinciden con los filtros del servidor` : ""}
+
+        <div className="flex flex-col gap-3 border-t border-border px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className={CLASE_AYUDA}>
+            Página <span className="font-medium text-foreground">{paginacion?.pagina ?? pagina}</span> de{" "}
+            <span className="font-medium text-foreground">{Math.max(paginacion?.totalPaginas ?? 1, 1)}</span>
             {expensasQuery.isFetching ? " · Actualizando…" : ""}
           </span>
           <div className="flex gap-2">
             <Button type="button" size="sm" variant="outline" disabled={pagina <= 1 || expensasQuery.isFetching}
-              onClick={() => setPagina((p) => Math.max(1, p - 1))}>Anterior</Button>
+              onClick={() => setPagina((p) => Math.max(1, p - 1))}>
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
             <Button type="button" size="sm" variant="outline" disabled={pagina >= (paginacion?.totalPaginas ?? 1) || expensasQuery.isFetching}
-              onClick={() => setPagina((p) => p + 1)}>Siguiente</Button>
+              onClick={() => setPagina((p) => p + 1)}>
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </Card>
@@ -978,8 +1049,8 @@ function ContenidoMorosidad() {
       <Dialog open={dialogTipoAbierto} onOpenChange={(abierto) => !guardandoTipo && setDialogTipoAbierto(abierto)}>
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
-            <DialogTitle>Editar tipo de departamento</DialogTitle>
-            <DialogDescription>La tarifa y el peso se usan para las próximas expensas; no cambian las ya generadas.</DialogDescription>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Editar tipo de departamento</DialogTitle>
+            <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>La tarifa y el peso se usan para las próximas expensas; no cambian las ya generadas.</DialogDescription>
           </DialogHeader>
           <form className="space-y-3" onSubmit={handleGuardarTipo}>
             <div className="space-y-1"><label htmlFor="nombreTipo" className={CLASE_LABEL_CAMPO}>Nombre del tipo</label>
@@ -988,10 +1059,10 @@ function ContenidoMorosidad() {
               <Input id="tarifaTipo" type="number" min="0" step="0.01" required value={tarifaTipo} onChange={(e) => setTarifaTipo(e.target.value)} /></div>
             <div className="space-y-1"><label htmlFor="pesoTipo" className={CLASE_LABEL_CAMPO}>Peso para distribuir agua</label>
               <Input id="pesoTipo" type="number" min="0.001" step="0.001" required value={pesoTipo} onChange={(e) => setPesoTipo(e.target.value)} /></div>
-            {errorTipo && <p role="alert" className="text-xs text-destructive">{errorTipo}</p>}
+            {errorTipo && <p role="alert" className={CLASE_AVISO_ERROR}>{errorTipo}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogTipoAbierto(false)} disabled={guardandoTipo}>Cancelar</Button>
-              <Button type="submit" disabled={guardandoTipo}>{guardandoTipo ? "Guardando..." : "Guardar tipo"}</Button>
+              <Button type="submit" cargando={guardandoTipo}>{guardandoTipo ? "Guardando..." : "Guardar tipo"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1012,7 +1083,7 @@ function ContenidoMorosidad() {
             <form onSubmit={handleConfirmarPago} className="flex flex-col gap-3">
               <div className="rounded-lg bg-muted/30 p-3">
                 <p className={CLASE_LABEL_CAMPO}>Saldo pendiente</p>
-                <p className="mt-1 text-[16px] font-semibold text-foreground">
+                <p className="font-title mt-1 text-[20px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-foreground">
                   {formatCurrency(calcularSaldoPendiente(expensaParaPago))}
                 </p>
               </div>
@@ -1061,11 +1132,7 @@ function ContenidoMorosidad() {
                 />
               </div>
 
-              {strErrorPago && (
-                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-                  {strErrorPago}
-                </p>
-              )}
+              {strErrorPago && <p className={CLASE_AVISO_ERROR}>{strErrorPago}</p>}
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={cerrarDialogoPago} disabled={bolGuardandoPago}>
@@ -1092,10 +1159,8 @@ function ContenidoMorosidad() {
 
           {expensaDetalle && (
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[expensaDetalle.estado]}`}>
-                  {expensaDetalle.estado}
-                </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <BadgeEstadoExpensa estado={expensaDetalle.estado} />
                 {estaEnPeriodoGracia(expensaDetalle, historialConfiguracion) && (
                   <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
                     En período de gracia
@@ -1108,17 +1173,20 @@ function ContenidoMorosidad() {
                 )}
               </div>
 
-              <div className="rounded-lg border border-border p-3">
-                <div className="flex items-center gap-2 font-medium text-[13px]"><UserRound className="h-4 w-4 text-muted-foreground" />Responsable de la expensa</div>
-                <p className="mt-1 text-[13px]">{expensaDetalle.responsableNombre || "No registrado"}</p>
-                <p className="text-[12px] text-muted-foreground">{expensaDetalle.responsableRol === "PROPIETARIO" ? "Propietario" : expensaDetalle.responsableRol === "INQUILINO" ? "Inquilino" : "Sin rol registrado"}</p>
+              <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+                <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Responsable de la expensa</p>
+                  <p className="mt-1 text-[13px] font-medium text-foreground">{expensaDetalle.responsableNombre || "No registrado"}</p>
+                  <p className={CLASE_AYUDA}>{expensaDetalle.responsableRol === "PROPIETARIO" ? "Propietario" : expensaDetalle.responsableRol === "INQUILINO" ? "Inquilino" : "Sin rol registrado"}</p>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Tipo de departamento</p>
                   <p className="mt-1 text-[13px] text-foreground">
-                    {expensaDetalle.tipoNombre || "No registrado"}
+                    {expensaDetalle.tipoNombre ? `Tipo ${expensaDetalle.tipoNombre}` : "No registrado"}
                   </p>
                 </div>
                 <div>
@@ -1140,7 +1208,7 @@ function ContenidoMorosidad() {
 
               <div className="rounded-lg border border-border p-3">
                 <p className={`${CLASE_LABEL_CAMPO} mb-3`}>Desglose de la expensa</p>
-                <div className="flex flex-col gap-2 text-[13px]">
+                <div className="flex flex-col gap-2 text-[13px] tabular-nums">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">Tarifa fija</span>
                     <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoBase))}</span>
@@ -1158,8 +1226,8 @@ function ContenidoMorosidad() {
                     <span className="text-destructive">{formatCurrency(Number(expensaDetalle.montoMora || 0))}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
-                    <span className="font-semibold text-foreground">Total exigible</span>
-                    <span className="font-semibold text-foreground">
+                    <span className="font-medium text-foreground">Total exigible</span>
+                    <span className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
                       {formatCurrency(Number(expensaDetalle.montoTotal) + Number(expensaDetalle.montoMora || 0))}
                     </span>
                   </div>
@@ -1168,11 +1236,20 @@ function ContenidoMorosidad() {
 
               <div className="rounded-lg bg-muted/30 p-3">
                 <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Estado de cuenta de esta expensa</p>
-                <div className="grid grid-cols-2 gap-3 text-[12px]">
-                  <div><p className="text-muted-foreground">Pagado</p><p className="font-semibold">{formatCurrency(resumenSaldo(expensaDetalle).pagado)}</p></div>
-                  <div><p className="text-muted-foreground">Capital pendiente</p><p className="font-semibold">{formatCurrency(resumenSaldo(expensaDetalle).capitalPendiente)}</p></div>
-                  <div><p className="text-muted-foreground">Mora pendiente</p><p className="font-semibold">{formatCurrency(resumenSaldo(expensaDetalle).moraPendiente)}</p></div>
-                  <div><p className="text-muted-foreground">Saldo total pendiente</p><p className="font-semibold">{formatCurrency(resumenSaldo(expensaDetalle).total)}</p></div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { etiqueta: "Pagado", valor: resumenSaldo(expensaDetalle).pagado, clase: "text-success" },
+                    { etiqueta: "Capital pendiente", valor: resumenSaldo(expensaDetalle).capitalPendiente, clase: "text-foreground" },
+                    { etiqueta: "Mora pendiente", valor: resumenSaldo(expensaDetalle).moraPendiente, clase: "text-destructive" },
+                    { etiqueta: "Saldo total pendiente", valor: resumenSaldo(expensaDetalle).total, clase: "text-foreground" },
+                  ].map((item) => (
+                    <div key={item.etiqueta}>
+                      <p className={CLASE_AYUDA}>{item.etiqueta}</p>
+                      <p className={`text-[13px] font-medium tabular-nums ${item.valor > 0 ? item.clase : "text-muted-foreground"}`}>
+                        {formatCurrency(item.valor)}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1187,13 +1264,16 @@ function ContenidoMorosidad() {
                 {expensaDetalle.moras?.length ? (
                   <div className="space-y-2">
                     {expensaDetalle.moras.map((mora) => (
-                      <div key={mora.id} className="rounded-lg border p-3 text-[12px]">
-                        <div className="flex justify-between gap-2"><span className="font-medium">Recargo {mora.numero} — {mora.mes}</span><span className="font-semibold text-destructive">{formatCurrency(Number(mora.monto))}</span></div>
-                        <p className="mt-1 text-muted-foreground">Corte: {formatearFechaCalendario(mora.fechaCorte)} · Base: {formatCurrency(Number(mora.base))} · {mora.tipoValor === "PORCENTAJE" ? `${mora.valor}%` : `Bs ${mora.valor} fijo`}</p>
+                      <div key={mora.id} className="rounded-lg border border-border p-3">
+                        <div className="flex justify-between gap-2 text-[13px]">
+                          <span className="font-medium text-foreground">Recargo {mora.numero} — {mora.mes}</span>
+                          <span className="font-medium tabular-nums text-destructive">{formatCurrency(Number(mora.monto))}</span>
+                        </div>
+                        <p className={`${CLASE_AYUDA} mt-1`}>Corte: {formatearFechaCalendario(mora.fechaCorte)} · Base: {formatCurrency(Number(mora.base))} · {mora.tipoValor === "PORCENTAJE" ? `${Number(mora.valor)}%` : `Bs ${mora.valor} fijo`}</p>
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-[12px] text-muted-foreground">No se registraron recargos para esta expensa.</p>}
+                ) : <p className={CLASE_AYUDA}>No se registraron recargos para esta expensa.</p>}
               </div>
 
               <div>
@@ -1201,19 +1281,19 @@ function ContenidoMorosidad() {
                 {expensaDetalle.cambiosVencimiento?.length ? (
                   <div className="space-y-2">
                     {expensaDetalle.cambiosVencimiento.map((cambio) => (
-                      <div key={cambio.id} className="rounded-lg border p-3 text-[12px]">
-                        <p className="font-medium">{formatearFechaCalendario(cambio.fechaAnterior)} → {formatearFechaCalendario(cambio.fechaNueva)}</p>
-                        <p className="mt-1 text-muted-foreground">{formatearFecha(cambio.createdAt)}{cambio.motivo ? ` · ${cambio.motivo}` : ""}</p>
+                      <div key={cambio.id} className="rounded-lg border border-border p-3">
+                        <p className="text-[13px] font-medium text-foreground">{formatearFechaCalendario(cambio.fechaAnterior)} → {formatearFechaCalendario(cambio.fechaNueva)}</p>
+                        <p className={`${CLASE_AYUDA} mt-1`}>{formatearFecha(cambio.createdAt)}{cambio.motivo ? ` · ${cambio.motivo}` : ""}</p>
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-[12px] text-muted-foreground">Sin cambios registrados.</p>}
+                ) : <p className={CLASE_AYUDA}>Sin cambios registrados.</p>}
               </div>
 
               <div>
                 <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Historial de pagos</p>
                 {expensaDetalle.pagos.length === 0 ? (
-                  <p className="text-[13px] text-muted-foreground">Todavía no se registraron pagos.</p>
+                  <p className={CLASE_AYUDA}>Todavía no se registraron pagos.</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {expensaDetalle.pagos.map((pago) => (
@@ -1227,13 +1307,13 @@ function ContenidoMorosidad() {
                               ? "Saldo a favor"
                               : ETIQUETA_METODO_PAGO[pago.metodoPago]}
                           </p>
-                          <p className="font-caption text-[11px] text-muted-foreground">
+                          <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
                             {formatearFecha(pago.fechaPago)}
                             {pago.referencia ? ` · ${pago.referencia}` : ""}
                           </p>
-                          <p className="font-caption text-[11px] text-muted-foreground">A capital: {formatCurrency(Number(pago.montoExpensa))} · A mora: {formatCurrency(Number(pago.montoMora))}</p>
+                          <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">A capital: {formatCurrency(Number(pago.montoExpensa))} · A mora: {formatCurrency(Number(pago.montoMora))}</p>
                         </div>
-                        <p className="text-[13px] font-semibold text-foreground">
+                        <p className="text-[13px] font-medium tabular-nums text-success">
                           {formatCurrency(Number(pago.monto))}
                         </p>
                       </div>
@@ -1258,8 +1338,8 @@ function ContenidoMorosidad() {
         <DialogContent className="sm:max-w-[430px]">
           <DialogHeader>
             <DialogTitle className={CLASE_TITULO_DIALOGO}>Modificar fecha de vencimiento</DialogTitle>
-            <DialogDescription>
-              {expensaVencimiento ? `${expensaVencimiento.inmueble.codigo} · ${expensaVencimiento.periodo}` : ""}. Solo se permite si la expensa no está pagada ni tiene recargos de mora.
+            <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>
+              {expensaVencimiento ?`${expensaVencimiento.inmueble.codigo} · ${expensaVencimiento.periodo}` : ""}. Solo se permite si la expensa no está pagada ni tiene recargos de mora.
             </DialogDescription>
           </DialogHeader>
           {expensaVencimiento && (
@@ -1273,10 +1353,10 @@ function ContenidoMorosidad() {
                 <label htmlFor="motivoVencimiento" className={CLASE_LABEL_CAMPO}>Motivo (opcional)</label>
                 <Input id="motivoVencimiento" value={motivoVencimiento} maxLength={300} onChange={(event) => setMotivoVencimiento(event.target.value)} placeholder="Ej. acuerdo de pago, feriado" />
               </div>
-              {errorVencimiento && <p className="rounded-lg border border-destructive/20 bg-danger-subtle p-3 text-[13px] text-destructive">{errorVencimiento}</p>}
+              {errorVencimiento && <p className={CLASE_AVISO_ERROR}>{errorVencimiento}</p>}
               <DialogFooter>
                 <Button variant="outline" type="button" disabled={guardandoVencimiento} onClick={() => setExpensaVencimiento(null)}>Cancelar</Button>
-                <Button type="submit" disabled={guardandoVencimiento}>{guardandoVencimiento ? "Guardando..." : "Guardar cambio"}</Button>
+                <Button type="submit" cargando={guardandoVencimiento}>{guardandoVencimiento ? "Guardando..." : "Guardar cambio"}</Button>
               </DialogFooter>
             </form>
           )}
@@ -1289,7 +1369,7 @@ function ContenidoMorosidad() {
 export default function GeneracionExpensasAdminPage() {
   return (
     <QueryProvider>
-      <Suspense fallback={<div className="px-4 py-6 text-sm text-muted-foreground">Cargando morosidad...</div>}>
+      <Suspense fallback={<div className="px-4 py-6 text-[13px] text-muted-foreground">Cargando morosidad...</div>}>
         <ContenidoMorosidad />
       </Suspense>
     </QueryProvider>
