@@ -5,7 +5,6 @@ import axios from "axios";
 import {
   Banknote,
   Download,
-  FileText,
   History,
   Paperclip,
   Search,
@@ -13,14 +12,13 @@ import {
 } from "lucide-react";
 
 import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
 import {
   FORMATOS_PERMITIDOS_COMPROBANTE,
   TAMANIO_MAXIMO_BYTES,
-  listarDocumentos,
-  obtenerDocumento,
   obtenerMensajeError as obtenerMensajeErrorDocumentos,
   subirDocumento,
   Documento,
@@ -57,12 +55,7 @@ import {
 import { financeService } from "@/services/finance.service";
 import { cuentaInmuebleService } from "@/services/cuentaInmueble.service";
 import { EstadoExpensa, ExpensaDTO, MetodoPago } from "@/types/finance";
-import {
-  EstadoCuentaDTO,
-  MovimientoSaldoDTO,
-  SaldoInmuebleDTO,
-  SituacionCuenta,
-} from "@/types/cuentaInmueble";
+import { SaldoInmuebleDTO, SituacionCuenta } from "@/types/cuentaInmueble";
 import { DetalleAplicacionRecibo, generarReciboPdf } from "@/lib/reciboPago";
 
 const CLASE_HEADER_TABLA =
@@ -100,12 +93,6 @@ const CLASE_BADGE_ESTADO: Record<EstadoExpensa, string> = {
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("es-BO", { style: "currency", currency: "BOB" }).format(amount);
-}
-
-function formatearFecha(strFechaISO: string) {
-  return new Intl.DateTimeFormat("es-BO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(
-    new Date(strFechaISO)
-  );
 }
 
 function obtenerMensajeError(error: unknown, strFallback: string): string {
@@ -168,11 +155,7 @@ export default function PagosPage() {
   const [documentoComprobante, setDocumentoComprobante] = useState<Documento | null>(null);
 
   // Diálogo: ver cuenta (estado de cuenta / historial)
-  const [bolDialogoCuenta, setBolDialogoCuenta] = useState(false);
-  const [estadoCuenta, setEstadoCuenta] = useState<EstadoCuentaDTO | null>(null);
-  const [bolCargandoCuenta, setBolCargandoCuenta] = useState(false);
-  const [strErrorCuenta, setStrErrorCuenta] = useState("");
-  const [expensaExpandida, setExpensaExpandida] = useState<string | null>(null);
+  const [strInmuebleCuentaId, setStrInmuebleCuentaId] = useState<string | null>(null);
 
   function deudaDeExpensa(exp: ExpensaDTO): number {
     if (exp.estado === "PAGADA") return 0;
@@ -425,19 +408,8 @@ export default function PagosPage() {
     }
   }
 
-  async function abrirDialogoCuenta(fila: CuentaInmuebleFila) {
-    setBolDialogoCuenta(true);
-    setBolCargandoCuenta(true);
-    setStrErrorCuenta("");
-    setExpensaExpandida(null);
-    try {
-      const resultado = await cuentaInmuebleService.obtenerEstadoCuenta(fila.inmueble.id);
-      setEstadoCuenta(resultado);
-    } catch (error) {
-      setStrErrorCuenta(obtenerMensajeError(error, "No se pudo cargar el estado de cuenta."));
-    } finally {
-      setBolCargandoCuenta(false);
-    }
+  function abrirDialogoCuenta(fila: CuentaInmuebleFila) {
+    setStrInmuebleCuentaId(fila.inmueble.id);
   }
 
   return (
@@ -825,127 +797,7 @@ export default function PagosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo: ver cuenta / historial */}
-      <Dialog open={bolDialogoCuenta} onOpenChange={setBolDialogoCuenta}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle className={CLASE_TITULO_DIALOGO}>
-              Estado de cuenta {estadoCuenta ? `· ${estadoCuenta.inmueble.codigo}` : ""}
-            </DialogTitle>
-          </DialogHeader>
-
-          {bolCargandoCuenta && (
-            <div className="space-y-3">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          )}
-
-          {!bolCargandoCuenta && strErrorCuenta && (
-            <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-              {strErrorCuenta}
-            </p>
-          )}
-
-          {!bolCargandoCuenta && estadoCuenta && (
-            <div className="flex max-h-[480px] flex-col gap-4 overflow-y-auto pr-1">
-              <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/30 p-3 sm:grid-cols-4">
-                <div>
-                  <p className={CLASE_LABEL_CAMPO}>Facturado</p>
-                  <p className="text-[13px] font-medium text-foreground">
-                    {formatCurrency(Number(estadoCuenta.resumen.totalFacturado))}
-                  </p>
-                </div>
-                <div>
-                  <p className={CLASE_LABEL_CAMPO}>Pagado</p>
-                  <p className="text-[13px] font-medium text-foreground">
-                    {formatCurrency(Number(estadoCuenta.resumen.totalPagado))}
-                  </p>
-                </div>
-                <div>
-                  <p className={CLASE_LABEL_CAMPO}>Pendiente</p>
-                  <p className="text-[13px] font-medium text-destructive">
-                    {formatCurrency(Number(estadoCuenta.resumen.deudaPendiente))}
-                  </p>
-                </div>
-                <div>
-                  <p className={CLASE_LABEL_CAMPO}>Saldo a favor</p>
-                  <p className="text-[13px] font-medium text-accent-secondary">
-                    {formatCurrency(Number(estadoCuenta.resumen.saldoFavor))}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Expensas</p>
-                <div className="flex flex-col gap-2">
-                  {estadoCuenta.expensas.map((exp) => (
-                    <div key={exp.id} className="rounded-lg border border-border">
-                      <button
-                        type="button"
-                        onClick={() => setExpensaExpandida(expensaExpandida === exp.id ? null : exp.id)}
-                        className="flex w-full items-center justify-between px-3 py-2.5 text-left"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-medium text-foreground">Periodo {exp.periodo}</span>
-                          <Badge className={`font-caption text-[10px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
-                            {exp.estado}
-                          </Badge>
-                        </div>
-                        <span className="text-[13px] text-muted-foreground">
-                          Pendiente: {formatCurrency(Number(exp.pendiente))}
-                        </span>
-                      </button>
-
-                      {expensaExpandida === exp.id && (
-                        <div className="flex flex-col gap-1.5 border-t border-border px-3 py-2.5">
-                          {exp.pagos.length === 0 ? (
-                            <p className="text-[12px] text-muted-foreground">Sin pagos registrados.</p>
-                          ) : (
-                            exp.pagos.map((pago) => (
-                              <div key={pago.id} className="flex items-center justify-between text-[12px]">
-                                <span className="text-muted-foreground">
-                                  {formatearFecha(pago.fechaPago)} ·{" "}
-                                  {ETIQUETA_METODO_PAGO[pago.metodoPago as MetodoPago] ?? pago.metodoPago}
-                                  {pago.referencia ? ` · ${pago.referencia}` : ""}
-                                </span>
-                                <span className="font-medium text-foreground">
-                                  {formatCurrency(Number(pago.monto))}
-                                </span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {estadoCuenta.expensas.length === 0 && (
-                    <p className="text-[12px] text-muted-foreground">Este inmueble no tiene expensas generadas.</p>
-                  )}
-                </div>
-              </div>
-
-              {estadoCuenta.movimientosSaldo.length > 0 && (
-                <div>
-                  <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Movimientos de saldo a favor</p>
-                  <div className="flex flex-col gap-1.5">
-                    {estadoCuenta.movimientosSaldo.map((mov) => (
-                      <MovimientoSaldoFila key={mov.id} movimiento={mov} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={() => setBolDialogoCuenta(false)}>
-              Cerrar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DialogoEstadoCuenta strInmuebleId={strInmuebleCuentaId} onCerrar={() => setStrInmuebleCuentaId(null)} />
     </div>
   );
 }
@@ -961,53 +813,4 @@ function BadgeSituacionFila({ fila }: { fila: CuentaInmuebleFila }) {
     return <Badge className="font-caption bg-danger-subtle text-[11px] text-destructive">Vencida</Badge>;
   }
   return <Badge className="font-caption bg-danger-subtle text-[11px] text-destructive">Debe</Badge>;
-}
-
-function MovimientoSaldoFila({ movimiento }: { movimiento: MovimientoSaldoDTO }) {
-  const [strErrorComprobante, setStrErrorComprobante] = useState("");
-
-  async function verComprobante() {
-    setStrErrorComprobante("");
-    try {
-      const documentos = await listarDocumentos({ entidad: "MovimientoSaldo", entidadId: movimiento.id });
-      if (documentos[0]) {
-        const { url } = await obtenerDocumento(documentos[0].id);
-        window.open(url, "_blank", "noopener,noreferrer");
-      } else {
-        setStrErrorComprobante("Este movimiento no tiene comprobante adjunto.");
-      }
-    } catch {
-      setStrErrorComprobante("No se pudo consultar el comprobante.");
-    }
-  }
-
-  const esAbono = movimiento.tipo !== "APLICACION_EXPENSA";
-  const monto = Number(movimiento.monto);
-
-  return (
-    <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-[12px]">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-foreground">
-            {movimiento.tipo === "PAGO_ANTICIPADO" && "Pago anticipado"}
-            {movimiento.tipo === "EXCESO_PAGO" && "Exceso de pago"}
-            {movimiento.tipo === "APLICACION_EXPENSA" && "Aplicado a una expensa"}
-          </p>
-          <p className="text-muted-foreground">{formatearFecha(movimiento.createdAt)}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`font-medium ${esAbono ? "text-success" : "text-muted-foreground"}`}>
-            {esAbono ? "+" : ""}
-            {formatCurrency(monto)}
-          </span>
-          {esAbono && (
-            <Button variant="ghost" size="icon-sm" title="Ver comprobante" onClick={verComprobante}>
-              <FileText className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </div>
-      {strErrorComprobante && <p className="text-[11px] text-muted-foreground">{strErrorComprobante}</p>}
-    </div>
-  );
 }

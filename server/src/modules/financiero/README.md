@@ -30,6 +30,16 @@ Pendientes del cronograma (existe el modelo en `schema.prisma`, sin codigo todav
   parte, el agua se suma despues: los pagos hechos siguen valiendo y solo sube lo pendiente.
   Si al inmueble le sobraba saldo a favor y esa expensa es su deuda mas antigua, el saldo se
   usa para cubrir el aumento del agua (`saldoFavorAplicado` en la respuesta).
+- **Baulera y parqueo:** no generan expensa propia ni llevan agua. Su cuota se suma a la
+  expensa del departamento de la persona responsable que los ocupa (`expensas/cargos.util.js`):
+  - Monto: el `cuotaMensual` propio del inmueble o, si no tiene, la tarifa de su clase
+    (`/api/tarifas-inmueble`, solo ADMINISTRADOR). 0 o clase sin tarifa = no se cobra.
+  - Se cobran una sola vez por periodo, en el primer departamento (por codigo) del que la
+    persona es responsable. Sin departamento a su cargo no se les genera cobro.
+  - Cada concepto queda como una linea (`CargoExpensa`) de la expensa y `montoBase` es su
+    suma. Un cambio de tarifa o de alta/baja rige desde la proxima expensa generada.
+  - `GET /api/financiero/copropietarios/{id}/cuenta` consolida por residente cargo mensual por
+    concepto, deuda y saldo a favor.
 - **Total de la expensa:** `montoTotal = montoBase + montoAgua` (sin mora).
 
 ## Responsable y fecha de generacion

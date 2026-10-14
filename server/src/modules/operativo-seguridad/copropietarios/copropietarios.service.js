@@ -1,6 +1,10 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
 const { diferencias } = require("../../../utils/diferencias");
+const { obtenerMapa, montoEfectivo } = require("../tarifas-inmueble/tarifas-inmueble.service");
+
+const Decimal = Prisma.Decimal;
 
 const CAMPOS_PUBLICOS = {
   id: true,
@@ -86,28 +90,48 @@ async function actualizar(id, { nombre, apellido, ci, email, telefono }, { actor
  * Inmuebles de una persona: los que tiene asociados hoy (vigentes) y las asociaciones que ya
  * terminaron (anteriores). Cada uno trae clase, tipo (A, B, C solo en departamentos), piso,
  * rol (propietario o inquilino) y fechas. Los vigentes se resumen por clase.
+ *
+ * Cada inmueble trae `cargoMensual`: lo que suma por mes (expensa fija del tipo en un
+ * departamento; `cuotaMensual` propia o tarifa de la clase en baulera y parqueo; 0 si esta
+ * inactivo). `resumen.cargoMensualTotal` suma los vigentes y es referencial: lo que realmente
+ * se cobra lo decide la expensa (ver GET /api/financiero/copropietarios/{id}/cuenta).
  */
 async function listarInmuebles(id) {
   const copropietario = await obtenerPorId(id);
 
-  const ocupaciones = await prisma.ocupanteInmueble.findMany({
-    where: { copropietarioId: id },
-    include: { inmueble: { include: { tipoInmueble: true } } },
-    orderBy: [{ fechaInicio: "desc" }, { id: "asc" }],
-  });
+  const [ocupaciones, tarifas] = await Promise.all([
+    prisma.ocupanteInmueble.findMany({
+      where: { copropietarioId: id },
+      include: { inmueble: { include: { tipoInmueble: true } } },
+      orderBy: [{ fechaInicio: "desc" }, { id: "asc" }],
+    }),
+    obtenerMapa(),
+  ]);
 
   const ahora = new Date();
   const items = ocupaciones.map((o) => {
     const vigente = o.fechaInicio <= ahora && (o.fechaFin === null || o.fechaFin > ahora);
+    const { inmueble } = o;
+
+    let cargoMensual = new Decimal(0);
+    if (inmueble.activo) {
+      cargoMensual =
+        inmueble.clase === "DEPARTAMENTO"
+          ? new Decimal(inmueble.tipoInmueble?.montoBase ?? 0)
+          : montoEfectivo(inmueble, tarifas);
+    }
+
     return {
       ocupanteId: o.id,
-      inmuebleId: o.inmueble.id,
-      codigo: o.inmueble.codigo,
-      clase: o.inmueble.clase,
-      tipoInmueble: o.inmueble.tipoInmueble?.nombre ?? null,
-      piso: o.inmueble.piso,
-      areaM2: o.inmueble.areaM2,
-      activo: o.inmueble.activo,
+      inmuebleId: inmueble.id,
+      codigo: inmueble.codigo,
+      clase: inmueble.clase,
+      tipoInmueble: inmueble.tipoInmueble?.nombre ?? null,
+      piso: inmueble.piso,
+      areaM2: inmueble.areaM2,
+      activo: inmueble.activo,
+      cuotaMensual: inmueble.cuotaMensual === null ? null : new Decimal(inmueble.cuotaMensual).toFixed(2),
+      cargoMensual: cargoMensual.toFixed(2),
       rol: o.esPropietario ? "PROPIETARIO" : "INQUILINO",
       fechaInicio: o.fechaInicio,
       fechaFin: o.fechaFin,
@@ -124,6 +148,9 @@ async function listarInmuebles(id) {
     bauleras: contar("BAULERA"),
     parqueos: contar("PARQUEO"),
     total: vigentes.length,
+    cargoMensualTotal: vigentes
+      .reduce((acc, i) => acc.plus(i.cargoMensual), new Decimal(0))
+      .toFixed(2),
   };
 
   return { copropietario, vigentes, anteriores, resumen };
