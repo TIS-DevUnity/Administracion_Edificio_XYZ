@@ -6,6 +6,7 @@ import axios from "axios";
 import { Building2, Car, Droplets, Package, Pencil, Plus, Search } from "lucide-react";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
+import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
@@ -86,6 +87,7 @@ export default function InmueblesPage() {
   } | null>(null);
 
   const [bolGuardando, setBolGuardando] = useState(false);
+  const [strInmuebleCargosId, setStrInmuebleCargosId] = useState<string | null>(null);
   const [strIdCambiandoEstado, setStrIdCambiandoEstado] = useState<string | null>(null);
 
   const [objDialogoTipo, setObjDialogoTipo] = useState<{ tipo: TipoInmueble | null } | null>(null);
@@ -694,9 +696,18 @@ export default function InmueblesPage() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex justify-end gap-3">
+                      {esDepartamento(inmueble) && (
+                        <button
+                          type="button"
+                          onClick={() => setStrInmuebleCargosId(inmueble.id)}
+                          className="font-caption whitespace-nowrap text-[12px] font-medium text-foreground hover:text-primary"
+                        >
+                          Ver cargos
+                        </button>
+                      )}
                       <Link
                         href={`/admin/inmuebles/${inmueble.id}`}
-                        className="font-caption text-[12px] font-medium text-primary hover:text-primary/80"
+                        className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
                       >
                         Ver ficha →
                       </Link>
@@ -791,6 +802,15 @@ export default function InmueblesPage() {
               <div className="my-3 border-t border-border" />
 
               <div className="flex flex-col gap-2">
+                {esDepartamento(inmueble) && (
+                  <button
+                    type="button"
+                    onClick={() => setStrInmuebleCargosId(inmueble.id)}
+                    className="flex h-10 w-full items-center justify-center rounded-lg border border-border text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    Ver cargos
+                  </button>
+                )}
                 <Link
                   href={`/admin/inmuebles/${inmueble.id}`}
                   className="flex h-10 w-full items-center justify-center rounded-lg border border-border text-[13px] font-medium text-primary transition-colors hover:bg-primary/5"
@@ -825,6 +845,8 @@ export default function InmueblesPage() {
           </div>
         )}
       </div>
+
+      <DialogoEstadoCuenta strInmuebleId={strInmuebleCargosId} onCerrar={() => setStrInmuebleCargosId(null)} />
 
       <Dialog open={objDialogoTipo !== null} onOpenChange={(bolOpen) => !bolOpen && setObjDialogoTipo(null)}>
         <DialogContent>

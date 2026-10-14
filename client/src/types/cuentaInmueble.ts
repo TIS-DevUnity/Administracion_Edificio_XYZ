@@ -43,20 +43,55 @@ export interface MovimientoSaldoDTO {
   registradoPor?: { id: string; nombre: string; apellido: string } | null;
 }
 
+/** Un mes de mora de una expensa (cuenta-inmueble.service.js → detalleMoras). */
+export interface MoraDetalleCuenta {
+  numero: number;
+  mes: string;
+  fechaCorte: string;
+  base: string;
+  tipoValor: "PORCENTAJE" | "MONTO_FIJO";
+  valor: string;
+  monto: string;
+  pagado: string;
+  pendiente: string;
+}
+
+export interface CambioVencimientoCuenta {
+  id: string;
+  fechaAnterior: string;
+  fechaNueva: string;
+  motivo: string | null;
+  createdAt: string;
+}
+
 export interface ExpensaEstadoCuenta {
   id: string;
   periodo: string;
+  tipo: string | null;
+  fechaGeneracion: string;
+  responsable: { id: string | null; nombre: string; rol: "PROPIETARIO" | "INQUILINO" | null } | null;
   fechaVencimiento: string;
+  cambiosVencimiento: CambioVencimientoCuenta[];
   estado: EstadoExpensa;
-  montoTotal: number;
-  montoMora: number;
+  atrasada: boolean;
+  montoBase: string;
+  montoAgua: string;
+  /** Expensa fija + agua, sin mora. */
+  montoTotal: string;
+  montoMora: string;
   pagado: string;
+  pagadoMora: string;
+  pagadoExpensa: string;
   pendiente: string;
+  pendienteMora: string;
+  pendienteExpensa: string;
+  moras: MoraDetalleCuenta[];
   pagos: PagoDTO[];
 }
 
 export interface ResumenEstadoCuenta {
   totalFacturado: string;
+  totalAgua: string;
   totalMora: string;
   totalPagado: string;
   deudaPendiente: string;
