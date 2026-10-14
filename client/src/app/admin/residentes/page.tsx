@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Search, UserPlus, X } from "lucide-react";
+import { Building2, Check, Search, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
@@ -103,6 +103,14 @@ function ResidentesContenido() {
   // Ocupantes vigentes de cada inmueble marcado, para avisar si la asignación reemplaza a alguien.
   const [ocupantesPorInmueble, setOcupantesPorInmueble] = useState<Record<string, Ocupante[]>>({});
   const [objAvisoConsulta, setObjAvisoConsulta] = useState<{ bolError: boolean; strTexto: string } | null>(null);
+  const [bolDialogoInmuebles, setBolDialogoInmuebles] = useState(false);
+  // Copia de trabajo del cuadro: "Cancelar" la descarta sin tocar la selección del formulario.
+  const [borradorSeleccion, setBorradorSeleccion] = useState<Set<string>>(new Set());
+
+  function abrirDialogoInmuebles() {
+    setBorradorSeleccion(new Set(seleccionados));
+    setBolDialogoInmuebles(true);
+  }
 
   const bolPuedeRetirar = puedeEjecutar(rol, "residentes", "editar");
   const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
@@ -412,25 +420,50 @@ function ResidentesContenido() {
               </div>
             )}
 
-            <div className="flex flex-col gap-1">
-              <p className="text-[12px] font-medium text-foreground">
-                3. Inmuebles{" "}
-                <span className="font-normal text-muted-foreground">
-                  — marca uno o varios ({seleccionados.size} seleccionado{seleccionados.size === 1 ? "" : "s"})
-                </span>
-              </p>
-              <ListaInmueblesSeleccionables
-                inmuebles={inmuebles}
-                seleccionados={seleccionados}
-                setSeleccionados={(next) => {
-                  setSeleccionados(next);
-                  limpiarError("inmuebles");
-                }}
-                idsDeshabilitados={strRolAsignacion ? idsYaAsociados : undefined}
-                bolError={camposError.has("inmuebles")}
-              />
+            <div className="flex flex-col gap-2">
+              <p className="text-[12px] font-medium text-foreground">3. Inmuebles</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  aria-invalid={camposError.has("inmuebles") || undefined}
+                  onClick={abrirDialogoInmuebles}
+                  disabled={!bolLoading && inmueblesActivos.length === 0}
+                >
+                  <Building2 className="h-4 w-4" />
+                  {seleccionados.size === 0 ? "Asignar inmuebles" : `Cambiar selección (${seleccionados.size})`}
+                </Button>
+                {[...seleccionados].map((strId) => {
+                  const inmueble = inmuebles.find((i) => i.id === strId);
+                  if (!inmueble) return null;
+                  return (
+                    <span
+                      key={strId}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 py-0.5 pl-2.5 pr-1 text-[12px] text-foreground"
+                    >
+                      {inmueble.codigo}
+                      <span className="text-muted-foreground">· {etiquetaTipoInmueble(inmueble)}</span>
+                      <button
+                        type="button"
+                        aria-label={`Quitar ${inmueble.codigo}`}
+                        onClick={() => {
+                          const next = new Set(seleccionados);
+                          next.delete(strId);
+                          setSeleccionados(next);
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+              {camposError.has("inmuebles") && seleccionados.size === 0 && (
+                <p className="text-[12px] text-destructive">Elige al menos un inmueble.</p>
+              )}
               {!bolLoading && inmueblesActivos.length === 0 && (
-                <p className="font-caption mt-1 text-[11px] leading-[1.3] text-muted-foreground">
+                <p className="font-caption text-[11px] leading-[1.3] text-muted-foreground">
                   Todavía no hay inmuebles activos — ve a &quot;Inmuebles&quot; para registrar uno primero.
                 </p>
               )}
@@ -620,6 +653,53 @@ function ResidentesContenido() {
           </tbody>
         </table>
       </div>
+
+      <Dialog open={bolDialogoInmuebles} onOpenChange={setBolDialogoInmuebles}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+              Asignar inmuebles
+            </DialogTitle>
+            <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
+              {obtenerCopropietarioPorId(strCopropietarioId)
+                ? `Elige los inmuebles para ${obtenerCopropietarioPorId(strCopropietarioId)?.nombre} ${obtenerCopropietarioPorId(strCopropietarioId)?.apellido}`
+                : "Elige uno o varios inmuebles"}
+              {strRolAsignacion ? ` como ${strRolAsignacion === "PROPIETARIO" ? "propietario" : "inquilino"}` : ""}: un
+              departamento, una baulera, un parqueo o cualquier combinación.
+              {strRolAsignacion && idsYaAsociados.size > 0 && " Los que ya tiene con ese rol aparecen deshabilitados."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <ListaInmueblesSeleccionables
+            inmuebles={inmuebles}
+            seleccionados={borradorSeleccion}
+            setSeleccionados={setBorradorSeleccion}
+            idsDeshabilitados={strRolAsignacion ? idsYaAsociados : undefined}
+            className="max-h-[50vh]"
+          />
+
+          {borradorSeleccion.size > 0 && (
+            <ResumenExpensa inmuebles={inmuebles.filter((inmueble) => borradorSeleccion.has(inmueble.id))} />
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBolDialogoInmuebles(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={borradorSeleccion.size === 0}
+              onClick={() => {
+                setSeleccionados(new Set(borradorSeleccion));
+                limpiarError("inmuebles");
+                setBolDialogoInmuebles(false);
+              }}
+            >
+              Confirmar selección{borradorSeleccion.size > 0 ? ` (${borradorSeleccion.size})` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DialogoRegistrarPersona
         bolAbierto={bolDialogoNuevoCopropietario}

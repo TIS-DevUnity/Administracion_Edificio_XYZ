@@ -35,7 +35,9 @@ export function ListaInmueblesSeleccionables({
   seleccionados,
   idsDeshabilitados = new Set(),
   bolError = false,
+  className = "max-h-56",
 }: {
+  className?: string;
   inmuebles: Inmueble[];
   seleccionados: Set<string>;
   setSeleccionados: (next: Set<string>) => void;
@@ -58,7 +60,7 @@ export function ListaInmueblesSeleccionables({
 
   return (
     <div
-      className={`max-h-56 overflow-y-auto rounded-lg border p-2 ${bolError ? "border-destructive" : "border-input"}`}
+      className={`${className} overflow-y-auto rounded-lg border p-2 ${bolError ? "border-destructive" : "border-input"}`}
     >
       {CLASES_INMUEBLE.map((clase) => {
         const deClase = activos.filter((inmueble) => inmueble.clase === clase);
