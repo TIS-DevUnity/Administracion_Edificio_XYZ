@@ -110,16 +110,34 @@ model Inmueble {
   areaM2         Decimal?     @db.Decimal(8, 2)
   activo         Boolean      @default(true)
 
+  // Solo baulera y parqueo: monto propio que reemplaza a la tarifa de su clase (TarifaClase).
+  // null = usa la tarifa de la clase; 0 = exento (no se cobra).
+  cuotaMensual   Decimal?     @db.Decimal(10, 2)
+
   ocupaciones    OcupanteInmueble[]
   expensas       Expensa[]
   movimientosSaldo MovimientoSaldo[]
   recibos        Recibo[]
+  cargosOrigen   CargoExpensa[]
 
   createdAt      DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
 
   @@map("inmuebles")
   @@index([tipoInmuebleId])
+}
+
+// Tarifa mensual general de una clase de inmueble que no es departamento (BAULERA, PARQUEO).
+// Un inmueble puede reemplazarla con su propio `cuotaMensual`. Un cambio solo afecta a las
+// expensas que se generen despues: las ya generadas guardan sus cargos (CargoExpensa).
+model TarifaClase {
+  id         String        @id @default(uuid())
+  clase      ClaseInmueble @unique
+  monto      Decimal       @db.Decimal(10, 2)
+
+  updatedAt  DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@map("tarifas_clase")
 }
 
 enum TipoValorMora {
@@ -305,6 +323,7 @@ model Expensa {
 
   pagos            Pago[]
   moras            MoraExpensa[]
+  cargos           CargoExpensa[]
   cambiosVencimiento CambioVencimiento[]
   movimientosSaldo MovimientoSaldo[]
 
@@ -315,6 +334,30 @@ model Expensa {
   @@unique([inmuebleId, periodo])
   @@index([periodo])
   @@index([estado])
+}
+
+// Una linea por concepto de una expensa: la cuota del departamento y, por cada baulera o
+// parqueo que paga la persona responsable, su propia cuota. Es una foto del momento en que se
+// genero la expensa; `Expensa.montoBase` es la suma de estas lineas. El agua va aparte
+// (`Expensa.montoAgua`): baulera y parqueo nunca participan del reparto del agua.
+model CargoExpensa {
+  id          String        @id @default(uuid())
+
+  expensa     Expensa       @relation(fields: [expensaId], references: [id])
+  expensaId   String
+
+  // Inmueble que origina el cargo (null si el inmueble se elimino).
+  inmueble    Inmueble?     @relation(fields: [inmuebleId], references: [id])
+  inmuebleId  String?
+
+  clase       ClaseInmueble // DEPARTAMENTO, BAULERA o PARQUEO
+  codigo      String        // codigo del inmueble al generar la expensa
+  monto       Decimal       @db.Decimal(10, 2)
+
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@map("cargos_expensa")
+  @@index([expensaId])
 }
 
 // Pagos aplicados a una expensa (permite pagos parciales)

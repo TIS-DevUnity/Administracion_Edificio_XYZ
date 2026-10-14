@@ -95,6 +95,11 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *       `vigentes` son las asociaciones en curso y `anteriores` las que ya terminaron. Cada
  *       inmueble trae clase (DEPARTAMENTO, BAULERA, PARQUEO), tipo (A, B, C; solo departamentos),
  *       piso, rol (PROPIETARIO o INQUILINO) y fechas. `resumen` cuenta los vigentes por clase.
+ *
+ *       Cada inmueble trae `cargoMensual` (lo que suma por mes: expensa fija del tipo en un
+ *       departamento; `cuotaMensual` propia o tarifa de la clase en baulera y parqueo) y
+ *       `resumen.cargoMensualTotal` suma los vigentes. Es referencial: el cobro real y el
+ *       desglose por concepto estan en `GET /api/financiero/copropietarios/{id}/cuenta`.
  *       Una persona puede tener un departamento sin baulera ni parqueo, o solo un parqueo; cada
  *       inmueble aparece por separado.
  *     tags: [Copropietarios]

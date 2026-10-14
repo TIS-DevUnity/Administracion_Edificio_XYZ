@@ -482,6 +482,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta } = {}) {
       include: {
         pagos: { orderBy: { fechaPago: 'asc' } },
         moras: { orderBy: { numero: 'asc' } },
+        cargos: { orderBy: [{ clase: 'asc' }, { codigo: 'asc' }] },
         cambiosVencimiento: { orderBy: { createdAt: 'asc' } }
       },
       orderBy: { periodo: 'asc' }
@@ -524,7 +525,15 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta } = {}) {
       cambiosVencimiento: e.cambiosVencimiento,
       estado: e.estado,
       atrasada: periodoReciente !== null && e.periodo < periodoReciente && pendientes.total.gt(0),
-      montoBase: e.montoBase,
+      montoBase: e.montoBase, // suma de los cargos (departamento + baulera/parqueo)
+      // Una linea por concepto: la cuota del departamento y la de cada baulera o parqueo.
+      cargos: e.cargos.map((cargo) => ({
+        id: cargo.id,
+        clase: cargo.clase,
+        codigo: cargo.codigo,
+        inmuebleId: cargo.inmuebleId,
+        monto: new Decimal(cargo.monto).toFixed(2)
+      })),
       montoAgua: e.montoAgua,
       montoTotal: e.montoTotal, // expensa fija + agua (sin mora)
       montoMora: e.montoMora,

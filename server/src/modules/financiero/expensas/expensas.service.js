@@ -5,6 +5,7 @@ const configuracionMoraService = require('../configuracion-mora/configuracion-mo
 const aguaService = require('../agua/agua.service')
 const { calcularLineasMora, fechaEnZona, fechaCalendario, sumarDias, vencimientoDelPeriodo } = require('./mora.util')
 const reglas = require('./reglas-pago.util')
+const cargosUtil = require('./cargos.util')
 const {
   Decimal,
   errorHttp,
@@ -31,8 +32,17 @@ const OPCIONES_TX = { timeout: 15000 }
 
 const INCLUIR_INMUEBLE = { inmueble: { include: { tipoInmueble: true } } }
 const INCLUIR_MORAS = { moras: { orderBy: { numero: 'asc' } } }
+// Departamento primero y luego parqueos y bauleras (orden de declaracion del enum es
+// DEPARTAMENTO, BAULERA, PARQUEO); dentro de cada clase por codigo.
+const INCLUIR_CARGOS = { cargos: { orderBy: [{ clase: 'asc' }, { codigo: 'asc' }] } }
 const INCLUIR_CAMBIOS = { cambiosVencimiento: { orderBy: { createdAt: 'desc' } } }
-const INCLUIR_COMPLETO = { ...INCLUIR_INMUEBLE, pagos: true, ...INCLUIR_MORAS, ...INCLUIR_CAMBIOS }
+const INCLUIR_COMPLETO = {
+  ...INCLUIR_INMUEBLE,
+  pagos: true,
+  ...INCLUIR_MORAS,
+  ...INCLUIR_CARGOS,
+  ...INCLUIR_CAMBIOS
+}
 
 /**
  * Fecha de vencimiento de una expensa: la que se indique a mano, o si no el dia de
@@ -135,13 +145,22 @@ async function generar({
       }
       const responsable = ocupantes[0]
 
+      // Cuota del departamento + la de cada baulera y parqueo que paga el responsable
+      // (ver cargos.util.js). `montoBase` es la suma; el agua se calcula aparte y los
+      // cargos extra no entran en su reparto (el peso sale del tipo del departamento).
+      const extras = await cargosUtil.extrasParaExpensa(tx, {
+        inmuebleId,
+        responsableId: responsable.copropietario.id
+      })
+      const montoBase = new Decimal(tipo.montoBase).plus(cargosUtil.sumarMontos(extras))
+
       const creada = await tx.expensa.create({
         data: {
           inmuebleId,
           periodo,
-          montoBase: tipo.montoBase,
+          montoBase,
           montoAgua: 0,
-          montoTotal: tipo.montoBase,
+          montoTotal: montoBase,
           tipoNombre: tipo.nombre,
           pesoAgua: tipo.pesoAgua,
           fechaVencimiento: vencimiento,
@@ -150,6 +169,18 @@ async function generar({
           responsableNombre: `${responsable.copropietario.nombre} ${responsable.copropietario.apellido}`,
           responsableRol: responsable.esPropietario ? 'PROPIETARIO' : 'INQUILINO'
         }
+      })
+
+      await tx.cargoExpensa.createMany({
+        data: [
+          { clase: 'DEPARTAMENTO', inmuebleId, codigo: inmueble.codigo, monto: tipo.montoBase },
+          ...extras.map((extra) => ({
+            clase: extra.clase,
+            inmuebleId: extra.inmuebleId,
+            codigo: extra.codigo,
+            monto: extra.monto
+          }))
+        ].map((cargo) => ({ ...cargo, expensaId: creada.id }))
       })
 
       // El saldo a favor (pagos anticipados / excesos) se usa de inmediato, pero solo si esta
@@ -162,7 +193,7 @@ async function generar({
           ? await aplicarSaldoAExpensa(tx, { ...creada, pagos: [] }, usuarioId)
           : { aplicado: new Decimal(0) }
 
-      return { creada, saldo }
+      return { creada, saldo, extras }
     }, OPCIONES_TX)
   } catch (err) {
     if (err.code === 'P2002') {
@@ -175,7 +206,7 @@ async function generar({
     throw err
   }
 
-  const { creada, saldo } = resultado
+  const { creada, saldo, extras } = resultado
 
   await registrarAuditoria({
     usuarioId,
@@ -188,7 +219,15 @@ async function generar({
       periodo,
       tipo: tipo.nombre,
       responsable: creada.responsableNombre,
-      montoBase: new Decimal(tipo.montoBase).toFixed(2),
+      montoBase: new Decimal(creada.montoBase).toFixed(2),
+      cargos: [
+        { clase: 'DEPARTAMENTO', codigo: inmueble.codigo, monto: new Decimal(tipo.montoBase).toFixed(2) },
+        ...extras.map((extra) => ({
+          clase: extra.clase,
+          codigo: extra.codigo,
+          monto: extra.monto.toFixed(2)
+        }))
+      ],
       montoTotal: new Decimal(creada.montoTotal).toFixed(2),
       fechaVencimiento: fechaCalendario(vencimiento)
     },
@@ -232,6 +271,35 @@ async function generar({
 }
 
 /**
+ * Agrega a cada expensa dos datos de saldo a favor, para mostrarlos en su detalle:
+ *  - `saldoFavorInmueble`: saldo a favor vigente hoy del inmueble (no de la expensa).
+ *  - `pagadoConSaldoFavor`: lo que ya se cubrio de esta expensa usando saldo a favor.
+ * Solo agrega campos; no cambia ninguno existente.
+ */
+async function conSaldoFavor(expensas) {
+  if (expensas.length === 0) return expensas
+
+  const inmuebleIds = [...new Set(expensas.map((expensa) => expensa.inmuebleId))]
+  const saldos = await prisma.movimientoSaldo.groupBy({
+    by: ['inmuebleId'],
+    where: { inmuebleId: { in: inmuebleIds } },
+    _sum: { monto: true }
+  })
+  const saldoPorInmueble = new Map(saldos.map((fila) => [fila.inmuebleId, new Decimal(fila._sum.monto ?? 0)]))
+
+  return expensas.map((expensa) => {
+    const pagadoConSaldo = (expensa.pagos ?? [])
+      .filter((pago) => pago.metodoPago === 'SALDO_A_FAVOR')
+      .reduce((acc, pago) => acc.plus(pago.monto), new Decimal(0))
+    return {
+      ...expensa,
+      saldoFavorInmueble: (saldoPorInmueble.get(expensa.inmuebleId) ?? new Decimal(0)).toFixed(2),
+      pagadoConSaldoFavor: pagadoConSaldo.toFixed(2)
+    }
+  })
+}
+
+/**
  * Lista expensas. Filtros opcionales: periodo, estado, inmuebleId. Sin `pagina`
  * devuelve el arreglo completo (compatibilidad con quien ya lo consume); con
  * `pagina` devuelve { expensas, paginacion }.
@@ -256,7 +324,7 @@ async function listar({ periodo, estado, inmuebleId, pagina, porPagina } = {}) {
   }
 
   if (pagina === undefined) {
-    return prisma.expensa.findMany(consulta)
+    return conSaldoFavor(await prisma.expensa.findMany(consulta))
   }
 
   const numeroPagina = Math.max(1, Number.parseInt(pagina, 10) || 1)
@@ -271,7 +339,7 @@ async function listar({ periodo, estado, inmuebleId, pagina, porPagina } = {}) {
   ])
 
   return {
-    expensas,
+    expensas: await conSaldoFavor(expensas),
     paginacion: {
       pagina: numeroPagina,
       porPagina: tamanio,
@@ -514,7 +582,7 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
 
     const expensaActualizada = await tx.expensa.findUnique({
       where: { id: expensaId },
-      include: { pagos: true, ...INCLUIR_INMUEBLE, ...INCLUIR_MORAS }
+      include: { pagos: true, ...INCLUIR_INMUEBLE, ...INCLUIR_MORAS, ...INCLUIR_CARGOS }
     })
 
     return {
@@ -655,7 +723,7 @@ async function aplicarSaldoFavor(expensaId, { usuarioId, ip }) {
 
     const actualizada = await tx.expensa.findUnique({
       where: { id: expensaId },
-      include: { pagos: true, ...INCLUIR_INMUEBLE, ...INCLUIR_MORAS }
+      include: { pagos: true, ...INCLUIR_INMUEBLE, ...INCLUIR_MORAS, ...INCLUIR_CARGOS }
     })
     return { saldo, expensa: actualizada, estadoAnterior: expensa.estado }
   }, OPCIONES_TX)
