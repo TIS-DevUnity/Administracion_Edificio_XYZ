@@ -110,6 +110,14 @@ export function validarAccion(
   return { permitido: false, mensaje: MENSAJE_PERMISO_INSUFICIENTE };
 }
 
+export const MENSAJE_SOLO_ADMIN_ESTADO_CUENTA =
+  "Permiso insuficiente: solo el Administrador puede emitir, imprimir o descargar el estado de cuenta.";
+
+/** Emitir/imprimir/descargar el estado de cuenta (HU5 CA-26). El backend restringe el PDF a ADMINISTRADOR. */
+export function puedeEmitirEstadoCuenta(rol: RolNombre): boolean {
+  return rol === "ADMINISTRADOR";
+}
+
 export interface SeccionNav {
   id: SeccionId;
   label: string;

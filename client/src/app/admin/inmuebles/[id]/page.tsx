@@ -8,7 +8,7 @@ import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
 import { SaldoFavorInmueble } from "@/components/SaldoFavorInmueble";
 import { useSesionActual } from "@/lib/session";
-import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
+import { normalizarRol, puedeEjecutar, puedeEmitirEstadoCuenta, validarAccion } from "@/lib/permissions";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +98,7 @@ export default function FichaInmueblePage() {
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
   const bolPuedeEditar = puedeEjecutar(rol, "inmuebles", "editar");
   const bolPuedeDarBaja = puedeEjecutar(rol, "residentes", "editar");
+  const bolPuedeEmitir = puedeEmitirEstadoCuenta(rol);
 
   async function cargarInmueble() {
     if (!strId) return;
@@ -407,13 +408,22 @@ export default function FichaInmueblePage() {
               </button>
             )}
 
+            {esDepartamento(inmueble) && bolPuedeEmitir && (
+              <Link
+                href={`/admin/inmuebles/${inmueble.id}/estado-cuenta`}
+                className="flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Emitir estado de cuenta
+              </Link>
+            )}
+
             {esDepartamento(inmueble) && (
               <button
                 type="button"
                 onClick={() => setBolVerCargos(true)}
-                className="flex h-9 items-center justify-center rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                className="flex h-9 items-center justify-center rounded-lg border border-border px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-muted"
               >
-                Ver cargos y estado de cuenta
+                Ver cargos
               </button>
             )}
 

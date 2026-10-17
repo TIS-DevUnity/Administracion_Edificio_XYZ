@@ -2,6 +2,7 @@ import { api } from "@/lib/api";
 import { MetodoPago } from "@/types/finance";
 import {
   EstadoCuentaDTO,
+  FiltroPeriodoCuenta,
   MovimientoSaldoDTO,
   PagoAnticipadoResponse,
   SaldoInmuebleDTO,
@@ -13,12 +14,22 @@ export const cuentaInmuebleService = {
     return response.data;
   },
 
-  async obtenerEstadoCuenta(
-    inmuebleId: string,
-    params?: { desde?: string; hasta?: string }
-  ): Promise<EstadoCuentaDTO> {
+  async obtenerEstadoCuenta(inmuebleId: string, params?: FiltroPeriodoCuenta): Promise<EstadoCuentaDTO> {
     const response = await api.get<EstadoCuentaDTO>(`/financiero/inmuebles/${inmuebleId}/estado-cuenta`, {
       params,
+    });
+    return response.data;
+  },
+
+  /** PDF generado por el backend (solo ADMINISTRADOR). `inline` lo prepara para vista previa. */
+  async obtenerEstadoCuentaPdf(
+    inmuebleId: string,
+    params: FiltroPeriodoCuenta,
+    inline = false
+  ): Promise<Blob> {
+    const response = await api.get<Blob>(`/financiero/inmuebles/${inmuebleId}/estado-cuenta/pdf`, {
+      params: { ...params, ...(inline ? { inline: "true" } : {}) },
+      responseType: "blob",
     });
     return response.data;
   },
