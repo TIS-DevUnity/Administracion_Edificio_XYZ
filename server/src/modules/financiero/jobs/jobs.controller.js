@@ -1,6 +1,7 @@
 const {
   ejecutarGeneracionAutomatica,
-  ejecutarAplicacionMoraAutomatica
+  ejecutarAplicacionMoraAutomatica,
+  ejecutarNotificacionesDiarias
 } = require('./generacion-automatica.job')
 
 /**
@@ -39,4 +40,16 @@ async function ejecutarMora(req, res, next) {
   }
 }
 
-module.exports = { ejecutarGeneracion, ejecutarMora }
+/**
+ * Dispara manualmente el proceso diario de avisos de la campanita. Se puede repetir en cualquier
+ * momento: un mismo hecho nunca se avisa dos veces.
+ */
+async function ejecutarNotificaciones(req, res, next) {
+  try {
+    res.json(await ejecutarNotificacionesDiarias())
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { ejecutarGeneracion, ejecutarMora, ejecutarNotificaciones }

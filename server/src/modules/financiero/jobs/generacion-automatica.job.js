@@ -3,7 +3,8 @@ const { filtroPagaExpensa } = require('../../operativo-seguridad/inmuebles/asign
 const expensasService = require('../expensas/expensas.service')
 const configuracionMoraService = require('../configuracion-mora/configuracion-mora.service')
 const notificacionesService = require('../notificaciones/notificaciones.service')
-const aguaService = require('../agua/agua.service')
+const campanita = require('../notificaciones/campanita.service')
+const planesPagoService = require('../planes-pago/planes-pago.service')
 const { fechaEnZona, vencimientoDelPeriodo } = require('../expensas/mora.util')
 
 /** Periodo (YYYY-MM) de una fecha, visto en hora de Bolivia. */
@@ -22,8 +23,8 @@ function diaDelMes(fecha = new Date()) {
  * la expensa del periodo actual para cada departamento activo y con alguien
  * asignado que todavia no la tenga, y notifica por correo a sus ocupantes.
  * Un inmueble que ya tiene expensa (o falla por cualquier otro motivo) no
- * debe frenar a los demas. Al final reparte el agua del periodo si ya hay
- * factura registrada.
+ * debe frenar a los demas. El agua no se genera aqui: nace en 0 y el
+ * administrador la carga despues expensa por expensa.
  *
  * `usuarioId` / `ip` solo vienen cuando lo dispara un administrador a mano; el cron
  * real los deja en null y la auditoria lo registra como origen AUTOMATICO.
@@ -51,6 +52,7 @@ async function ejecutarGeneracionAutomatica(
   })
 
   let generadas = 0
+  const correos = { enviados: 0, fallidos: 0, omitidos: 0 }
   const nuevas = []
   const yaGeneradas = []
   const pendientes = []
@@ -75,7 +77,6 @@ async function ejecutarGeneracionAutomatica(
         usuarioId,
         ip,
         origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO',
-        recalcularAgua: false,
         configuracion: config
       })
       generadas += 1
@@ -106,23 +107,23 @@ async function ejecutarGeneracionAutomatica(
   }))
   const omitidas = yaGeneradas.length + pendientes.length
 
-  // Si el periodo ya tiene factura de agua, las expensas nuevas entran en el reparto.
-  if (generadas > 0) {
-    try {
-      await aguaService.recalcularPeriodo(periodo, { usuarioId, ip })
-    } catch (err) {
-      console.warn(`[cron:expensas] No se pudo repartir el agua de ${periodo}: ${err.message}`)
-    }
-  }
-
-  // Se vuelven a leer para avisar con los montos ya repartidos (agua incluida si hay factura).
+  // Se vuelven a leer para avisar con los montos tal como quedaron guardados.
   if (nuevas.length > 0) {
     const vigentes = await prisma.expensa.findMany({
       where: { id: { in: nuevas.map((expensa) => expensa.id) } },
       include: { inmueble: true, cargos: { orderBy: [{ clase: 'asc' }, { codigo: 'asc' }] } }
     })
     for (const expensa of vigentes) {
-      await notificacionesService.notificarExpensaGenerada(expensa)
+      // El aviso por correo nunca frena la generacion: si falla, queda registrado el motivo.
+      const resultado = await notificacionesService.notificarExpensaGenerada(expensa).catch((err) => {
+        console.warn(`[cron:expensas] Aviso por correo de ${expensa.id}: ${err.message}`)
+        return null
+      })
+      if (resultado) {
+        correos.enviados += resultado.enviados
+        correos.fallidos += resultado.fallidos
+        correos.omitidos += resultado.omitidos
+      }
     }
   }
 
@@ -130,7 +131,7 @@ async function ejecutarGeneracionAutomatica(
     `[cron:expensas] Generacion automatica ${periodo}: ${generadas} generadas, ` +
       `${yaGeneradas.length} ya existian, ${pendientes.length} pendientes`
   )
-  return { periodo, generadas, omitidas, yaGeneradas, pendientes, excluidos }
+  return { periodo, generadas, omitidas, yaGeneradas, pendientes, excluidos, correos }
 }
 
 /**
@@ -171,8 +172,29 @@ async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } 
   return { aplicadas }
 }
 
+/**
+ * Proceso diario de avisos: crea las notificaciones de la campanita que correspondan hoy
+ * (proximo vencimiento, fin de gracia, vencida, deuda con mora) y marca las cuotas de planes de
+ * pago que vencieron sin pagarse. Se puede repetir sin duplicar avisos.
+ */
+async function ejecutarNotificacionesDiarias({ hoy = new Date() } = {}) {
+  const cuotasVencidas = await planesPagoService.marcarCuotasVencidas(periodoHoy(hoy))
+  const avisos = await campanita.ejecutarNotificacionesAutomaticas({ hoy })
+  console.log(
+    `[cron:notificaciones] ${avisos.creadas} avisos nuevos en ${avisos.revisadas} expensas revisadas, ` +
+      `${cuotasVencidas} cuotas marcadas vencidas`
+  )
+  return { cuotasMarcadasVencidas: cuotasVencidas, ...avisos }
+}
+
+/** Dia (YYYY-MM-DD) de una fecha en hora de Bolivia. */
+function periodoHoy(fecha) {
+  return fechaEnZona(fecha)
+}
+
 module.exports = {
   periodoActual,
   ejecutarGeneracionAutomatica,
-  ejecutarAplicacionMoraAutomatica
+  ejecutarAplicacionMoraAutomatica,
+  ejecutarNotificacionesDiarias
 }

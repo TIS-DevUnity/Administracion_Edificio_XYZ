@@ -23,8 +23,8 @@ async function generar(req, res, next) {
 
 async function listar(req, res, next) {
   try {
-    const { periodo, estado, inmuebleId, pagina, porPagina } = req.query
-    const expensas = await service.listar({ periodo, estado, inmuebleId, pagina, porPagina })
+    const { periodo, estado, inmuebleId, aguaCargada, pagina, porPagina } = req.query
+    const expensas = await service.listar({ periodo, estado, inmuebleId, aguaCargada, pagina, porPagina })
     res.json(expensas)
   } catch (err) {
     next(err)
@@ -56,10 +56,11 @@ async function registrarPago(req, res, next) {
       metodoPago,
       referencia,
       fechaPago,
+      claveSolicitud: req.get('Idempotency-Key'),
       usuarioId: req.usuario.id,
       ip: req.ip
     })
-    res.status(201).json(resultado)
+    res.status(resultado.duplicado ? 200 : 201).json(resultado)
   } catch (err) {
     next(err)
   }
@@ -72,6 +73,23 @@ async function aplicarSaldoFavor(req, res, next) {
       ip: req.ip
     })
     res.json(resultado)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function cargarAgua(req, res, next) {
+  try {
+    const { montoAgua } = req.body
+    if (montoAgua === undefined) {
+      return res.status(400).json({ error: 'montoAgua es requerido' })
+    }
+    const expensa = await service.cargarAgua(req.params.id, {
+      montoAgua,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(expensa)
   } catch (err) {
     next(err)
   }
@@ -95,4 +113,12 @@ async function cambiarVencimiento(req, res, next) {
   }
 }
 
-module.exports = { generar, listar, aplicarMora, registrarPago, aplicarSaldoFavor, cambiarVencimiento }
+module.exports = {
+  generar,
+  listar,
+  aplicarMora,
+  registrarPago,
+  aplicarSaldoFavor,
+  cargarAgua,
+  cambiarVencimiento
+}

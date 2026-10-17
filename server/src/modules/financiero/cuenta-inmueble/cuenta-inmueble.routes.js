@@ -16,7 +16,8 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *     description: |
  *       Solo aplica cuando el inmueble no tiene deuda pendiente. Con deuda se usa el pago normal
  *       (`POST /inmuebles/{id}/pagos`), que cubre primero lo mas antiguo y deja el sobrante como
- *       pago anticipado. Solo los departamentos pagan expensa.
+ *       pago anticipado. Solo los departamentos pagan expensa. Con la cabecera `Idempotency-Key`,
+ *       reenviar la misma solicitud no registra el pago dos veces.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -25,6 +26,10 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *         required: true
  *         description: Id del inmueble
  *         schema: { type: string }
+ *       - in: header
+ *         name: Idempotency-Key
+ *         required: false
+ *         schema: { type: string, maxLength: 100 }
  *     requestBody:
  *       required: true
  *       content:
@@ -129,10 +134,22 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  * @openapi
  * /api/financiero/inmuebles/{id}/estado-cuenta:
  *   get:
- *     summary: Estado de cuenta de un inmueble - expensas, pagos, mora, movimientos de saldo y resumen
+ *     summary: Estado de cuenta de un inmueble en un periodo (mes o rango de fechas)
  *     description: |
- *       Cada expensa trae `cargos` (una linea por concepto: departamento, parqueo, baulera) cuya
- *       suma es `montoBase`. `resumen.saldoFavor` es el saldo a favor vigente del inmueble.
+ *       Elija un mes (`mes=2026-10`) o un rango (`desde` y `hasta`, inclusivos). Si `desde` es posterior
+ *       a `hasta` responde 400 (rango no valido). Sin periodo muestra todos los movimientos.
+ *
+ *       - `inmueble`, `ocupantes`, `responsable` y `periodo`: cabecera del reporte.
+ *       - `movimientos`: lo ocurrido en el periodo en orden cronologico (los mas antiguos primero), con
+ *         saldo corrido. Tipos: EXPENSA (con `desglose`: tarifa fija, baulera/parqueo y agua por separado),
+ *         MORA, PAGO (fecha, importe, `metodoPago` y la `obligacion` a la que se aplico con su saldo
+ *         pendiente), SALDO_A_FAVOR (pago anticipado o exceso) y APLICACION_SALDO (uso del saldo a favor).
+ *       - `saldoAnterior` y `resumenPeriodo`: saldo con que se llega al periodo, cargos, abonos y saldo
+ *         final, sin contar dos veces ningun movimiento. `saldoAdeudado` nunca es negativo; si el saldo a
+ *         favor supera la deuda se informa `saldoAFavorRestante`.
+ *       - `deudasPendientes`: obligaciones no pagadas completas al cierre del periodo.
+ *       - `sinMovimientos` y `mensaje`: si no hay movimientos en el periodo, el mensaje lo indica.
+ *       - `expensas`, `movimientosSaldo` y `resumen` conservan el formato anterior.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -141,8 +158,12 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  *         required: true
  *         schema: { type: string }
  *       - in: query
+ *         name: mes
+ *         description: Mes a consultar (no se combina con desde/hasta)
+ *         schema: { type: string, example: "2026-10" }
+ *       - in: query
  *         name: desde
- *         description: Filtra expensas por fecha de vencimiento (y movimientos de saldo por fecha) desde esta fecha
+ *         description: Filtra los movimientos desde esta fecha (inclusive)
  *         schema: { type: string, format: date, example: "2026-01-01" }
  *       - in: query
  *         name: hasta
@@ -150,10 +171,52 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  *         schema: { type: string, format: date, example: "2026-12-31" }
  *     responses:
  *       200: { description: Estado de cuenta }
- *       400: { description: Fechas invalidas }
+ *       400: { description: "Fechas invalidas o rango no valido (desde posterior a hasta)" }
  *       404: { description: Inmueble no encontrado }
+ *       500: { description: No se pudo generar el estado de cuenta (no se muestran datos incompletos) }
  */
 router.get('/:id/estado-cuenta', autenticar, CONSULTA, controller.obtenerEstadoCuenta)
+
+/**
+ * @openapi
+ * /api/financiero/inmuebles/{id}/estado-cuenta/pdf:
+ *   get:
+ *     summary: Descarga el estado de cuenta en PDF (solo ADMINISTRADOR)
+ *     description: |
+ *       Mismo contenido que el estado de cuenta en pantalla, para el mismo periodo (`mes` o
+ *       `desde`/`hasta`). Cada pagina identifica el inmueble y el periodo, y si hay muchos movimientos
+ *       se reparten en las paginas necesarias. Con `inline=true` se abre en el navegador (vista previa
+ *       para imprimir); por defecto se descarga.
+ *     tags: [Financiero]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: mes
+ *         schema: { type: string, example: "2026-10" }
+ *       - in: query
+ *         name: desde
+ *         schema: { type: string, format: date }
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date }
+ *       - in: query
+ *         name: inline
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: PDF del estado de cuenta
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       400: { description: Fechas invalidas o rango no valido }
+ *       403: { description: Solo el Administrador puede emitir o descargar el estado de cuenta }
+ *       404: { description: Inmueble no encontrado }
+ */
+router.get('/:id/estado-cuenta/pdf', autenticar, GESTION, controller.descargarEstadoCuentaPdf)
 
 /**
  * @openapi

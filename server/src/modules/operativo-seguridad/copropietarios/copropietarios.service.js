@@ -121,6 +121,8 @@ async function listarInmuebles(id) {
           : montoEfectivo(inmueble, tarifas);
     }
 
+    const programada = o.fechaInicio > ahora;
+
     return {
       ocupanteId: o.id,
       inmuebleId: inmueble.id,
@@ -136,11 +138,15 @@ async function listarInmuebles(id) {
       fechaInicio: o.fechaInicio,
       fechaFin: o.fechaFin,
       vigente,
+      // VIGENTE: ocupacion en curso. FINALIZADA: ya termino. PROGRAMADA: empieza mas adelante.
+      estadoOcupacion: vigente ? "VIGENTE" : programada ? "PROGRAMADA" : "FINALIZADA",
     };
   });
 
   const vigentes = items.filter((i) => i.vigente);
-  const anteriores = items.filter((i) => !i.vigente);
+  // Historial de ocupacion: las que ya terminaron (con sus fechas de inicio y fin).
+  const anteriores = items.filter((i) => i.estadoOcupacion === "FINALIZADA");
+  const programadas = items.filter((i) => i.estadoOcupacion === "PROGRAMADA");
 
   const contar = (clase) => vigentes.filter((i) => i.clase === clase).length;
   const resumen = {
@@ -153,7 +159,18 @@ async function listarInmuebles(id) {
       .toFixed(2),
   };
 
-  return { copropietario, vigentes, anteriores, resumen };
+  // Apartado "Inmuebles y ocupacion": solo lo que la persona ocupa hoy, separado por clase. Un
+  // inmueble sin ocupacion vigente suya no aparece como si lo ocupara.
+  return {
+    copropietario,
+    vigentes,
+    departamentos: vigentes.filter((i) => i.clase === "DEPARTAMENTO"),
+    bauleras: vigentes.filter((i) => i.clase === "BAULERA"),
+    parqueos: vigentes.filter((i) => i.clase === "PARQUEO"),
+    anteriores,
+    programadas,
+    resumen,
+  };
 }
 
 module.exports = { listar, obtenerPorId, crear, actualizar, listarInmuebles };

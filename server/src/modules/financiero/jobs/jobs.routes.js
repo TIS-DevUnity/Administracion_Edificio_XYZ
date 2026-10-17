@@ -47,4 +47,21 @@ router.post('/ejecutar-generacion', autenticar, GESTION, controller.ejecutarGene
  */
 router.post('/ejecutar-mora', autenticar, GESTION, controller.ejecutarMora)
 
+/**
+ * @openapi
+ * /api/financiero/jobs/ejecutar-notificaciones:
+ *   post:
+ *     summary: Dispara manualmente el proceso diario de avisos de la campanita
+ *     description: |
+ *       Crea las notificaciones que correspondan hoy (proximo vencimiento, fin del periodo de gracia, obligacion
+ *       vencida y recordatorio mensual de deuda con mora), pone al dia los recordatorios existentes y marca
+ *       como VENCIDAS las cuotas de planes de pago que no se pagaron a tiempo. Se puede repetir sin duplicar.
+ *     tags: [Financiero]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "{ cuotasMarcadasVencidas, revisadas, creadas, porTipo }" }
+ *       403: { description: Sin permisos }
+ */
+router.post('/ejecutar-notificaciones', autenticar, GESTION, controller.ejecutarNotificaciones)
+
 module.exports = router
