@@ -54,6 +54,7 @@ import { financeService } from "@/services/finance.service";
 import {
   EstadoExpensa,
   ExpensaDTO,
+  PaginaExpensasDTO,
   MetodoPago,
   TipoValorMora,
   ResultadoGeneracionDTO,
@@ -304,6 +305,55 @@ function ContenidoMorosidad() {
     } finally {
       setGuardandoAgua(false);
     }
+  }
+
+  // Guardado desde la celda Agua (sin abrir el detalle). Reutiliza el endpoint existente.
+  async function guardarAguaEnTabla(exp: ExpensaDTO, monto: number): Promise<void> {
+    const permiso = validarAccion(rol, "morosidad", "editar");
+    if (!permiso.permitido) throw new Error(permiso.mensaje);
+    if (exp.estado === "PAGADA") throw new Error("No se puede editar agua de una expensa pagada.");
+    if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar agua con mora generada.");
+
+    // Confirmamos primero la operación en el servidor. Evita presentar un importe
+    // como guardado si el backend lo rechaza (por pagos, mora o plan de cuotas).
+    const resultado = await financeService.cargarAgua(exp.id, monto);
+
+    // El PATCH devuelve la expensa actualizada: reutilizamos esos valores para
+    // refrescar inmediatamente la fila sin esperar otro GET de 25 expensas.
+    // Cancelamos cualquier consulta anterior que pudiera sobrescribirlos.
+    await queryClient.cancelQueries({ queryKey: ["morosidad", "expensas"] });
+    queryClient.setQueriesData<PaginaExpensasDTO>(
+      { queryKey: ["morosidad", "expensas"] },
+      (paginaAnterior) => {
+        if (!paginaAnterior?.expensas.some((item) => item.id === exp.id)) {
+          return paginaAnterior;
+        }
+        return {
+          ...paginaAnterior,
+          expensas: paginaAnterior.expensas.map((item) =>
+            item.id === exp.id
+              ? {
+                  ...item,
+                  ...resultado,
+                  inmueble: item.inmueble,
+                  pagos: resultado.pagos ?? item.pagos,
+                  moras: resultado.moras ?? item.moras,
+                  cambiosVencimiento:
+                    resultado.cambiosVencimiento ?? item.cambiosVencimiento,
+                }
+              : item
+          ),
+        };
+      }
+    );
+
+    // Reconciliación en segundo plano: no bloquea el formulario ni otra edición.
+    void queryClient.invalidateQueries({ queryKey: ["morosidad", "expensas"] });
+    const aplicado = Number(resultado.saldoFavorAplicado ?? 0);
+    setStrExito(
+      `Agua de ${exp.inmueble.codigo} (${exp.periodo}) guardada: ${formatCurrency(monto)}.` +
+        (aplicado > 0 ? ` Se aplicaron ${formatCurrency(aplicado)} de crédito disponible.` : "")
+    );
   }
 
   async function handleSaveConfig() {
@@ -1011,6 +1061,7 @@ function ContenidoMorosidad() {
               bolPuedeGestionar={bolPuedeGestionar}
               errorCarga={errorCarga}
               onDetalle={(exp) => abrirDetalleExpensa(exp)}
+              onGuardarAgua={guardarAguaEnTabla}
               onPago={abrirDialogoPago}
             />
           )}
@@ -1213,7 +1264,7 @@ function ContenidoMorosidad() {
                     </span>
                     <span className="flex items-center gap-2 text-foreground">
                       {formatCurrency(Number(expensaDetalle.montoAgua))}
-                      {bolPuedeGestionar && !bolEditandoAgua && (expensaDetalle.moras?.length ?? 0) === 0 && (
+                      {bolPuedeGestionar && !bolEditandoAgua && expensaDetalle.estado !== "PAGADA" && (expensaDetalle.moras?.length ?? 0) === 0 && (
                         <button
                           type="button"
                           onClick={() => {
