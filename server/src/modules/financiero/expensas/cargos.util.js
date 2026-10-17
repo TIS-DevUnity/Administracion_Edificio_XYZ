@@ -9,7 +9,7 @@
  *  - Se suman una sola vez por periodo: a la expensa del primer departamento (por codigo) del
  *    que la persona es responsable. Asi, quien tiene dos departamentos no paga dos veces.
  *  - Una persona sin departamento a su cargo no genera cobro por baulera ni parqueo.
- *  - Baulera y parqueo nunca generan expensa propia ni entran al reparto del agua.
+ *  - Baulera y parqueo nunca generan expensa propia ni llevan agua.
  */
 const { Decimal } = require('./saldo.util')
 const { filtroOcupanteVigente, filtroPagaExpensa } = require('../../operativo-seguridad/inmuebles/asignacion.util')

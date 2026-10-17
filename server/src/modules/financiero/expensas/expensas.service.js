@@ -2,25 +2,30 @@ const prisma = require('../../../config/prisma')
 const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
 const { filtroOcupanteVigente } = require('../../operativo-seguridad/inmuebles/asignacion.util')
 const configuracionMoraService = require('../configuracion-mora/configuracion-mora.service')
-const aguaService = require('../agua/agua.service')
 const { calcularLineasMora, fechaEnZona, fechaCalendario, sumarDias, vencimientoDelPeriodo } = require('./mora.util')
 const reglas = require('./reglas-pago.util')
 const cargosUtil = require('./cargos.util')
+const { configuracionDeLaExpensa } = require('./configuracion-expensa.util')
+const campanita = require('../notificaciones/campanita.service')
 const {
   Decimal,
   errorHttp,
   parsearMonto,
   validarMetodoPago,
   normalizarReferencia,
+  normalizarClaveSolicitud,
+  buscarReciboPorClave,
   parsearFechaPago,
   formatearFolio,
   resumenRecibo,
+  respuestaDuplicada,
   crearRecibo,
   repartirPago,
   bloquearInmueble,
   bloquearExpensa,
   aplicarSaldoAExpensa,
   calcularEstado,
+  sumarCampo,
   saldoFavorDe
 } = require('./saldo.util')
 
@@ -70,14 +75,13 @@ async function resolverVencimiento(periodo, fechaVencimiento, config) {
  * Genera la expensa de un departamento para un periodo.
  *
  * Solo pagan expensa los departamentos activos que tienen a alguien asignado (propietario o
- * inquilino); baulera y parqueo no. El monto es la expensa fija del tipo; el agua se suma
- * despues, cuando se registra la factura del mes.
+ * inquilino); baulera y parqueo no. El monto es la expensa fija del tipo (mas baulera y
+ * parqueo); el agua nace en 0 y el administrador la carga despues con `cargarAgua`.
  *
  * Cada expensa guarda la configuracion de mora vigente al generarla (la de su periodo) y la
  * persona responsable en ese momento (propietario vigente; si no hay, el inquilino).
  *
- * `recalcularAgua: false` y `configuracion` los usa la generacion masiva, que reparte el agua
- * una sola vez al final y evita leer la configuracion en cada inmueble.
+ * `configuracion` la usa la generacion masiva para no leer la configuracion en cada inmueble.
  */
 async function generar({
   inmuebleId,
@@ -86,7 +90,6 @@ async function generar({
   usuarioId = null,
   ip = null,
   origen = 'MANUAL',
-  recalcularAgua = true,
   configuracion = null
 }) {
   if (typeof periodo !== 'string' || !PERIODO_VALIDO.test(periodo)) {
@@ -146,8 +149,7 @@ async function generar({
       const responsable = ocupantes[0]
 
       // Cuota del departamento + la de cada baulera y parqueo que paga el responsable
-      // (ver cargos.util.js). `montoBase` es la suma; el agua se calcula aparte y los
-      // cargos extra no entran en su reparto (el peso sale del tipo del departamento).
+      // (ver cargos.util.js). `montoBase` es la suma; el agua va aparte (`montoAgua`).
       const extras = await cargosUtil.extrasParaExpensa(tx, {
         inmuebleId,
         responsableId: responsable.copropietario.id
@@ -162,7 +164,6 @@ async function generar({
           montoAgua: 0,
           montoTotal: montoBase,
           tipoNombre: tipo.nombre,
-          pesoAgua: tipo.pesoAgua,
           fechaVencimiento: vencimiento,
           configuracionMoraId: configVigente ? configVigente.id : null,
           responsableId: responsable.copropietario.id,
@@ -186,7 +187,7 @@ async function generar({
       // El saldo a favor (pagos anticipados / excesos) se usa de inmediato, pero solo si esta
       // es la deuda mas antigua del inmueble: los pagos siempre van del mes mas antiguo al mas nuevo.
       const anteriores = await tx.expensa.count({
-        where: { inmuebleId, id: { not: creada.id }, estado: { not: 'PAGADA' }, periodo: { lt: periodo } }
+        where: { inmuebleId, id: { not: creada.id }, estado: { not: 'PAGADA' }, planPagoId: null, periodo: { lt: periodo } }
       })
       const saldo =
         anteriores === 0
@@ -250,24 +251,9 @@ async function generar({
     })
   }
 
-  // Si el periodo ya tiene factura de agua, la nueva expensa entra en el reparto.
-  let avisoAgua = null
-  if (recalcularAgua) {
-    try {
-      await aguaService.recalcularPeriodo(periodo, { usuarioId, ip })
-    } catch (err) {
-      avisoAgua = `La expensa se genero, pero no se pudo repartir el agua: ${err.message}`
-      console.warn(`[agua] ${avisoAgua}`)
-    }
-  }
-
   const expensa = await prisma.expensa.findUnique({ where: { id: creada.id }, include: INCLUIR_COMPLETO })
 
-  return {
-    ...expensa,
-    saldoFavorAplicado: saldo.aplicado.toFixed(2),
-    ...(avisoAgua ? { avisoAgua } : {})
-  }
+  return { ...expensa, saldoFavorAplicado: saldo.aplicado.toFixed(2) }
 }
 
 /**
@@ -300,11 +286,11 @@ async function conSaldoFavor(expensas) {
 }
 
 /**
- * Lista expensas. Filtros opcionales: periodo, estado, inmuebleId. Sin `pagina`
+ * Lista expensas. Filtros opcionales: periodo, estado, inmuebleId, aguaCargada. Sin `pagina`
  * devuelve el arreglo completo (compatibilidad con quien ya lo consume); con
  * `pagina` devuelve { expensas, paginacion }.
  */
-async function listar({ periodo, estado, inmuebleId, pagina, porPagina } = {}) {
+async function listar({ periodo, estado, inmuebleId, aguaCargada, pagina, porPagina } = {}) {
   if (periodo !== undefined && !PERIODO_VALIDO.test(periodo)) {
     throw errorHttp('periodo debe tener el formato YYYY-MM (ej. 2026-09)', 400)
   }
@@ -312,10 +298,18 @@ async function listar({ periodo, estado, inmuebleId, pagina, porPagina } = {}) {
     throw errorHttp(`estado invalido. Valores permitidos: ${ESTADOS_VALIDOS.join(', ')}`, 400)
   }
 
+  if (aguaCargada !== undefined && aguaCargada !== 'true' && aguaCargada !== 'false') {
+    throw errorHttp('aguaCargada debe ser true o false', 400)
+  }
+
   const where = {
     ...(periodo ? { periodo } : {}),
     ...(estado ? { estado } : {}),
-    ...(inmuebleId ? { inmuebleId } : {})
+    ...(inmuebleId ? { inmuebleId } : {}),
+    // true = ya se cargo el agua; false = todavia falta cargarla.
+    ...(aguaCargada === undefined
+      ? {}
+      : { aguaRegistradaEn: aguaCargada === 'true' ? { not: null } : null })
   }
   const consulta = {
     where,
@@ -350,24 +344,6 @@ async function listar({ periodo, estado, inmuebleId, pagina, porPagina } = {}) {
 }
 
 /**
- * Configuracion de mora que rige para una expensa: la que guardo al generarse. Las expensas
- * anteriores a ese campo usan la que regia en su fecha de creacion (o, en ultimo caso, la mas
- * reciente).
- */
-async function configuracionDeLaExpensa(db, expensa) {
-  if (expensa.configuracionMoraId) {
-    const guardada = await db.configuracionMora.findUnique({ where: { id: expensa.configuracionMoraId } })
-    if (guardada) return guardada
-  }
-  const delMomento = await db.configuracionMora.findFirst({
-    where: { vigenteDesde: { lte: expensa.createdAt } },
-    orderBy: { vigenteDesde: 'desc' }
-  })
-  if (delMomento) return delMomento
-  return db.configuracionMora.findFirst({ orderBy: { vigenteDesde: 'desc' } })
-}
-
-/**
  * Genera las lineas de mora que correspondan a una expensa segun la configuracion de su periodo:
  * una por cada mes de atraso, calculada sobre lo que falta pagar. `moraActualizada` indica
  * si se agrego alguna linea (el cron solo notifica en ese caso).
@@ -392,6 +368,15 @@ async function aplicarMora(expensaId, { usuarioId = null, ip = null, origen = 'M
 
   if (expensa.estado === 'PAGADA') {
     return { ...expensa, moraActualizada: false, mensaje: 'La expensa ya esta pagada, no se aplica mora' }
+  }
+
+  // Mientras un plan de pagos la cubre, la expensa se cobra por cuotas y no genera mora nueva.
+  if (expensa.planPagoId) {
+    return {
+      ...expensa,
+      moraActualizada: false,
+      mensaje: 'La expensa esta cubierta por un plan de pagos: no genera mora nueva'
+    }
   }
 
   const pendientes = calcularLineasMora({
@@ -506,14 +491,22 @@ async function aplicarMora(expensaId, { usuarioId = null, ip = null, origen = 'M
     ip
   })
 
+  // Aviso en la campanita del residente (no depende de que el correo se envie).
+  await campanita.avisarMoraAplicada(expensaId, creadas.map((linea) => linea.numero))
+
   return { ...actualizada, moraActualizada: true }
 }
 
-async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPago, usuarioId, ip }) {
+async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
   const fecha = parsearFechaPago(fechaPago)
+  const clave = normalizarClaveSolicitud(claveSolicitud)
+
+  // Reenvio de una solicitud ya registrada: se devuelve el recibo existente, sin cobrar de nuevo.
+  const yaRegistrado = await buscarReciboPorClave(prisma, clave)
+  if (yaRegistrado) return respuestaDuplicada(yaRegistrado)
 
   const previa = await prisma.expensa.findUnique({
     where: { id: expensaId },
@@ -523,7 +516,9 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
     throw errorHttp('Expensa no encontrada', 404)
   }
 
-  const resultado = await prisma.$transaction(async (tx) => {
+  let resultado
+  try {
+    resultado = await prisma.$transaction(async (tx) => {
     await bloquearInmueble(tx, previa.inmuebleId)
     await bloquearExpensa(tx, expensaId)
 
@@ -537,6 +532,13 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
     if (expensa.estado === 'PAGADA') {
       throw errorHttp('La expensa ya esta pagada, no se pueden registrar mas pagos', 409)
     }
+    if (expensa.planPagoId) {
+      throw errorHttp(
+        'Esta expensa esta cubierta por un plan de pagos: registre el pago en el plan (POST /api/financiero/planes-pago/{id}/pagos)',
+        409,
+        { codigo: 'EXPENSA_EN_PLAN', detalle: { planPagoId: expensa.planPagoId } }
+      )
+    }
 
     // Reglas de pago: orden de meses, meses atrasados completos, cuotas solo estando al dia.
     const deudas = await reglas.cargarDeudas(tx, expensa.inmuebleId)
@@ -548,7 +550,8 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
       metodoPago,
       referencia: referenciaLimpia,
       fechaPago: fecha,
-      usuarioId
+      usuarioId,
+      claveSolicitud: clave
     })
 
     // Lo que alcanza la expensa se aplica como pago (primero la mora, luego el monto);
@@ -597,7 +600,15 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
       exceso,
       tipoPago: plan.tipoPago
     }
-  }, OPCIONES_TX)
+    }, OPCIONES_TX)
+  } catch (err) {
+    // Dos solicitudes con la misma clave llegaron a la vez: gana la primera.
+    if (err.code === 'P2002' && clave) {
+      const yaRegistradoAhora = await buscarReciboPorClave(prisma, clave)
+      if (yaRegistradoAhora) return respuestaDuplicada(yaRegistradoAhora)
+    }
+    throw err
+  }
 
   const { recibo, pago, movimiento, expensa, estadoAnterior, aplicado, aplicadoMora, aplicadoExpensa, exceso, tipoPago } =
     resultado
@@ -669,6 +680,14 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
     })
   }
 
+  // Aviso en la campanita y recordatorios al dia con el nuevo saldo.
+  await campanita.avisarPago({
+    recibo,
+    inmuebleId: expensa.inmuebleId,
+    aplicaciones: pago ? [{ expensaId, monto: aplicado }] : [],
+    saldoFavorGenerado: exceso
+  })
+
   return {
     pago,
     expensa,
@@ -705,6 +724,12 @@ async function aplicarSaldoFavor(expensaId, { usuarioId, ip }) {
     }
     if (expensa.estado === 'PAGADA') {
       throw errorHttp('La expensa ya esta pagada', 409)
+    }
+    if (expensa.planPagoId) {
+      throw errorHttp('Esta expensa esta cubierta por un plan de pagos: se cobra a traves de sus cuotas', 409, {
+        codigo: 'EXPENSA_EN_PLAN',
+        detalle: { planPagoId: expensa.planPagoId }
+      })
     }
 
     const saldoDisponible = await saldoFavorDe(tx, expensa.inmuebleId)
@@ -754,7 +779,140 @@ async function aplicarSaldoFavor(expensaId, { usuarioId, ip }) {
     })
   }
 
+  await campanita.sincronizarExpensa(expensaId)
+
   return { expensa, saldoFavorAplicado: saldo.aplicado.toFixed(2) }
+}
+
+/**
+ * Carga (o corrige) a mano el agua de una expensa ya generada. Cada departamento tiene su propio
+ * monto; no hay reparto. El total pasa a ser `montoBase + montoAgua` y el estado se recalcula con
+ * lo ya pagado. Reglas:
+ *  - Solo mientras la expensa no tenga mora generada: la mora se calcula sobre lo que falta pagar
+ *    y sus lineas nunca se editan, asi que cambiar el total despues dejaria cargos sin sustento.
+ *  - El nuevo total no puede quedar por debajo de lo que ya se pago de la expensa.
+ *  - Si el agua sube y el inmueble tiene saldo a favor, se usa para cubrir ese aumento (solo
+ *    cuando esta es su deuda mas antigua, igual que el resto de pagos).
+ */
+async function cargarAgua(expensaId, { montoAgua, usuarioId = null, ip = null }) {
+  const agua = parsearMonto(montoAgua, 'montoAgua', { permitirCero: true })
+
+  const previa = await prisma.expensa.findUnique({
+    where: { id: expensaId },
+    select: { inmuebleId: true }
+  })
+  if (!previa) {
+    throw errorHttp('Expensa no encontrada', 404)
+  }
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    await bloquearInmueble(tx, previa.inmuebleId)
+    await bloquearExpensa(tx, expensaId)
+
+    const expensa = await tx.expensa.findUnique({
+      where: { id: expensaId },
+      include: { pagos: true, moras: { select: { id: true } }, inmueble: { select: { codigo: true } } }
+    })
+    if (!expensa) {
+      throw errorHttp('Expensa no encontrada', 404)
+    }
+    if (expensa.moras.length > 0) {
+      throw errorHttp('La expensa ya tiene mora generada: no se puede cambiar el agua', 409, {
+        codigo: 'EXPENSA_CON_MORA'
+      })
+    }
+    if (expensa.planPagoId) {
+      throw errorHttp('La expensa esta cubierta por un plan de pagos: no se puede cambiar el agua', 409, {
+        codigo: 'EXPENSA_EN_PLAN'
+      })
+    }
+
+    const aguaAnterior = new Decimal(expensa.montoAgua)
+    if (expensa.aguaRegistradaEn && aguaAnterior.equals(agua)) {
+      throw errorHttp('El agua de esta expensa ya es ese monto', 409, { codigo: 'SIN_CAMBIO' })
+    }
+
+    const montoTotal = new Decimal(expensa.montoBase).plus(agua)
+    const pagadoExpensa = sumarCampo(expensa.pagos, 'montoExpensa')
+    if (montoTotal.lt(pagadoExpensa)) {
+      throw errorHttp(
+        `No se puede cargar ese monto: la expensa de ${expensa.inmueble.codigo} quedaria en Bs ${montoTotal.toFixed(2)} ` +
+          `y ya se pago Bs ${pagadoExpensa.toFixed(2)}`,
+        409,
+        { codigo: 'AGUA_MENOR_A_LO_PAGADO', detalle: { inmueble: expensa.inmueble.codigo } }
+      )
+    }
+
+    const estado = calcularEstado({ montoTotal, montoMora: expensa.montoMora, pagos: expensa.pagos })
+    const actualizada = await tx.expensa.update({
+      where: { id: expensaId },
+      data: { montoAgua: agua, montoTotal, estado, aguaRegistradaEn: new Date() }
+    })
+
+    // Si el agua subio y al inmueble le sobra saldo a favor, se usa para cubrir ese aumento.
+    let saldo = { aplicado: new Decimal(0) }
+    if (agua.gt(aguaAnterior)) {
+      const anteriores = await tx.expensa.count({
+        where: {
+          inmuebleId: expensa.inmuebleId,
+          id: { not: expensaId },
+          estado: { not: 'PAGADA' },
+          planPagoId: null,
+          periodo: { lt: expensa.periodo }
+        }
+      })
+      if (anteriores === 0) {
+        saldo = await aplicarSaldoAExpensa(tx, { ...actualizada, pagos: expensa.pagos }, usuarioId)
+      }
+    }
+
+    return { expensa, actualizada, aguaAnterior, saldo }
+  }, OPCIONES_TX)
+
+  const { expensa, actualizada, aguaAnterior, saldo } = resultado
+
+  const completa = await prisma.expensa.findUnique({ where: { id: expensaId }, include: INCLUIR_COMPLETO })
+
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'UPDATE',
+    entidad: 'Expensa',
+    entidadId: expensaId,
+    detalle: {
+      motivo: 'AGUA',
+      periodo: expensa.periodo,
+      inmueble: expensa.inmueble.codigo,
+      montoAgua: { antes: aguaAnterior.toFixed(2), despues: agua.toFixed(2) },
+      montoTotal: {
+        antes: new Decimal(expensa.montoTotal).toFixed(2),
+        despues: new Decimal(actualizada.montoTotal).toFixed(2)
+      },
+      estado: { antes: expensa.estado, despues: completa.estado }
+    },
+    ip
+  })
+
+  if (saldo.aplicado.gt(0)) {
+    await registrarAuditoria({
+      usuarioId,
+      accion: 'CREATE',
+      entidad: 'MovimientoSaldo',
+      entidadId: saldo.movimiento.id,
+      detalle: {
+        tipo: 'APLICACION_EXPENSA',
+        motivo: 'AGUA',
+        expensaId,
+        periodo: expensa.periodo,
+        inmueble: expensa.inmueble.codigo,
+        monto: new Decimal(saldo.movimiento.monto).toString()
+      },
+      ip
+    })
+  }
+
+  await campanita.sincronizarExpensa(expensaId)
+
+  return { ...completa, saldoFavorAplicado: saldo.aplicado.toFixed(2) }
 }
 
 const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
@@ -855,7 +1013,17 @@ async function cambiarVencimiento(expensaId, { fechaVencimiento, motivo, usuario
     ip
   })
 
+  await campanita.sincronizarExpensa(expensaId)
+
   return actualizada
 }
 
-module.exports = { generar, listar, aplicarMora, registrarPago, aplicarSaldoFavor, cambiarVencimiento }
+module.exports = {
+  generar,
+  listar,
+  aplicarMora,
+  registrarPago,
+  aplicarSaldoFavor,
+  cargarAgua,
+  cambiarVencimiento
+}

@@ -4,7 +4,7 @@
  * Un inmueble esta ASIGNADO cuando tiene un ocupante (propietario o inquilino) vigente en la
  * fecha dada: ya empezo y todavia no termino. Un departamento paga expensa si esta activo, es
  * departamento (no baulera ni parqueo), tiene tipo y esta asignado, aunque nadie viva
- * fisicamente en el. Sin nadie asignado no paga ni entra en el reparto del agua.
+ * fisicamente en el. Sin nadie asignado no paga expensa ni se le carga agua.
  */
 
 /** Filtro Prisma de un OcupanteInmueble vigente en `fecha`. */

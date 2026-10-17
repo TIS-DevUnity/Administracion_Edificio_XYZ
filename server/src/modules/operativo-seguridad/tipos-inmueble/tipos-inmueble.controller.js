@@ -20,7 +20,7 @@ async function obtener(req, res, next) {
 
 async function crear(req, res, next) {
   try {
-    const { nombre, montoBase, pesoAgua } = req.body;
+    const { nombre, montoBase } = req.body;
     if (!nombre || montoBase === undefined) {
       return res.status(400).json({ error: "nombre y montoBase son requeridos" });
     }
@@ -28,7 +28,6 @@ async function crear(req, res, next) {
     const tipoInmueble = await tiposInmuebleService.crear({
       nombre,
       montoBase,
-      pesoAgua,
       actorId: req.usuario.id,
       ip: req.ip,
     });
@@ -40,11 +39,11 @@ async function crear(req, res, next) {
 
 async function actualizar(req, res, next) {
   try {
-    const { nombre, montoBase, pesoAgua } = req.body;
+    const { nombre, montoBase } = req.body;
 
     const tipoInmueble = await tiposInmuebleService.actualizar(
       req.params.id,
-      { nombre, montoBase, pesoAgua },
+      { nombre, montoBase },
       { actorId: req.usuario.id, ip: req.ip }
     );
     res.json({ tipoInmueble });

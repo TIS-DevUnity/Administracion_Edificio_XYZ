@@ -1,7 +1,7 @@
 const prisma = require('../../../config/prisma')
 const { filtroOcupanteVigente } = require('../../operativo-seguridad/inmuebles/asignacion.util')
 const { obtenerMapa, montoEfectivo } = require('../../operativo-seguridad/tarifas-inmueble/tarifas-inmueble.service')
-const { Decimal, errorHttp, saldoFavorDe } = require('../expensas/saldo.util')
+const { Decimal, errorHttp, saldoFavorDe, deudaEnPlanes } = require('../expensas/saldo.util')
 const reglas = require('../expensas/reglas-pago.util')
 const cargosUtil = require('../expensas/cargos.util')
 
@@ -107,7 +107,9 @@ async function obtenerCuenta(copropietarioId) {
   let saldoFavor = new Decimal(0)
   for (const departamento of aCargo) {
     const deudas = await reglas.cargarDeudas(prisma, departamento.id)
-    const deuda = deudas.reduce((acc, d) => acc.plus(d.pendiente.total), new Decimal(0))
+    // La deuda cubierta por un plan de pagos en cuotas tambien cuenta.
+    const enPlan = await deudaEnPlanes(prisma, departamento.id)
+    const deuda = deudas.reduce((acc, d) => acc.plus(d.pendiente.total), new Decimal(0)).plus(enPlan.total)
     const saldo = await saldoFavorDe(prisma, departamento.id)
     const neto = deuda.minus(saldo)
     const ocupado = ocupaciones.find((ocupacion) => ocupacion.inmueble.id === departamento.id)
@@ -118,8 +120,9 @@ async function obtenerCuenta(copropietarioId) {
       inmuebleId: departamento.id,
       codigo: departamento.codigo,
       tipo: ocupado?.inmueble.tipoInmueble?.nombre ?? null,
-      expensasPendientes: deudas.length,
+      expensasPendientes: deudas.length + enPlan.cantidadExpensas,
       deudaPendiente: deuda.toFixed(2),
+      deudaEnPlanDePagos: enPlan.total.toFixed(2),
       saldoFavor: saldo.toFixed(2),
       saldoNeto: neto.toFixed(2),
       situacion: situacionDe(neto)

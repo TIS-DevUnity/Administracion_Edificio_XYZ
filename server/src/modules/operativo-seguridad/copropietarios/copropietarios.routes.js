@@ -102,6 +102,12 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *       desglose por concepto estan en `GET /api/financiero/copropietarios/{id}/cuenta`.
  *       Una persona puede tener un departamento sin baulera ni parqueo, o solo un parqueo; cada
  *       inmueble aparece por separado.
+ *
+ *       Apartado "Inmuebles y ocupacion": `departamentos`, `bauleras` y `parqueos` traen solo lo que la
+ *       persona ocupa hoy (identificador, piso, tipo A/B/C, `estadoOcupacion`, tipo de relacion `rol` y su
+ *       cargo propio); lo que no ocupa no aparece. `resumen` cuenta cuantos tiene de cada clase.
+ *       `anteriores` es el historial de ocupacion (ya finalizadas, con fecha de inicio y fin) y
+ *       `programadas` las que empiezan mas adelante.
  *     tags: [Copropietarios]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -110,7 +116,7 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: "{ copropietario, vigentes, anteriores, resumen }" }
+ *       200: { description: "{ copropietario, vigentes, departamentos, bauleras, parqueos, anteriores, programadas, resumen }" }
  *       404: { description: Copropietario no encontrado }
  */
 router.get("/:id/inmuebles", autenticar, LECTURA, controller.listarInmuebles);
