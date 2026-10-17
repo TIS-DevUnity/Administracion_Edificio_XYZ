@@ -4,7 +4,6 @@ export const ROLES_DISPONIBLES: RolNombre[] = ["ADMINISTRADOR", "DIRECTORIO", "C
 
 export type SeccionId =
   | "panel"
-  | "edificios"
   | "inmuebles"
   | "residentes"
   | "pagos"
@@ -38,7 +37,6 @@ export function normalizarRol(strRol: string): RolNombre {
 const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> = {
   ADMINISTRADOR: {
     panel: ["ver"],
-    edificios: ["ver", "crear", "editar", "eliminar"],
     inmuebles: ["ver", "crear", "editar", "eliminar"],
     residentes: ["ver", "crear", "editar", "eliminar"],
     // El backend restringe las mutaciones de financiero/pagos a ADMINISTRADOR
@@ -61,7 +59,6 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
   },
   DIRECTORIO: {
     panel: ["ver"],
-    edificios: ["ver", "crear", "editar"],
     inmuebles: ["ver", "crear", "editar"],
     residentes: ["ver", "crear", "editar"],
     pagos: ["ver"],
@@ -75,7 +72,6 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
   },
   CONSULTA: {
     panel: ["ver"],
-    edificios: ["ver"],
     inmuebles: ["ver"],
     residentes: ["ver"],
     pagos: ["ver"],
@@ -110,6 +106,14 @@ export function validarAccion(
   return { permitido: false, mensaje: MENSAJE_PERMISO_INSUFICIENTE };
 }
 
+export const MENSAJE_SOLO_ADMIN_ESTADO_CUENTA =
+  "Permiso insuficiente: solo el Administrador puede emitir, imprimir o descargar el estado de cuenta.";
+
+/** Emitir/imprimir/descargar el estado de cuenta (HU5 CA-26). El backend restringe el PDF a ADMINISTRADOR. */
+export function puedeEmitirEstadoCuenta(rol: RolNombre): boolean {
+  return rol === "ADMINISTRADOR";
+}
+
 export interface SeccionNav {
   id: SeccionId;
   label: string;
@@ -119,7 +123,6 @@ export interface SeccionNav {
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
   { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
-  { id: "edificios", label: "Edificios", href: "/admin/edificios" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },
   { id: "residentes", label: "Residentes", href: "/admin/residentes" },
   { id: "copropietarios", label: "Copropietarios", href: "/admin/copropietarios" },

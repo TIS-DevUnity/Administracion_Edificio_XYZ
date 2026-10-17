@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Building,
   Building2,
   CalendarClock,
   ClipboardList,
@@ -37,7 +36,6 @@ import { LogoMark } from "@/components/LogoMark";
 const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
   panel: LayoutDashboard,
   finanzas: LineChart,
-  edificios: Building,
   inmuebles: Building2,
   residentes: UserCheck,
   copropietarios: Users,
