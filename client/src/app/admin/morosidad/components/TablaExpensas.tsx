@@ -1,11 +1,13 @@
 "use client";
 
-import { Info, Wallet } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { Check, Info, Pencil, Wallet, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ExpensaDTO, ConfiguracionMoraDTO, EstadoExpensa } from "@/types/finance";
-import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, tieneMoraAplicada } from "../utils/morosidad";
+import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, tieneMoraAplicada, obtenerMensajeError } from "../utils/morosidad";
 
 const CLASE_HEADER_TABLA = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_LABEL_CAMPO = CLASE_HEADER_TABLA;
@@ -48,6 +50,120 @@ function Indicadores({ exp, historial, bolCorto = false }: { exp: ExpensaDTO; hi
   );
 }
 
+/**
+ * Editor individual: aprovecha el PATCH de agua existente sin abrir el modal de detalle.
+ * `aguaRegistradaEn` distingue "pendiente" de un agua ya guardada en Bs 0.
+ */
+function AguaEditable({
+  exp, bolPuedeGestionar, onGuardarAgua, compacto = false,
+}: {
+  exp: ExpensaDTO;
+  bolPuedeGestionar: boolean;
+  onGuardarAgua: (exp: ExpensaDTO, monto: number) => Promise<void>;
+  compacto?: boolean;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [importe, setImporte] = useState("");
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const estaPagada = exp.estado === "PAGADA";
+  const tieneMora = (exp.moras?.length ?? 0) > 0;
+  const habilitada = bolPuedeGestionar && !estaPagada && !tieneMora;
+  const registrada = Boolean(exp.aguaRegistradaEn);
+
+  function comenzarEdicion() {
+    if (!habilitada) return;
+    setImporte(registrada ? String(Number(exp.montoAgua)) : "");
+    setError("");
+    setEditando(true);
+  }
+
+  async function guardar(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (guardando || !habilitada) return;
+
+    // Acepta 12.50 y 12,50, manteniendo 2 decimales como máximo.
+    const normalizado = importe.trim().replace(",", ".");
+    if (!/^\d+(?:\.\d{1,2})?$/.test(normalizado)) {
+      setError("Ingresa un importe válido en Bs (máximo 2 decimales).");
+      return;
+    }
+    const monto = Number(normalizado);
+    if (!Number.isFinite(monto) || monto < 0) {
+      setError("El importe debe ser igual o mayor que cero.");
+      return;
+    }
+    if (registrada && Number(exp.montoAgua) === monto) {
+      setError("Ese importe ya está registrado.");
+      return;
+    }
+
+    setError("");
+    setGuardando(true);
+    try {
+      await onGuardarAgua(exp, monto);
+      setEditando(false);
+    } catch (err) {
+      setError(obtenerMensajeError(err, err instanceof Error ? err.message : "No se pudo guardar el agua."));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className={`flex flex-col gap-1.5 ${compacto ? "items-start" : "items-end"}`}>
+      {!editando ? (
+        <>
+          <span className="text-[13px] tabular-nums text-foreground">
+            {formatCurrency(Number(exp.montoAgua))}
+          </span>
+          <span className={registrada ? CLASE_SECUNDARIA : "font-caption text-[11px] text-destructive"}>
+            {registrada ? "Registrada" : "Sin cargar"}
+          </span>
+          {habilitada ? (
+            <Button type="button" variant="outline" size="xs" onClick={comenzarEdicion}
+              aria-label={`${registrada ? "Editar" : "Ingresar"} agua de ${exp.inmueble.codigo}`}>
+              <Pencil className="h-3 w-3" />
+              {registrada ? "Editar" : "Ingresar"}
+            </Button>
+          ) : bolPuedeGestionar && (estaPagada || tieneMora) ? (
+            <span className={CLASE_SECUNDARIA}>
+              {estaPagada ? "Pagada · sin edición" : "Con mora · sin edición"}
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <form onSubmit={guardar} noValidate className={`flex flex-col gap-1.5 ${compacto ? "w-full" : "w-[150px]"}`}>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">Bs</span>
+            <Input
+              aria-label={`Importe de agua de ${exp.inmueble.codigo} en bolivianos`}
+              autoFocus
+              inputMode="decimal"
+              placeholder="0.00"
+              value={importe}
+              onChange={(e) => { setImporte(e.target.value); setError(""); }}
+              disabled={guardando}
+              className="h-8 min-w-0 text-right tabular-nums"
+            />
+          </div>
+          <div className="flex gap-1">
+            <Button type="submit" size="xs" cargando={guardando} disabled={!importe.trim()}>
+              <Check className="h-3 w-3" /> Guardar
+            </Button>
+            <Button type="button" variant="outline" size="xs" disabled={guardando}
+              onClick={() => { setEditando(false); setError(""); }}>
+              <X className="h-3 w-3" /> Cancelar
+            </Button>
+          </div>
+          {error && <p role="alert" className="text-xs leading-snug text-destructive">{error}</p>}
+        </form>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   filteredExpensas: ExpensaDTO[];
   totalCargadas: number;
@@ -55,11 +171,12 @@ interface Props {
   bolPuedeGestionar: boolean;
   errorCarga: string;
   onDetalle: (exp: ExpensaDTO) => void;
+  onGuardarAgua: (exp: ExpensaDTO, monto: number) => Promise<void>;
   onPago: (exp: ExpensaDTO) => void;
 }
 
 export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfiguracion,
-  bolPuedeGestionar, errorCarga, onDetalle, onPago }: Props) {
+  bolPuedeGestionar, errorCarga, onDetalle, onGuardarAgua, onPago }: Props) {
   const strVacio = errorCarga
     ? "No se pudo cargar la información."
     : totalCargadas === 0
@@ -70,13 +187,14 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
     <>
       {/* Vista tabla (md en adelante) */}
       <div className="hidden w-full overflow-x-auto md:block">
-        <Table className="min-w-230">
+        <Table className="min-w-260">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className={`${CLASE_HEADER_TABLA} pl-5`}>Departamento</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Responsable</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Expensa</TableHead>
+              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Agua</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total exigible</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Estado</TableHead>
@@ -118,8 +236,12 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   <TableCell className="py-3 text-right">
                     <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(Number(exp.montoTotal))}</p>
                     <p className={`${CLASE_SECUNDARIA} tabular-nums`}>
-                      Fija {formatCurrency(Number(exp.montoBase))} + agua {formatCurrency(Number(exp.montoAgua))}
+                      Tarifa fija {formatCurrency(Number(exp.montoBase))}
                     </p>
+                  </TableCell>
+
+                  <TableCell className="py-3 text-right">
+                    <AguaEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar} onGuardarAgua={onGuardarAgua} />
                   </TableCell>
 
                   <TableCell className={`py-3 text-right text-[13px] tabular-nums ${intMora > 0 ? "text-destructive" : "text-muted-foreground"}`}>
@@ -156,7 +278,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
             })}
             {filteredExpensas.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="py-10 text-center text-[13px] text-muted-foreground">
+                <TableCell colSpan={9} className="py-10 text-center text-[13px] text-muted-foreground">
                   {strVacio}
                 </TableCell>
               </TableRow>
@@ -206,8 +328,13 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   <p className={CLASE_LABEL_CAMPO}>Expensa</p>
                   <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(Number(exp.montoTotal))}</p>
                   <p className={`${CLASE_SECUNDARIA} tabular-nums`}>
-                    Fija {formatCurrency(Number(exp.montoBase))} + agua {formatCurrency(Number(exp.montoAgua))}
+                    Tarifa fija {formatCurrency(Number(exp.montoBase))}
                   </p>
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Agua</p>
+                  <AguaEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar}
+                    onGuardarAgua={onGuardarAgua} compacto />
                 </div>
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Mora</p>
