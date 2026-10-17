@@ -9,8 +9,6 @@ import {
   RegistrarPagoResponse,
   ResultadoGeneracionDTO,
   TipoInmuebleDTO,
-  FacturaAguaDTO,
-  DetalleFacturaAguaDTO,
 } from "@/types/finance";
 
 export const financeService = {
@@ -90,7 +88,7 @@ export const financeService = {
   },
 
   async guardarTipoInmueble(
-    datos: { nombre: string; montoBase: number; pesoAgua: number },
+    datos: { nombre: string; montoBase: number },
     id?: string
   ): Promise<TipoInmuebleDTO> {
     const { data } = id
@@ -99,18 +97,12 @@ export const financeService = {
     return data.tipoInmueble;
   },
 
-  async listarFacturasAgua(): Promise<FacturaAguaDTO[]> {
-    const { data } = await api.get<{ facturas: FacturaAguaDTO[] }>("/financiero/agua");
-    return data.facturas;
-  },
-
-  async obtenerFacturaAgua(periodo: string): Promise<DetalleFacturaAguaDTO> {
-    const { data } = await api.get<DetalleFacturaAguaDTO>(`/financiero/agua/${periodo}`);
-    return data;
-  },
-
-  async registrarFacturaAgua(periodo: string, montoFactura: number): Promise<DetalleFacturaAguaDTO> {
-    const { data } = await api.post<DetalleFacturaAguaDTO>("/financiero/agua", { periodo, montoFactura });
+  /** El agua se carga a mano en cada expensa (ya no hay factura del edificio ni reparto por pesos). */
+  async cargarAgua(expensaId: string, montoAgua: number): Promise<ExpensaDTO & { saldoFavorAplicado?: string }> {
+    const { data } = await api.patch<ExpensaDTO & { saldoFavorAplicado?: string }>(
+      `/financiero/expensas/${expensaId}/agua`,
+      { montoAgua }
+    );
     return data;
   },
 

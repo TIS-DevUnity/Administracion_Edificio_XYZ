@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import axios from "axios";
-import { Building2, Car, Droplets, Package, Pencil, Plus, Search } from "lucide-react";
+import { Building2, Car, Package, Pencil, Plus, Search } from "lucide-react";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { BadgeTipoInmueble } from "@/components/BadgeTipoInmueble";
 import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
@@ -318,7 +318,6 @@ export default function InmueblesPage() {
     const objFormulario = new FormData(event.currentTarget);
     const strNombre = String(objFormulario.get("nombreTipo") ?? "").trim();
     const strMonto = String(objFormulario.get("montoBase") ?? "").trim();
-    const strPeso = String(objFormulario.get("pesoAgua") ?? "").trim();
 
     if (!strNombre || strMonto === "") {
       setStrErrorTipo("El nombre y la expensa fija son obligatorios.");
@@ -326,10 +325,6 @@ export default function InmueblesPage() {
     }
     if (Number(strMonto) < 0) {
       setStrErrorTipo("La expensa fija no puede ser negativa.");
-      return;
-    }
-    if (strPeso !== "" && Number(strPeso) <= 0) {
-      setStrErrorTipo("El peso de agua debe ser mayor que 0.");
       return;
     }
 
@@ -340,7 +335,6 @@ export default function InmueblesPage() {
       const datos = {
         nombre: strNombre,
         montoBase: Number(strMonto),
-        pesoAgua: strPeso === "" ? undefined : Number(strPeso),
       };
       if (objDialogoTipo.tipo) {
         await actualizarTipoInmueble(objDialogoTipo.tipo.id, datos);
@@ -387,7 +381,7 @@ export default function InmueblesPage() {
               Tipos de departamento
             </h2>
             <p className="font-caption mt-0.5 text-[12px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
-              Cada tipo define la expensa fija mensual y su peso en el reparto del agua.
+              Cada tipo define la expensa fija mensual; el agua se suma aparte en cada expensa.
             </p>
           </div>
           {bolPuedeGestionarTipos && (
@@ -420,10 +414,9 @@ export default function InmueblesPage() {
                     {formatearBs(tipo.montoBase)}
                     <span className="text-[12px] font-normal text-muted-foreground"> / mes</span>
                   </p>
-                  <p className="font-caption mt-0.5 flex items-center gap-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                    <Droplets className="h-3 w-3" />
-                    Peso agua {Number(tipo.pesoAgua)} · {conteoPorTipo.get(tipo.id) ?? 0} depto
-                    {(conteoPorTipo.get(tipo.id) ?? 0) === 1 ? "" : "s"}
+                  <p className="font-caption mt-0.5 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+                    {conteoPorTipo.get(tipo.id) ?? 0} depto{(conteoPorTipo.get(tipo.id) ?? 0) === 1 ? "" : "s"} · + agua
+                    de cada mes
                   </p>
                 </div>
                 {bolPuedeGestionarTipos && (
@@ -560,7 +553,7 @@ export default function InmueblesPage() {
                 <>
                   Expensa mensual estimada:{" "}
                   <span className="font-medium text-foreground">{formatearBs(tipoSeleccionado.montoBase)}</span> fija
-                  del Tipo {tipoSeleccionado.nombre} + su parte del agua (peso {Number(tipoSeleccionado.pesoAgua)}).
+                  del Tipo {tipoSeleccionado.nombre} + el agua que se cargue cada mes.
                   Solo se cobra cuando el departamento tiene un propietario o inquilino asignado.
                 </>
               ) : (
@@ -857,7 +850,7 @@ export default function InmueblesPage() {
             <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
               {objDialogoTipo?.tipo
                 ? "Los cambios solo afectan a las expensas que se generen después; las ya generadas no cambian."
-                : "Define la expensa fija mensual y el peso con el que participa en el reparto de la factura de agua."}
+                : "Define la expensa fija mensual de este tipo de departamento."}
             </DialogDescription>
           </DialogHeader>
 
@@ -868,7 +861,7 @@ export default function InmueblesPage() {
               autoComplete="off"
               className="flex flex-col gap-3"
             >
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-1">
                   <label htmlFor="nombreTipo" className="text-[12px] font-medium text-foreground">
                     Nombre
@@ -897,24 +890,10 @@ export default function InmueblesPage() {
                     className={claseCampo(false)}
                   />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label htmlFor="pesoAgua" className="text-[12px] font-medium text-foreground">
-                    Peso agua
-                  </label>
-                  <input
-                    id="pesoAgua"
-                    name="pesoAgua"
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    placeholder="1"
-                    defaultValue={objDialogoTipo.tipo ? Number(objDialogoTipo.tipo.pesoAgua) : ""}
-                    className={claseCampo(false)}
-                  />
-                </div>
               </div>
               <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
-                Peso agua: con 1 paga una parte normal de la factura; con 1.5 paga 50% más que un tipo de peso 1.
+                El agua no depende del tipo: se carga a mano en la expensa de cada departamento, desde Morosidad y
+                Expensas.
               </p>
 
               {strErrorTipo && (

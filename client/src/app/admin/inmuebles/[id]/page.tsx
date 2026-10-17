@@ -339,9 +339,9 @@ export default function FichaInmueblePage() {
               </dd>
             </div>
             <div>
-              <dt className={CLASE_DT}>Peso en el reparto de agua</dt>
+              <dt className={CLASE_DT}>Agua</dt>
               <dd className="mt-1 text-[14px] text-foreground">
-                {esDepartamento(inmueble) ? Number(inmueble.tipoInmueble.pesoAgua) : "No aplica"}
+                {esDepartamento(inmueble) ? "Se carga en cada expensa" : "No aplica"}
               </dd>
             </div>
             <div>

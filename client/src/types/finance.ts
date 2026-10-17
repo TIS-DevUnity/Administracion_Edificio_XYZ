@@ -100,6 +100,8 @@ export interface ExpensaDTO {
   tipoNombre?: string | null;
   montoBase: number | string;
   montoAgua: number | string;
+  /** Cuándo se cargó el agua a mano; null = todavía pendiente de cargar. */
+  aguaRegistradaEn?: string | null;
   montoTotal: number | string;
   montoMora?: number | string;
   configuracionMoraId?: string | null;
@@ -119,35 +121,8 @@ export interface TipoInmuebleDTO {
   id: string;
   nombre: string;
   montoBase: number | string;
-  pesoAgua: number | string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface FacturaAguaDTO {
-  id: string;
-  periodo: string;
-  montoFactura: number | string;
-  totalPesos: number | string;
-  valorUnidad: number | string;
-  departamentos: number;
-  updatedAt: string;
-}
-
-export interface RepartoAguaDTO {
-  expensaId: string;
-  inmuebleId: string;
-  inmuebleCodigo: string;
-  tipo: string;
-  peso: string;
-  montoBase: string;
-  montoAgua: string;
-  montoTotal: string;
-}
-
-export interface DetalleFacturaAguaDTO {
-  factura: FacturaAguaDTO;
-  reparto: RepartoAguaDTO[];
 }
 
 

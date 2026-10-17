@@ -16,7 +16,6 @@ export interface TipoInmueble {
   id: string;
   nombre: string;
   montoBase: string;
-  pesoAgua: string;
 }
 
 export interface Inmueble {
@@ -54,7 +53,6 @@ export interface DatosActualizarInmueble {
 export interface DatosTipoInmueble {
   nombre: string;
   montoBase: number;
-  pesoAgua?: number;
 }
 
 export interface Ocupante {
