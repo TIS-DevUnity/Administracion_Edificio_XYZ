@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -8,6 +9,7 @@ import {
   CircleDollarSign,
   Download,
   Info,
+  ReceiptText,
   WalletCards,
 } from "lucide-react";
 import {
@@ -298,10 +300,16 @@ export default function DashboardFinancieroPage() {
 
   return (
     <div className="px-4 py-6 sm:px-6">
-      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
           Control de liquidez, conciliación y balance de ingresos frente a egresos.
         </p>
+        <Button asChild className="shrink-0">
+          <Link href="/admin/finanzas/movimientos">
+            <ReceiptText className="mr-2 h-4 w-4" />
+            Movimientos financieros
+          </Link>
+        </Button>
       </div>
 
       {strError && (
