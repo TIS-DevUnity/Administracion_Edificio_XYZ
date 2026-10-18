@@ -79,7 +79,6 @@ interface ResumenDatos {
 // se listan como acceso rápido, sin inventar una cifra que no existe.
 const ACCESOS_RAPIDOS: { label: string; href: string; icon: typeof Wrench }[] = [
   { label: "Pagos", href: "/admin/pagos", icon: Wallet },
-  { label: "Edificios", href: "/admin/edificios", icon: Building2 },
   { label: "Mantenimiento", href: "/admin/mantenimiento", icon: Wrench },
   { label: "Configurar roles", href: "/admin/roles", icon: UserCog },
 ];
@@ -457,7 +456,6 @@ export default function AdminPanelPage() {
             {ACCESOS_RAPIDOS.filter((acceso) => {
               if (acceso.href === "/admin/roles") return puedeAcceder(rol, "roles");
               if (acceso.href === "/admin/pagos") return puedeAcceder(rol, "pagos");
-              if (acceso.href === "/admin/edificios") return puedeAcceder(rol, "edificios");
               if (acceso.href === "/admin/mantenimiento") return puedeAcceder(rol, "mantenimiento");
               return true;
             }).map((acceso) => (

@@ -9,14 +9,18 @@ const TOLERANCIA_RELOJ_MS = 60 * 1000 // un pago con hora "de hace un momento" n
 const METODOS_PAGO_MANUALES = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA', 'CHEQUE']
 const MONTO_MAXIMO = new Decimal('99999999.99') // limite de DECIMAL(10,2)
 const MAX_LARGO_REFERENCIA = 200
+const MAX_LARGO_CLAVE = 100
 
 /** Error HTTP. `extra` (codigo, detalle) viaja al cliente junto con el mensaje. */
 function errorHttp(mensaje, status, extra = {}) {
   return Object.assign(new Error(mensaje), { status, ...extra })
 }
 
-/** Convierte un monto recibido (numero o texto) a Decimal y lo valida. */
-function parsearMonto(valor, campo = 'monto') {
+/**
+ * Convierte un monto recibido (numero o texto) a Decimal y lo valida. Por defecto debe ser mayor
+ * que cero; con `permitirCero` acepta tambien 0 (ej. un departamento sin consumo de agua).
+ */
+function parsearMonto(valor, campo = 'monto', { permitirCero = false } = {}) {
   if (valor === undefined || valor === null || valor === '' || typeof valor === 'boolean') {
     throw errorHttp(`${campo} es requerido`, 400)
   }
@@ -29,7 +33,9 @@ function parsearMonto(valor, campo = 'monto') {
   }
 
   if (!monto.isFinite()) throw errorHttp(`${campo} debe ser un numero`, 400)
-  if (monto.lte(0)) throw errorHttp(`${campo} debe ser mayor que cero`, 400)
+  if (permitirCero ? monto.lt(0) : monto.lte(0)) {
+    throw errorHttp(permitirCero ? `${campo} no puede ser negativo` : `${campo} debe ser mayor que cero`, 400)
+  }
   if (monto.decimalPlaces() > 2) throw errorHttp(`${campo} admite como maximo 2 decimales`, 400)
   if (monto.gt(MONTO_MAXIMO)) throw errorHttp(`${campo} supera el maximo permitido`, 400)
 
@@ -91,6 +97,23 @@ function parsearFechaPago(valor, { obligatoria = false } = {}) {
   return fecha
 }
 
+/**
+ * Clave que envia el cliente (cabecera Idempotency-Key) para que reenviar la misma solicitud de
+ * cobro no registre el pago dos veces. Sin clave devuelve null.
+ */
+function normalizarClaveSolicitud(valor) {
+  if (valor === undefined || valor === null || valor === '') return null
+  if (typeof valor !== 'string' || !valor.trim() || valor.trim().length > MAX_LARGO_CLAVE) {
+    throw errorHttp(`La clave de solicitud (Idempotency-Key) debe ser un texto de hasta ${MAX_LARGO_CLAVE} caracteres`, 400)
+  }
+  return valor.trim()
+}
+
+/** Recibo ya registrado con esa clave (null si no hay). `db` es prisma o una transaccion. */
+function buscarReciboPorClave(db, claveSolicitud) {
+  return claveSolicitud ? db.recibo.findUnique({ where: { claveSolicitud } }) : null
+}
+
 /** Folio imprimible de un recibo: REC-000123. */
 function formatearFolio(folioNumero) {
   return `REC-${String(folioNumero).padStart(6, '0')}`
@@ -117,6 +140,15 @@ function resumenRecibo(recibo) {
     fechaPago: recibo.fechaPago,
     tieneComprobante: Boolean(recibo.comprobantePath),
     urlPdf: `/api/financiero/recibos/${recibo.id}/pdf`
+  }
+}
+
+/** Respuesta cuando el cobro ya estaba registrado: no se vuelve a registrar nada. */
+function respuestaDuplicada(recibo) {
+  return {
+    duplicado: true,
+    recibo: resumenRecibo(recibo),
+    mensaje: `Este pago ya estaba registrado (recibo ${formatearFolio(recibo.folioNumero)}): no se registro de nuevo`
   }
 }
 
@@ -183,17 +215,18 @@ async function bloquearExpensasConDeuda(tx, inmuebleId) {
     FOR UPDATE`
 }
 
-/** Expensas con deuda de un inmueble, la mas antigua primero (ya con `pagos`). */
+/** Expensas con deuda de un inmueble que no estan en un plan de pagos, la mas antigua primero (ya con `pagos`). */
 function expensasConDeudaOrdenadas(tx, inmuebleId) {
   return tx.expensa.findMany({
-    where: { inmuebleId, estado: { not: 'PAGADA' } },
+    // Las que cubre un plan de pagos se cobran a traves de sus cuotas, no con el pago normal.
+    where: { inmuebleId, estado: { not: 'PAGADA' }, planPagoId: null },
     include: { pagos: true },
     orderBy: [{ fechaVencimiento: 'asc' }, { periodo: 'asc' }]
   })
 }
 
 /** Crea el recibo (folio) de una operacion de cobro. Debe llamarse dentro de la transaccion. */
-function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId }) {
+function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId, claveSolicitud = null }) {
   return tx.recibo.create({
     data: {
       inmuebleId,
@@ -201,6 +234,7 @@ function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fecha
       metodoPago,
       referencia,
       fechaPago,
+      claveSolicitud,
       registradoPorId: usuarioId
     }
   })
@@ -346,6 +380,19 @@ async function aplicarSaldoAExpensa(tx, expensa, usuarioId = null) {
   return { aplicado, pago, movimiento, estado }
 }
 
+/**
+ * Deuda de un inmueble que esta cubierta por planes de pago en cuotas (lo que falta pagar de las
+ * expensas del plan, mora incluida). No entra en el pago normal pero sigue siendo deuda.
+ */
+async function deudaEnPlanes(db, inmuebleId) {
+  const expensas = await db.expensa.findMany({
+    where: { inmuebleId, planPagoId: { not: null }, estado: { not: 'PAGADA' } },
+    include: { pagos: true }
+  })
+  const total = expensas.reduce((acc, e) => acc.plus(pendientesDe(e).total), new Decimal(0))
+  return { total, cantidadExpensas: expensas.length }
+}
+
 /** Periodo (YYYY-MM) de la expensa mas reciente del inmueble, de cualquier estado. */
 async function periodoMasReciente(db, inmuebleId) {
   const ultima = await db.expensa.findFirst({
@@ -363,10 +410,13 @@ module.exports = {
   parsearMonto,
   validarMetodoPago,
   normalizarReferencia,
+  normalizarClaveSolicitud,
+  buscarReciboPorClave,
   parsearFechaPago,
   formatearFolio,
   estadoPagoDe,
   resumenRecibo,
+  respuestaDuplicada,
   sumarPagos,
   sumarCampo,
   pendientesDe,
@@ -379,5 +429,6 @@ module.exports = {
   crearRecibo,
   repartirPago,
   saldoFavorDe,
+  deudaEnPlanes,
   aplicarSaldoAExpensa
 }

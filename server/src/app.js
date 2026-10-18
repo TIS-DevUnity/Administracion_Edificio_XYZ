@@ -21,8 +21,10 @@ const configuracionMoraRoutes = require('./modules/financiero/configuracion-mora
 const jobsRoutes = require('./modules/financiero/jobs/jobs.routes')
 const cuentaInmuebleRoutes = require('./modules/financiero/cuenta-inmueble/cuenta-inmueble.routes')
 const recibosRoutes = require('./modules/financiero/recibos/recibos.routes')
-const aguaRoutes = require('./modules/financiero/agua/agua.routes')
 const cuentaResidenteRoutes = require('./modules/financiero/cuenta-residente/cuenta-residente.routes')
+const movimientosRoutes = require('./modules/financiero/movimientos/movimientos.routes')
+const planesPagoRoutes = require('./modules/financiero/planes-pago/planes-pago.routes')
+const notificacionesRoutes = require('./modules/financiero/notificaciones/notificaciones.routes')
 
 const app = express()
 
@@ -49,8 +51,10 @@ app.use('/api/financiero/configuracion-mora', configuracionMoraRoutes)
 app.use('/api/financiero/jobs', jobsRoutes)
 app.use('/api/financiero/inmuebles', cuentaInmuebleRoutes)
 app.use('/api/financiero/recibos', recibosRoutes)
-app.use('/api/financiero/agua', aguaRoutes)
 app.use('/api/financiero/copropietarios', cuentaResidenteRoutes)
+app.use('/api/financiero/movimientos', movimientosRoutes)
+app.use('/api/financiero/planes-pago', planesPagoRoutes)
+app.use('/api/financiero/notificaciones', notificacionesRoutes)
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 app.use(manejarErrores)

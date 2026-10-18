@@ -1,7 +1,8 @@
 const cron = require('node-cron')
 const {
   ejecutarGeneracionAutomatica,
-  ejecutarAplicacionMoraAutomatica
+  ejecutarAplicacionMoraAutomatica,
+  ejecutarNotificacionesDiarias
 } = require('./generacion-automatica.job')
 
 const TIMEZONE = process.env.CRON_TIMEZONE || 'America/La_Paz'
@@ -30,6 +31,18 @@ function iniciarCronsFinancieros() {
     () => {
       ejecutarAplicacionMoraAutomatica().catch((err) =>
         console.error('[cron:mora] Fallo inesperado:', err)
+      )
+    },
+    { timezone: TIMEZONE }
+  )
+
+  // Todos los dias a las 07:00: avisos de la campanita del residente (vencimientos, mora) y
+  // cuotas de planes de pago vencidas.
+  cron.schedule(
+    '0 7 * * *',
+    () => {
+      ejecutarNotificacionesDiarias().catch((err) =>
+        console.error('[cron:notificaciones] Fallo inesperado:', err)
       )
     },
     { timezone: TIMEZONE }

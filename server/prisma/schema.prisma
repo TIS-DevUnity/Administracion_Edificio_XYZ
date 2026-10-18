@@ -39,8 +39,8 @@ model Usuario {
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
-  facturasAguaRegistradas FacturaAgua[]
   cambiosVencimiento      CambioVencimiento[]
+  planesPagoRegistrados   PlanPago[]
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -65,6 +65,7 @@ model Copropietario {
   usuarios    Usuario[]
   ocupaciones OcupanteInmueble[]
   expensasComoResponsable Expensa[]
+  notificaciones          Notificacion[]
 
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
@@ -80,13 +81,12 @@ enum ClaseInmueble {
   PARQUEO
 }
 
-// Tipo de departamento (A, B, C...). Define la expensa fija mensual (`montoBase`) y el
-// peso con el que participa en el reparto de la factura de agua (`pesoAgua`, mayor que 0).
+// Tipo de departamento (A, B, C...). Define la expensa fija mensual (`montoBase`). El agua no
+// depende del tipo: el administrador la carga a mano en cada expensa.
 model TipoInmueble {
   id          String     @id @default(uuid())
   nombre      String     @unique
   montoBase   Decimal    @db.Decimal(10, 2)
-  pesoAgua    Decimal    @default(1) @db.Decimal(6, 3)
 
   inmuebles   Inmueble[]
 
@@ -119,6 +119,7 @@ model Inmueble {
   movimientosSaldo MovimientoSaldo[]
   recibos        Recibo[]
   cargosOrigen   CargoExpensa[]
+  planesPago     PlanPago[]
 
   createdAt      DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
@@ -294,17 +295,18 @@ model Expensa {
 
   periodo          String        // formato "YYYY-MM"
 
-  // montoTotal = montoBase (expensa fija del tipo) + montoAgua (parte de la factura de agua).
-  // No incluye la mora, que se lleva aparte en `moras` y se resume en `montoMora`.
+  // montoTotal = montoBase (expensa fija del tipo + baulera y parqueo) + montoAgua (agua que el
+  // administrador carga a mano para este departamento). No incluye la mora, que se lleva aparte
+  // en `moras` y se resume en `montoMora`.
   montoBase        Decimal       @default(0) @db.Decimal(10, 2)
   montoAgua        Decimal       @default(0) @db.Decimal(10, 2)
+  // Cuando se cargo el agua. null = todavia no se carga (distinto de haber cargado 0).
+  aguaRegistradaEn DateTime?     @db.Timestamptz(3)
   montoTotal       Decimal       @db.Decimal(10, 2)
   montoMora        Decimal       @default(0) @db.Decimal(10, 2) // suma de las lineas de `moras`
 
-  // Foto del tipo y su peso de agua al generar la expensa: cambiar el tipo despues
-  // no altera los meses ya generados.
+  // Foto del tipo al generar la expensa: cambiar el tipo despues no altera los meses ya generados.
   tipoNombre       String?
-  pesoAgua         Decimal       @default(1) @db.Decimal(6, 3)
 
   estado           EstadoExpensa @default(PENDIENTE)
   fechaVencimiento DateTime
@@ -326,6 +328,13 @@ model Expensa {
   cargos           CargoExpensa[]
   cambiosVencimiento CambioVencimiento[]
   movimientosSaldo MovimientoSaldo[]
+  notificaciones   Notificacion[]
+  enviosCorreo     EnvioCorreo[]
+
+  // Plan de pagos en cuotas que cubre la deuda de esta expensa (null = pago normal). Mientras el
+  // plan esta activo la expensa no genera mora nueva y se cobra a traves de sus cuotas.
+  planPago         PlanPago?     @relation(fields: [planPagoId], references: [id])
+  planPagoId       String?
 
   createdAt        DateTime      @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
@@ -334,12 +343,13 @@ model Expensa {
   @@unique([inmuebleId, periodo])
   @@index([periodo])
   @@index([estado])
+  @@index([planPagoId])
 }
 
 // Una linea por concepto de una expensa: la cuota del departamento y, por cada baulera o
 // parqueo que paga la persona responsable, su propia cuota. Es una foto del momento en que se
 // genero la expensa; `Expensa.montoBase` es la suma de estas lineas. El agua va aparte
-// (`Expensa.montoAgua`): baulera y parqueo nunca participan del reparto del agua.
+// (`Expensa.montoAgua`) y solo la lleva el departamento: baulera y parqueo no tienen agua.
 model CargoExpensa {
   id          String        @id @default(uuid())
 
@@ -432,26 +442,6 @@ model MoraExpensa {
   @@index([expensaId])
 }
 
-// Factura mensual de agua del edificio (un solo medidor). Se reparte entre los departamentos
-// que pagan expensa segun el peso de su tipo; el reparto queda en `Expensa.montoAgua`.
-model FacturaAgua {
-  id              String   @id @default(uuid())
-  periodo         String   @unique // formato "YYYY-MM"
-
-  montoFactura    Decimal  @db.Decimal(10, 2)
-  totalPesos      Decimal  @db.Decimal(12, 3) // suma de pesos de las expensas del periodo
-  valorUnidad     Decimal  @db.Decimal(14, 6) // montoFactura / totalPesos
-  departamentos   Int      // expensas entre las que se repartio
-
-  registradoPor   Usuario? @relation(fields: [registradoPorId], references: [id])
-  registradoPorId String?
-
-  createdAt       DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
-
-  @@map("facturas_agua")
-}
-
 // Una operacion de cobro: lo que el administrador recibe en un momento. Puede repartirse
 // en varios `Pago` (uno por expensa cubierta, de la mas antigua a la mas nueva) y dejar un
 // sobrante como `MovimientoSaldo`. El folio es unico y es lo que se imprime en el recibo.
@@ -472,8 +462,13 @@ model Recibo {
   comprobanteMime   String?
   comprobanteNombre String?
 
+  // Clave que envia el cliente (cabecera Idempotency-Key) para que reenviar la misma solicitud
+  // no registre el cobro dos veces.
+  claveSolicitud    String?    @unique
+
   pagos             Pago[]
   movimientosSaldo  MovimientoSaldo[]
+  pagosCuota        PagoCuota[]
 
   registradoPor     Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId   String?
@@ -515,22 +510,56 @@ model MovimientoSaldo {
   @@index([reciboId])
 }
 
-// Ingresos extraordinarios y egresos generales (no ligados a una expensa puntual)
+// Categorias para clasificar gastos e ingresos extraordinarios. Cada categoria es de un solo tipo:
+// las de EGRESO solo se pueden usar en gastos y las de INGRESO solo en ingresos.
+model CategoriaMovimiento {
+  id          String         @id @default(uuid())
+  nombre      String
+  tipo        TipoMovimiento
+  activa      Boolean        @default(true)
+
+  movimientos MovimientoFinanciero[]
+
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([tipo, nombre])
+  @@map("categorias_movimiento")
+}
+
+// Ingresos extraordinarios y egresos (gastos) generales, no ligados a una expensa puntual.
+// El balance del edificio se calcula siempre a partir de estas filas (ingresos menos egresos).
 model MovimientoFinanciero {
-  id              String         @id @default(uuid())
+  id                String              @id @default(uuid())
 
-  tipo            TipoMovimiento
-  categoria       String
-  monto           Decimal        @db.Decimal(10, 2)
-  descripcion     String?
-  fecha           DateTime       @default(now()) @db.Timestamptz(3)
+  tipo              TipoMovimiento
+  categoria         CategoriaMovimiento @relation(fields: [categoriaId], references: [id])
+  categoriaId       String
+  monto             Decimal             @db.Decimal(10, 2)
+  concepto          String
+  fecha             DateTime            @db.Date
 
-  registradoPor   Usuario?       @relation(fields: [registradoPorId], references: [id])
-  registradoPorId String?
+  // Comprobante o factura opcional (JPG, PNG o PDF) guardado en el storage de Supabase.
+  comprobantePath   String?             @unique
+  comprobanteMime   String?
+  comprobanteNombre String?
+
+  // Anti reenvio: `claveSolicitud` es la que envia el cliente; `huella` resume los datos del
+  // movimiento para detectar la misma solicitud repetida unos segundos despues.
+  claveSolicitud    String?             @unique
+  huella            String?
+
+  registradoPor     Usuario?            @relation(fields: [registradoPorId], references: [id])
+  registradoPorId   String?
+
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
 
   @@map("movimientos_financieros")
   @@index([tipo])
   @@index([fecha])
+  @@index([categoriaId])
+  @@index([huella, createdAt])
 }
 
 // Cuentas de banco/caja del edificio
@@ -604,4 +633,164 @@ model PagoPersonal {
   @@map("pagos_personal")
   @@unique([personalId, periodo])
   @@index([personalId])
+}
+
+// ---------------------------------------------------------------------------
+// Planes de pago en cuotas (HU3 - CA11)
+// ---------------------------------------------------------------------------
+
+enum EstadoPlanPago {
+  ACTIVO
+  COMPLETADO
+  CANCELADO // se deshizo antes de recibir pagos: sus expensas vuelven al cobro normal
+}
+
+enum EstadoCuota {
+  PENDIENTE
+  PARCIAL
+  PAGADA
+  VENCIDA
+}
+
+// Acuerdo para dividir la deuda de un departamento en varias cuotas. `montoTotal` es lo que se
+// debia (mora incluida) de las expensas que cubre; la suma de las cuotas es igual a ese total.
+model PlanPago {
+  id              String         @id @default(uuid())
+
+  inmueble        Inmueble       @relation(fields: [inmuebleId], references: [id])
+  inmuebleId      String
+
+  montoTotal      Decimal        @db.Decimal(10, 2)
+  cantidadCuotas  Int
+  observacion     String?
+  estado          EstadoPlanPago @default(ACTIVO)
+
+  expensas        Expensa[]
+  cuotas          CuotaPlan[]
+
+  registradoPor   Usuario?       @relation(fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@map("planes_pago")
+  @@index([inmuebleId])
+  @@index([estado])
+}
+
+// Una cuota del plan, con su propio importe, vencimiento, pagado y estado.
+model CuotaPlan {
+  id               String      @id @default(uuid())
+
+  plan             PlanPago    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId           String
+
+  numero           Int
+  monto            Decimal     @db.Decimal(10, 2)
+  montoPagado      Decimal     @default(0) @db.Decimal(10, 2)
+  fechaVencimiento DateTime    @db.Date
+  estado           EstadoCuota @default(PENDIENTE)
+
+  pagos            PagoCuota[]
+
+  createdAt        DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@map("cuotas_plan")
+  @@unique([planId, numero])
+  @@index([estado, fechaVencimiento])
+}
+
+// Lo que cada cobro (recibo) aplico a una cuota: deja rastro de que se cobro y a que cuota fue.
+model PagoCuota {
+  id        String    @id @default(uuid())
+
+  cuota     CuotaPlan @relation(fields: [cuotaId], references: [id], onDelete: Cascade)
+  cuotaId   String
+
+  recibo    Recibo    @relation(fields: [reciboId], references: [id])
+  reciboId  String
+
+  monto     Decimal   @db.Decimal(10, 2)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@map("pagos_cuota")
+  @@index([cuotaId])
+  @@index([reciboId])
+}
+
+// ---------------------------------------------------------------------------
+// Notificaciones de la campanita del residente y registro de correos (HU3 - CA15 y CA16)
+// ---------------------------------------------------------------------------
+
+enum TipoNotificacion {
+  PROXIMO_VENCIMIENTO // se acerca la fecha limite de pago
+  PROXIMA_MORA        // se acerca el fin del periodo de gracia: despues se aplica mora
+  OBLIGACION_VENCIDA  // la obligacion vencio sin pagarse
+  MORA_APLICADA       // se genero un recargo por mora
+  DEUDA_CON_MORA      // recordatorio: sigue pendiente una deuda con mora
+  PAGO_REGISTRADO     // se registro un pago
+}
+
+// Aviso para un residente. `clave` identifica el aviso para no repetirlo (por ejemplo
+// "OBLIGACION_VENCIDA:<expensa>"); `vigente` pasa a false cuando deja de aplicar (la deuda se pago).
+model Notificacion {
+  id              String           @id @default(uuid())
+
+  copropietario   Copropietario    @relation(fields: [copropietarioId], references: [id], onDelete: Cascade)
+  copropietarioId String
+
+  expensa         Expensa?         @relation(fields: [expensaId], references: [id], onDelete: SetNull)
+  expensaId       String?
+
+  tipo            TipoNotificacion
+  titulo          String
+  mensaje         String
+  monto           Decimal?         @db.Decimal(10, 2)
+
+  leida           Boolean          @default(false)
+  leidaEn         DateTime?        @db.Timestamptz(3)
+  vigente         Boolean          @default(true)
+  clave           String
+
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@map("notificaciones")
+  @@unique([copropietarioId, clave])
+  @@index([copropietarioId, leida, createdAt])
+  @@index([expensaId])
+}
+
+enum TipoCorreo {
+  EXPENSA_GENERADA
+  MORA_APLICADA
+}
+
+enum EstadoEnvioCorreo {
+  ENVIADO
+  FALLIDO // se intento y fallo (correo invalido, error del servidor de correo)
+  OMITIDO // no se intento (nadie con correo registrado, correo no configurado)
+}
+
+// Registro de cada aviso por correo: si no se pudo enviar queda el motivo, y la expensa se genera igual.
+model EnvioCorreo {
+  id           String            @id @default(uuid())
+
+  expensa      Expensa?          @relation(fields: [expensaId], references: [id], onDelete: SetNull)
+  expensaId    String?
+
+  tipo         TipoCorreo
+  destinatario String?
+  asunto       String
+  estado       EstadoEnvioCorreo
+  motivo       String?
+
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@map("envios_correo")
+  @@index([expensaId])
+  @@index([estado, createdAt])
 }

@@ -22,7 +22,7 @@ function camposPublicos() {
     cuotaMensual: true,
     tipoInmuebleId: true,
     tipoInmueble: {
-      select: { id: true, nombre: true, montoBase: true, pesoAgua: true },
+      select: { id: true, nombre: true, montoBase: true },
     },
     _count: { select: { ocupaciones: { where: filtroOcupanteVigente() } } },
     createdAt: true,
@@ -57,7 +57,6 @@ function presentar(inmueble, tarifas) {
       id: null,
       nombre: ETIQUETA_CLASE[resto.clase] ?? resto.clase,
       montoBase: "0",
-      pesoAgua: "0",
     },
   };
 }

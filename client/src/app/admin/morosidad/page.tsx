@@ -54,11 +54,11 @@ import { financeService } from "@/services/finance.service";
 import {
   EstadoExpensa,
   ExpensaDTO,
+  PaginaExpensasDTO,
   MetodoPago,
   TipoValorMora,
   ResultadoGeneracionDTO,
   TipoInmuebleDTO,
-  DetalleFacturaAguaDTO,
 } from "@/types/finance";
 
 const CLASE_LABEL_CAMPO =
@@ -96,17 +96,15 @@ function ContenidoMorosidad() {
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
   const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
 
-  const [detalleAgua, setDetalleAgua] = useState<DetalleFacturaAguaDTO | null>(null);
-  const [periodoAgua, setPeriodoAgua] = useState(periodoActual());
-  const [montoFactura, setMontoFactura] = useState("");
+  // Carga manual del agua de la expensa abierta en el detalle.
+  const [bolEditandoAgua, setBolEditandoAgua] = useState(false);
+  const [montoAgua, setMontoAgua] = useState("");
   const [errorAgua, setErrorAgua] = useState("");
   const [guardandoAgua, setGuardandoAgua] = useState(false);
-  const [viendoAgua, setViendoAgua] = useState(false);
   const [tipoEditando, setTipoEditando] = useState<TipoInmuebleDTO | null>(null);
   const [dialogTipoAbierto, setDialogTipoAbierto] = useState(false);
   const [nombreTipo, setNombreTipo] = useState("");
   const [tarifaTipo, setTarifaTipo] = useState("");
-  const [pesoTipo, setPesoTipo] = useState("1");
   const [errorTipo, setErrorTipo] = useState("");
   const [guardandoTipo, setGuardandoTipo] = useState(false);
 
@@ -201,16 +199,12 @@ function ContenidoMorosidad() {
     queryKey: ["morosidad", "tipos"], queryFn: () => financeService.listarTiposInmueble(),
     staleTime: 120_000,
   });
-  const facturasQuery = useQuery({
-    queryKey: ["morosidad", "agua", "facturas"], queryFn: () => financeService.listarFacturasAgua(),
-  });
   const expensas = expensasQuery.data?.expensas ?? EXPENSAS_VACIAS;
   const paginacion = expensasQuery.data?.paginacion;
   const configMora = configQuery.data ?? null;
   const historialConfiguracion = historialQuery.data ?? [];
   const inmuebles = inmueblesQuery.data ?? [];
   const tiposInmueble = tiposQuery.data ?? [];
-  const facturasAgua = facturasQuery.data ?? [];
   const isLoading = expensasQuery.isPending;
   const errorCarga = expensasQuery.isError
     ? obtenerMensajeError(expensasQuery.error, "No se pudieron cargar las expensas.") : "";
@@ -221,7 +215,7 @@ function ContenidoMorosidad() {
   async function reintentarConsultas() {
     await Promise.all([
       expensasQuery.refetch(), configQuery.refetch(), historialQuery.refetch(),
-      inmueblesQuery.refetch(), tiposQuery.refetch(), facturasQuery.refetch(),
+      inmueblesQuery.refetch(), tiposQuery.refetch(),
     ]);
   }
 
@@ -242,7 +236,6 @@ function ContenidoMorosidad() {
     setTipoEditando(tipo);
     setNombreTipo(tipo.nombre);
     setTarifaTipo(String(tipo.montoBase));
-    setPesoTipo(String(tipo.pesoAgua));
     setErrorTipo("");
     setDialogTipoAbierto(true);
   }
@@ -255,18 +248,15 @@ function ContenidoMorosidad() {
       return;
     }
     const montoBase = Number(tarifaTipo);
-    const pesoAgua = Number(pesoTipo);
-    if (!nombreTipo.trim() || !tarifaTipo || !pesoTipo || !Number.isFinite(montoBase) ||
-        !Number.isFinite(pesoAgua) || montoBase < 0 || pesoAgua <= 0 ||
-        !/^\d+(\.\d{1,2})?$/.test(tarifaTipo) ||
-        !/^\d+(\.\d{1,3})?$/.test(pesoTipo)) {
-      setErrorTipo("Revisa el nombre, la tarifa (hasta 2 decimales) y el peso de agua (hasta 3 decimales, mayor a cero).");
+    if (!nombreTipo.trim() || !tarifaTipo || !Number.isFinite(montoBase) || montoBase < 0 ||
+        !/^\d+(\.\d{1,2})?$/.test(tarifaTipo)) {
+      setErrorTipo("Revisa el nombre y la tarifa (0 o más, hasta 2 decimales).");
       return;
     }
     setGuardandoTipo(true);
     setErrorTipo("");
     try {
-      await financeService.guardarTipoInmueble({ nombre: nombreTipo.trim(), montoBase, pesoAgua }, tipoEditando.id);
+      await financeService.guardarTipoInmueble({ nombre: nombreTipo.trim(), montoBase }, tipoEditando.id);
       setDialogTipoAbierto(false);
       setStrExito("Tarifa del tipo actualizada para próximas generaciones.");
       await queryClient.invalidateQueries({ queryKey: ["morosidad", "tipos"] });
@@ -277,49 +267,93 @@ function ContenidoMorosidad() {
     }
   }
 
-  async function handleConsultarAgua() {
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodoAgua)) {
-      setErrorAgua("El período debe tener formato YYYY-MM.");
+  async function handleCargarAgua(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!expensaDetalle) return;
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setErrorAgua(objValidacion.mensaje);
       return;
     }
-    setViendoAgua(true);
-    setErrorAgua("");
-    setDetalleAgua(null);
-    try {
-      setDetalleAgua(await financeService.obtenerFacturaAgua(periodoAgua));
-    } catch (error) {
-      setErrorAgua(obtenerMensajeError(error, "No hay una factura registrada para ese período."));
-    } finally {
-      setViendoAgua(false);
-    }
-  }
-
-  async function handleRegistrarAgua(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!validarAccion(rol, "morosidad", "editar").permitido) return;
-    const monto = Number(montoFactura);
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(periodoAgua) || !montoFactura ||
-        !Number.isFinite(monto) || monto < 0 || !/^\d+(\.\d{1,2})?$/.test(montoFactura)) {
-      setErrorAgua("Selecciona un período válido e introduce un importe no negativo con máximo 2 decimales.");
+    const monto = Number(montoAgua);
+    if (montoAgua.trim() === "" || !Number.isFinite(monto) || monto < 0 || !/^\d+(\.\d{1,2})?$/.test(montoAgua.trim())) {
+      setErrorAgua("Introduce un importe de agua de 0 o más, con máximo 2 decimales.");
       return;
     }
     setGuardandoAgua(true);
     setErrorAgua("");
-    setStrExito("");
     try {
-      await financeService.registrarFacturaAgua(periodoAgua, monto);
-      setDetalleAgua(await financeService.obtenerFacturaAgua(periodoAgua));
-      setMontoFactura("");
-      setStrExito(`Factura de agua de ${periodoAgua} registrada y distribuida entre las expensas existentes.`);
-      await Promise.all([
-        actualizarExpensas(),
-        queryClient.invalidateQueries({ queryKey: ["morosidad", "agua", "facturas"] }),
-      ]);
+      const actualizada = await financeService.cargarAgua(expensaDetalle.id, monto);
+      // El PATCH no devuelve las relaciones: se conservan las del detalle abierto.
+      setExpensaDetalle({
+        ...expensaDetalle,
+        ...actualizada,
+        inmueble: expensaDetalle.inmueble,
+        pagos: actualizada.pagos ?? expensaDetalle.pagos,
+        moras: actualizada.moras ?? expensaDetalle.moras,
+        cambiosVencimiento: actualizada.cambiosVencimiento ?? expensaDetalle.cambiosVencimiento,
+      });
+      const intSaldoAplicado = Number(actualizada.saldoFavorAplicado ?? 0);
+      setStrExito(
+        `Agua de ${expensaDetalle.inmueble.codigo} (${expensaDetalle.periodo}) registrada: ${formatCurrency(monto)}.` +
+          (intSaldoAplicado > 0 ? ` Se cubrieron ${formatCurrency(intSaldoAplicado)} con el saldo a favor.` : "")
+      );
+      setBolEditandoAgua(false);
+      await actualizarExpensas();
     } catch (error) {
-      setErrorAgua(obtenerMensajeError(error, "No se pudo distribuir el agua. Comprueba que haya expensas generadas."));
+      setErrorAgua(obtenerMensajeError(error, "No se pudo registrar el agua de esta expensa."));
     } finally {
       setGuardandoAgua(false);
     }
+  }
+
+  // Guardado desde la celda Agua (sin abrir el detalle). Reutiliza el endpoint existente.
+  async function guardarAguaEnTabla(exp: ExpensaDTO, monto: number): Promise<void> {
+    const permiso = validarAccion(rol, "morosidad", "editar");
+    if (!permiso.permitido) throw new Error(permiso.mensaje);
+    if (exp.estado === "PAGADA") throw new Error("No se puede editar agua de una expensa pagada.");
+    if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar agua con mora generada.");
+
+    // Confirmamos primero la operación en el servidor. Evita presentar un importe
+    // como guardado si el backend lo rechaza (por pagos, mora o plan de cuotas).
+    const resultado = await financeService.cargarAgua(exp.id, monto);
+
+    // El PATCH devuelve la expensa actualizada: reutilizamos esos valores para
+    // refrescar inmediatamente la fila sin esperar otro GET de 25 expensas.
+    // Cancelamos cualquier consulta anterior que pudiera sobrescribirlos.
+    await queryClient.cancelQueries({ queryKey: ["morosidad", "expensas"] });
+    queryClient.setQueriesData<PaginaExpensasDTO>(
+      { queryKey: ["morosidad", "expensas"] },
+      (paginaAnterior) => {
+        if (!paginaAnterior?.expensas.some((item) => item.id === exp.id)) {
+          return paginaAnterior;
+        }
+        return {
+          ...paginaAnterior,
+          expensas: paginaAnterior.expensas.map((item) =>
+            item.id === exp.id
+              ? {
+                  ...item,
+                  ...resultado,
+                  inmueble: item.inmueble,
+                  pagos: resultado.pagos ?? item.pagos,
+                  moras: resultado.moras ?? item.moras,
+                  cambiosVencimiento:
+                    resultado.cambiosVencimiento ?? item.cambiosVencimiento,
+                }
+              : item
+          ),
+        };
+      }
+    );
+
+    // Reconciliación en segundo plano: no bloquea el formulario ni otra edición.
+    void queryClient.invalidateQueries({ queryKey: ["morosidad", "expensas"] });
+    const aplicado = Number(resultado.saldoFavorAplicado ?? 0);
+    setStrExito(
+      `Agua de ${exp.inmueble.codigo} (${exp.periodo}) guardada: ${formatCurrency(monto)}.` +
+        (aplicado > 0 ? ` Se aplicaron ${formatCurrency(aplicado)} de crédito disponible.` : "")
+    );
   }
 
   async function handleSaveConfig() {
@@ -548,6 +582,19 @@ function ContenidoMorosidad() {
         .some((valor) => valor.toLocaleLowerCase("es").includes(texto)))
     );
   }, [expensas, filtroTipo, searchTerm]);
+
+  // `aguaRegistradaEn` null = el administrador todavía no cargó el agua de esa expensa.
+  const expensasSinAgua = useMemo(
+    () => expensas.filter((exp) => !exp.aguaRegistradaEn && exp.estado !== "PAGADA"),
+    [expensas]
+  );
+
+  function abrirDetalleExpensa(exp: ExpensaDTO, bolCargarAgua = false) {
+    setExpensaDetalle(exp);
+    setErrorAgua("");
+    setMontoAgua(Number(exp.montoAgua) > 0 ? String(Number(exp.montoAgua)) : "");
+    setBolEditandoAgua(bolCargarAgua && bolPuedeGestionar && (exp.moras?.length ?? 0) === 0);
+  }
 
   const hayFiltrosActivos =
     filtroPeriodo !== periodoActual() || filtroTipo !== "TODOS" || filtroEstado !== "TODOS" || Boolean(filtroInmuebleId) || Boolean(searchTerm.trim());
@@ -827,8 +874,11 @@ function ContenidoMorosidad() {
       {/* Tarifas y agua. Los importes oficiales siempre los calcula el backend. */}
       <Card className="mb-6 shadow-sm">
         <CardHeader>
-          <CardTitle className={CLASE_TITULO_SECCION}>Tarifas de departamentos y factura de agua</CardTitle>
-          <p className={CLASE_AYUDA}>Las tarifas se aplican a nuevas expensas. El agua se reparte sobre las expensas existentes del período, según el peso del tipo.</p>
+          <CardTitle className={CLASE_TITULO_SECCION}>Tarifas y agua</CardTitle>
+          <p className={CLASE_AYUDA}>
+            Las tarifas de cada tipo se aplican a las nuevas expensas. El agua se carga a mano en la expensa de cada
+            departamento.
+          </p>
         </CardHeader>
         <CardContent className="grid gap-5 lg:grid-cols-2">
           <section className="space-y-3">
@@ -843,13 +893,10 @@ function ContenidoMorosidad() {
                       <span className="font-title flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-[16px] font-bold text-primary">
                         {tipo.nombre}
                       </span>
-                      <div>
-                        <p className="text-[13px] font-medium tabular-nums text-foreground">
-                          {formatCurrency(Number(tipo.montoBase))}
-                          <span className="font-normal text-muted-foreground"> / mes</span>
-                        </p>
-                        <p className={CLASE_AYUDA}>Peso agua: {Number(tipo.pesoAgua)}</p>
-                      </div>
+                      <p className="text-[13px] font-medium tabular-nums text-foreground">
+                        {formatCurrency(Number(tipo.montoBase))}
+                        <span className="font-normal text-muted-foreground"> / mes</span>
+                      </p>
                     </div>
                     {bolPuedeGestionar && <Button size="sm" variant="outline" onClick={() => abrirFormularioTipo(tipo)}>Editar</Button>}
                   </div>
@@ -859,41 +906,35 @@ function ContenidoMorosidad() {
           </section>
 
           <section className="space-y-3">
-            <h3 className={CLASE_LABEL_CAMPO}>Agua del edificio por período</h3>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <Input type="month" aria-label="Período del agua" value={periodoAgua}
-                onChange={(e) => { setPeriodoAgua(e.target.value); setDetalleAgua(null); setErrorAgua(""); }} />
-              <Button variant="outline" type="button" disabled={viendoAgua} onClick={handleConsultarAgua}>
-                {viendoAgua ? "Consultando..." : "Consultar reparto"}
-              </Button>
-            </div>
-            {bolPuedeGestionar && (
-              <form className="flex gap-2" onSubmit={handleRegistrarAgua}>
-                <Input aria-label="Importe de la factura de agua en bolivianos" placeholder="Factura total Bs" type="number" min="0" step="0.01"
-                  value={montoFactura} onChange={(e) => setMontoFactura(e.target.value)} />
-                <Button type="submit" cargando={guardandoAgua}>{guardandoAgua ? "Guardando..." : "Registrar agua"}</Button>
-              </form>
-            )}
-            <p className={CLASE_AYUDA}>Si ya existe una factura de ese mes, registrar un nuevo monto la corrige y recalcula el reparto. El servidor puede rechazarlo si afecta importes ya pagados.</p>
-            {errorAgua && <p role="alert" className={CLASE_AVISO_ERROR}>{errorAgua}</p>}
-            {facturasAgua.length > 0 && (
-              <p className={CLASE_AYUDA}>Facturas registradas: {facturasAgua.map((f) => f.periodo).slice(0, 6).join(", ")}</p>
-            )}
-            {detalleAgua && (
-              <details open className="rounded-lg border border-border p-3">
-                <summary className="cursor-pointer text-[13px] font-medium text-foreground">
-                  Reparto {detalleAgua.factura.periodo}: <span className="tabular-nums">{formatCurrency(Number(detalleAgua.factura.montoFactura))}</span>
-                </summary>
-                <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
-                  {detalleAgua.reparto.map((fila) => (
-                    <div key={fila.expensaId} className="flex justify-between gap-2 border-b border-border pb-2 text-[12px] last:border-0">
-                      <span className="text-muted-foreground">{fila.inmuebleCodigo} · Tipo {fila.tipo} · Peso {fila.peso}</span>
-                      <span className="font-medium tabular-nums text-foreground">{formatCurrency(Number(fila.montoAgua))}</span>
-                    </div>
+            <h3 className={CLASE_LABEL_CAMPO}>Agua de {etiquetaPeriodo(filtroPeriodo)}</h3>
+            {expensasSinAgua.length === 0 ? (
+              <p className="rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">
+                {expensas.length === 0
+                  ? "No hay expensas generadas en este mes."
+                  : "Todas las expensas de esta página tienen el agua cargada."}
+              </p>
+            ) : (
+              <>
+                <p className="text-[13px] leading-[1.45] text-muted-foreground">
+                  <span className="font-medium text-destructive">{expensasSinAgua.length}</span>{" "}
+                  expensa{expensasSinAgua.length === 1 ? "" : "s"} de esta página todavía no tiene{expensasSinAgua.length === 1 ? "" : "n"} el agua
+                  cargada.{bolPuedeGestionar && " Ábrela para registrar su importe."}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {expensasSinAgua.slice(0, 12).map((exp) => (
+                    <Button key={exp.id} size="sm" variant="outline" onClick={() => abrirDetalleExpensa(exp, true)}>
+                      {exp.inmueble.codigo}
+                    </Button>
                   ))}
+                  {expensasSinAgua.length > 12 && (
+                    <span className={`${CLASE_AYUDA} self-center`}>y {expensasSinAgua.length - 12} más</span>
+                  )}
                 </div>
-              </details>
+              </>
             )}
+            <p className={CLASE_AYUDA}>
+              El agua puede corregirse mientras la expensa no tenga mora y el nuevo total no quede por debajo de lo ya pagado.
+            </p>
           </section>
         </CardContent>
       </Card>
@@ -1019,7 +1060,8 @@ function ContenidoMorosidad() {
               historialConfiguracion={historialConfiguracion}
               bolPuedeGestionar={bolPuedeGestionar}
               errorCarga={errorCarga}
-              onDetalle={setExpensaDetalle}
+              onDetalle={(exp) => abrirDetalleExpensa(exp)}
+              onGuardarAgua={guardarAguaEnTabla}
               onPago={abrirDialogoPago}
             />
           )}
@@ -1050,15 +1092,13 @@ function ContenidoMorosidad() {
         <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle className={CLASE_TITULO_DIALOGO}>Editar tipo de departamento</DialogTitle>
-            <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>La tarifa y el peso se usan para las próximas expensas; no cambian las ya generadas.</DialogDescription>
+            <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>La tarifa se usa para las próximas expensas; no cambia las ya generadas.</DialogDescription>
           </DialogHeader>
           <form className="space-y-3" onSubmit={handleGuardarTipo}>
             <div className="space-y-1"><label htmlFor="nombreTipo" className={CLASE_LABEL_CAMPO}>Nombre del tipo</label>
               <Input id="nombreTipo" maxLength={50} required value={nombreTipo} onChange={(e) => setNombreTipo(e.target.value)} placeholder="A, B, C" /></div>
             <div className="space-y-1"><label htmlFor="tarifaTipo" className={CLASE_LABEL_CAMPO}>Tarifa mensual fija (Bs)</label>
               <Input id="tarifaTipo" type="number" min="0" step="0.01" required value={tarifaTipo} onChange={(e) => setTarifaTipo(e.target.value)} /></div>
-            <div className="space-y-1"><label htmlFor="pesoTipo" className={CLASE_LABEL_CAMPO}>Peso para distribuir agua</label>
-              <Input id="pesoTipo" type="number" min="0.001" step="0.001" required value={pesoTipo} onChange={(e) => setPesoTipo(e.target.value)} /></div>
             {errorTipo && <p role="alert" className={CLASE_AVISO_ERROR}>{errorTipo}</p>}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogTipoAbierto(false)} disabled={guardandoTipo}>Cancelar</Button>
@@ -1214,9 +1254,63 @@ function ContenidoMorosidad() {
                     <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoBase))}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">Agua del período</span>
-                    <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoAgua))}</span>
+                    <span className="text-muted-foreground">
+                      Agua del período
+                      {!expensaDetalle.aguaRegistradaEn && (
+                        <span className="font-caption ml-2 rounded-full bg-danger-subtle px-2 py-0.5 text-[10px] text-destructive">
+                          Sin cargar
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-2 text-foreground">
+                      {formatCurrency(Number(expensaDetalle.montoAgua))}
+                      {bolPuedeGestionar && !bolEditandoAgua && expensaDetalle.estado !== "PAGADA" && (expensaDetalle.moras?.length ?? 0) === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMontoAgua(Number(expensaDetalle.montoAgua) > 0 ? String(Number(expensaDetalle.montoAgua)) : "");
+                            setErrorAgua("");
+                            setBolEditandoAgua(true);
+                          }}
+                          className="font-caption text-[12px] font-medium text-primary hover:text-primary/80"
+                        >
+                          {expensaDetalle.aguaRegistradaEn ? "Corregir" : "Cargar agua"}
+                        </button>
+                      )}
+                    </span>
                   </div>
+                  {bolEditandoAgua && (
+                    <form onSubmit={handleCargarAgua} noValidate className="flex flex-col gap-2 rounded-lg bg-muted/30 p-3">
+                      <label htmlFor="montoAgua" className={CLASE_LABEL_CAMPO}>
+                        Importe de agua de {expensaDetalle.inmueble.codigo} (Bs)
+                      </label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="montoAgua"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          autoFocus
+                          placeholder="0.00"
+                          value={montoAgua}
+                          onChange={(e) => {
+                            setMontoAgua(e.target.value);
+                            setErrorAgua("");
+                          }}
+                        />
+                        <Button type="button" variant="outline" disabled={guardandoAgua} onClick={() => setBolEditandoAgua(false)}>
+                          Cancelar
+                        </Button>
+                        <Button type="submit" cargando={guardandoAgua}>
+                          {guardandoAgua ? "Guardando..." : "Guardar"}
+                        </Button>
+                      </div>
+                      {errorAgua && <p role="alert" className={CLASE_AVISO_ERROR}>{errorAgua}</p>}
+                      <p className={CLASE_AYUDA}>
+                        Se suma a la tarifa fija y recalcula el total. Si el inmueble tiene saldo a favor, cubre el aumento.
+                      </p>
+                    </form>
+                  )}
                   <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
                     <span className="font-medium text-foreground">Total expensa (sin mora)</span>
                     <span className="font-medium text-foreground">{formatCurrency(Number(expensaDetalle.montoTotal))}</span>

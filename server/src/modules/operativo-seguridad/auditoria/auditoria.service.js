@@ -3,7 +3,11 @@ const prisma = require("../../../config/prisma");
 // Agrupa las entidades auditadas por modulo del sistema. No se guarda en la base:
 // se calcula al consultar, asi que una entidad nueva solo requiere agregarla aqui.
 const MODULOS = {
-  Financiero: ["Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora", "MoraExpensa", "FacturaAgua"],
+  // "FacturaAgua" ya no existe, pero se conserva para agrupar los eventos historicos que dejo.
+  Financiero: [
+    "Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora", "MoraExpensa", "FacturaAgua",
+    "MovimientoFinanciero", "CategoriaMovimiento", "PlanPago", "CuotaPlan",
+  ],
   Seguridad: ["Usuario"],
   Copropietarios: ["Copropietario"],
   Inmuebles: ["Inmueble", "OcupanteInmueble", "TipoInmueble", "TarifaClase"],

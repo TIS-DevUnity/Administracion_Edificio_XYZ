@@ -12,7 +12,7 @@ const GESTION = autorizar("ADMINISTRADOR");
  * @openapi
  * /api/tipos-inmueble:
  *   get:
- *     summary: Lista los tipos de departamento (A, B, C...) con su expensa fija y su peso de agua
+ *     summary: Lista los tipos de departamento (A, B, C...) con su expensa fija
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     responses:
@@ -20,8 +20,8 @@ const GESTION = autorizar("ADMINISTRADOR");
  *   post:
  *     summary: Crea un tipo de departamento (solo ADMINISTRADOR)
  *     description: |
- *       `montoBase` es la expensa fija mensual del tipo. `pesoAgua` (mayor que 0, 1 por
- *       defecto) es el peso con el que el tipo participa en el reparto de la factura de agua.
+ *       `montoBase` es la expensa fija mensual del tipo. El agua no depende del tipo: el
+ *       administrador la carga a mano en cada expensa.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -34,7 +34,6 @@ const GESTION = autorizar("ADMINISTRADOR");
  *             properties:
  *               nombre: { type: string, example: A }
  *               montoBase: { type: number, example: 300 }
- *               pesoAgua: { type: number, example: 1 }
  *     responses:
  *       201: { description: Tipo creado }
  *       400: { description: Datos invalidos }
@@ -60,7 +59,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  *       200: { description: OK }
  *       404: { description: Tipo de inmueble no encontrado }
  *   put:
- *     summary: Edita nombre, expensa fija o peso de agua de un tipo (solo ADMINISTRADOR)
+ *     summary: Edita nombre o expensa fija de un tipo (solo ADMINISTRADOR)
  *     description: Solo afecta a las expensas que se generen despues; las ya generadas no cambian.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
@@ -78,7 +77,6 @@ router.post("/", autenticar, GESTION, controller.crear);
  *             properties:
  *               nombre: { type: string }
  *               montoBase: { type: number }
- *               pesoAgua: { type: number }
  *     responses:
  *       200: { description: Tipo actualizado }
  *       400: { description: Datos invalidos }

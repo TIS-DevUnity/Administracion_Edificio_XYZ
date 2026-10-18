@@ -28,17 +28,17 @@ async function crearAdministrador() {
 }
 
 async function cargarEjemplo() {
-  // Tipos de departamento: expensa fija mensual y peso en el reparto del agua.
+  // Tipos de departamento: expensa fija mensual (el agua se carga a mano en cada expensa).
   const tipos = {};
-  for (const [nombre, montoBase, pesoAgua] of [
-    ["A", 300, 1],
-    ["B", 350, 1.25],
-    ["C", 400, 1.5],
+  for (const [nombre, montoBase] of [
+    ["A", 300],
+    ["B", 350],
+    ["C", 400],
   ]) {
     tipos[nombre] = await prisma.tipoInmueble.upsert({
       where: { nombre },
       update: {},
-      create: { nombre, montoBase, pesoAgua },
+      create: { nombre, montoBase },
     });
   }
 

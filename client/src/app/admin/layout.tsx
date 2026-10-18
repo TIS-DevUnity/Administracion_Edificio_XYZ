@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Building,
   Building2,
   CalendarClock,
   ClipboardList,
@@ -12,6 +11,7 @@ import {
   LayoutDashboard,
   LineChart,
   Menu,
+  ReceiptText,
   ShieldCheck,
   UserCheck,
   UserCog,
@@ -37,7 +37,6 @@ import { LogoMark } from "@/components/LogoMark";
 const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
   panel: LayoutDashboard,
   finanzas: LineChart,
-  edificios: Building,
   inmuebles: Building2,
   residentes: UserCheck,
   copropietarios: Users,
@@ -157,18 +156,33 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
             {seccionesVisibles.map((seccion) => {
               const Icono = ICONO_SECCION[seccion.id];
               return (
-                <Link
-                  key={seccion.id}
+                <div key={seccion.id} className="flex shrink-0 flex-col gap-0.5">
+                  <Link
                   href={seccion.href}
                   className={`font-subtitle flex h-9 shrink-0 items-center gap-2.5 rounded-lg px-3 text-[14px] font-medium leading-[1.3] tracking-[-0.005em] transition-[background-color,color,box-shadow,transform] duration-200 ${
-                    seccion.id === seccionActual
+                    (seccion.id === seccionActual && (seccion.id !== "finanzas" || pathname === "/admin/finanzas"))
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-sidebar-primary/25"
                       : "text-sidebar-foreground hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   }`}
                 >
                   <Icono className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 truncate">{seccion.label}</span>
-                </Link>
+                  </Link>
+                  {seccion.id === "finanzas" && (
+                    <Link
+                      href="/admin/finanzas/movimientos"
+                      aria-current={pathname.startsWith("/admin/finanzas/movimientos") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${
+                        pathname.startsWith("/admin/finanzas/movimientos")
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      }`}
+                    >
+                      <ReceiptText className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Movimientos</span>
+                    </Link>
+                  )}
+                </div>
               );
             })}
           </nav>
@@ -255,19 +269,35 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
             {seccionesVisibles.map((seccion) => {
               const Icono = ICONO_SECCION[seccion.id];
               return (
-                <Link
-                  key={seccion.id}
+                <div key={seccion.id} className="flex flex-col gap-0.5">
+                  <Link
                   href={seccion.href}
                   onClick={handleNavegacionMovil}
                   className={`font-subtitle flex min-h-10 shrink-0 items-center gap-2.5 rounded-lg px-3 text-[14px] font-medium leading-[1.3] tracking-[-0.005em] transition-colors duration-200 ${
-                    seccion.id === seccionActual
+                    (seccion.id === seccionActual && (seccion.id !== "finanzas" || pathname === "/admin/finanzas"))
                       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-sidebar-primary/25"
                       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                   }`}
                 >
                   <Icono className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 truncate">{seccion.label}</span>
-                </Link>
+                  </Link>
+                  {seccion.id === "finanzas" && (
+                    <Link
+                      href="/admin/finanzas/movimientos"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/movimientos") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${
+                        pathname.startsWith("/admin/finanzas/movimientos")
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      }`}
+                    >
+                      <ReceiptText className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Movimientos</span>
+                    </Link>
+                  )}
+                </div>
               );
             })}
           </nav>

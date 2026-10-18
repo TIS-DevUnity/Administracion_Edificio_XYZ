@@ -9,14 +9,12 @@ const CAMPOS_PUBLICOS = {
   id: true,
   nombre: true,
   montoBase: true,
-  pesoAgua: true,
   createdAt: true,
   updatedAt: true,
 };
 
 const MAX_NOMBRE = 50;
 const MONTO_MAXIMO = new Decimal("99999999.99"); // limite de DECIMAL(10,2)
-const PESO_MAXIMO = new Decimal("999.999"); // limite de DECIMAL(6,3)
 
 function errorValidacion(mensaje) {
   return Object.assign(new Error(mensaje), { status: 400 });
@@ -55,15 +53,6 @@ function validarMontoBase(valor) {
   return monto;
 }
 
-/** Peso del tipo en el reparto del agua: mayor que 0, hasta 3 decimales. */
-function validarPesoAgua(valor) {
-  const peso = parsearNumero(valor, "pesoAgua");
-  if (peso.lte(0)) throw errorValidacion("pesoAgua debe ser mayor que 0");
-  if (peso.decimalPlaces() > 3) throw errorValidacion("pesoAgua admite como maximo 3 decimales");
-  if (peso.gt(PESO_MAXIMO)) throw errorValidacion("pesoAgua supera el maximo permitido");
-  return peso;
-}
-
 async function listar() {
   return prisma.tipoInmueble.findMany({
     select: CAMPOS_PUBLICOS,
@@ -82,10 +71,9 @@ async function obtenerPorId(id) {
   return tipoInmueble;
 }
 
-async function crear({ nombre, montoBase, pesoAgua, actorId, ip }) {
+async function crear({ nombre, montoBase, actorId, ip }) {
   const nombreLimpio = validarNombre(nombre);
   const monto = validarMontoBase(montoBase);
-  const peso = pesoAgua === undefined || pesoAgua === null || pesoAgua === "" ? new Decimal(1) : validarPesoAgua(pesoAgua);
 
   const existente = await prisma.tipoInmueble.findUnique({ where: { nombre: nombreLimpio } });
   if (existente) {
@@ -93,7 +81,7 @@ async function crear({ nombre, montoBase, pesoAgua, actorId, ip }) {
   }
 
   const tipoInmueble = await prisma.tipoInmueble.create({
-    data: { nombre: nombreLimpio, montoBase: monto, pesoAgua: peso },
+    data: { nombre: nombreLimpio, montoBase: monto },
     select: CAMPOS_PUBLICOS,
   });
 
@@ -102,7 +90,7 @@ async function crear({ nombre, montoBase, pesoAgua, actorId, ip }) {
     accion: "CREATE",
     entidad: "TipoInmueble",
     entidadId: tipoInmueble.id,
-    detalle: { nombre: nombreLimpio, montoBase: monto.toFixed(2), pesoAgua: peso.toString() },
+    detalle: { nombre: nombreLimpio, montoBase: monto.toFixed(2) },
     ip,
   });
 
@@ -110,19 +98,18 @@ async function crear({ nombre, montoBase, pesoAgua, actorId, ip }) {
 }
 
 /**
- * Cambia el nombre, la expensa fija o el peso de agua de un tipo. Solo afecta a las expensas
- * que se generen despues: las ya generadas guardan su propio monto y peso.
+ * Cambia el nombre o la expensa fija de un tipo. Solo afecta a las expensas
+ * que se generen despues: las ya generadas guardan su propio monto.
  */
-async function actualizar(id, { nombre, montoBase, pesoAgua }, { actorId, ip }) {
+async function actualizar(id, { nombre, montoBase }, { actorId, ip }) {
   const antes = await obtenerPorId(id);
 
   const data = {};
   if (nombre !== undefined) data.nombre = validarNombre(nombre);
   if (montoBase !== undefined) data.montoBase = validarMontoBase(montoBase);
-  if (pesoAgua !== undefined) data.pesoAgua = validarPesoAgua(pesoAgua);
 
   if (Object.keys(data).length === 0) {
-    throw errorValidacion("Envie al menos uno de: nombre, montoBase, pesoAgua");
+    throw errorValidacion("Envie al menos uno de: nombre, montoBase");
   }
 
   if (data.nombre && data.nombre !== antes.nombre) {
@@ -143,7 +130,7 @@ async function actualizar(id, { nombre, montoBase, pesoAgua }, { actorId, ip }) 
     accion: "UPDATE",
     entidad: "TipoInmueble",
     entidadId: tipoInmueble.id,
-    detalle: diferencias(antes, tipoInmueble, ["nombre", "montoBase", "pesoAgua"]),
+    detalle: diferencias(antes, tipoInmueble, ["nombre", "montoBase"]),
     ip,
   });
 
