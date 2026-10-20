@@ -476,6 +476,30 @@
         "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/api/copropietarios/<id del copropietario>/inmuebles"
       }
+    },
+    {
+      "name": "Saldo del edificio (saldo actual, ingresos, gastos e historial)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/saldo-edificio"
+      }
+    },
+    {
+      "name": "Saldo del edificio - por rango de fechas",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/saldo-edificio?desde=2026-10-01&hasta=2026-10-31"
+      }
+    },
+    {
+      "name": "Saldo del edificio - solo gastos del historial (tipo=GASTO o INGRESO, pagina, porPagina)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/saldo-edificio?tipo=GASTO&pagina=1&porPagina=20"
+      }
     }
   ]
 }
