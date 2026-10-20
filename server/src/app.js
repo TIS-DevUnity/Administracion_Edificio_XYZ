@@ -25,6 +25,7 @@ const cuentaResidenteRoutes = require('./modules/financiero/cuenta-residente/cue
 const movimientosRoutes = require('./modules/financiero/movimientos/movimientos.routes')
 const planesPagoRoutes = require('./modules/financiero/planes-pago/planes-pago.routes')
 const notificacionesRoutes = require('./modules/financiero/notificaciones/notificaciones.routes')
+const saldoEdificioRoutes = require('./modules/financiero/saldo-edificio/saldo-edificio.routes')
 
 const app = express()
 
@@ -55,6 +56,7 @@ app.use('/api/financiero/copropietarios', cuentaResidenteRoutes)
 app.use('/api/financiero/movimientos', movimientosRoutes)
 app.use('/api/financiero/planes-pago', planesPagoRoutes)
 app.use('/api/financiero/notificaciones', notificacionesRoutes)
+app.use('/api/financiero/saldo-edificio', saldoEdificioRoutes)
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 app.use(manejarErrores)
