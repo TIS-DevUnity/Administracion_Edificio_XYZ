@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ExpensaDTO, ConfiguracionMoraDTO, EstadoExpensa } from "@/types/finance";
-import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, tieneMoraAplicada, obtenerMensajeError } from "../utils/morosidad";
+import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, tieneMoraAplicada, obtenerMensajeError, resumenSaldo } from "../utils/morosidad";
 
 const CLASE_HEADER_TABLA = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_LABEL_CAMPO = CLASE_HEADER_TABLA;
@@ -29,6 +29,25 @@ const CLASE_BADGE_ESTADO: Record<EstadoExpensa, string> = {
 
 export function BadgeEstadoExpensa({ estado }: { estado: EstadoExpensa }) {
   return <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[estado]}`}>{ETIQUETA_ESTADO[estado]}</Badge>;
+}
+
+/** Lo que queda por pagar de la expensa (capital + mora) y lo ya pagado; se recalcula con cada pago. */
+function SaldoPendiente({ exp, alinear = "right" }: { exp: ExpensaDTO; alinear?: "right" | "left" }) {
+  const saldo = resumenSaldo(exp);
+  return (
+    <div className={alinear === "right" ? "text-right" : ""}>
+      <p
+        className={`text-[13px] font-medium tabular-nums ${
+          saldo.total > 0 ? "text-destructive" : "text-success"
+        }`}
+      >
+        {saldo.total > 0 ? formatCurrency(saldo.total) : "Pagada"}
+      </p>
+      {saldo.pagado > 0 && (
+        <p className={`${CLASE_SECUNDARIA} tabular-nums`}>Pagado {formatCurrency(saldo.pagado)}</p>
+      )}
+    </div>
+  );
 }
 
 function etiquetaRol(rol: ExpensaDTO["responsableRol"]) {
@@ -197,6 +216,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Agua</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total exigible</TableHead>
+              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Saldo pendiente</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Estado</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} pr-5 text-right`}>Acciones</TableHead>
             </TableRow>
@@ -253,6 +273,10 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   </TableCell>
 
                   <TableCell className="py-3">
+                    <SaldoPendiente exp={exp} />
+                  </TableCell>
+
+                  <TableCell className="py-3">
                     <div className="flex flex-col items-start gap-1">
                       <BadgeEstadoExpensa estado={exp.estado} />
                       <Indicadores exp={exp} historial={historialConfiguracion} />
@@ -278,7 +302,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
             })}
             {filteredExpensas.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="py-10 text-center text-[13px] text-muted-foreground">
+                <TableCell colSpan={10} className="py-10 text-center text-[13px] text-muted-foreground">
                   {strVacio}
                 </TableCell>
               </TableRow>
@@ -341,6 +365,10 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   <p className={`text-[13px] tabular-nums ${intMora > 0 ? "text-destructive" : "text-muted-foreground"}`}>
                     {intMora > 0 ? formatCurrency(intMora) : "—"}
                   </p>
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Saldo pendiente</p>
+                  <SaldoPendiente exp={exp} alinear="left" />
                 </div>
               </div>
 
