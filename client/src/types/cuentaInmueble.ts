@@ -19,6 +19,8 @@ export interface ExpensaPendienteResumen {
   periodo: string;
   estado: EstadoExpensa;
   pendiente: string;
+  pendienteMora?: string;
+  pendienteExpensa?: string;
 }
 
 export interface SaldoInmuebleDTO {

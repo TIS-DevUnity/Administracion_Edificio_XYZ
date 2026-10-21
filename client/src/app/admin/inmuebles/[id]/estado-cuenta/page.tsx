@@ -62,6 +62,15 @@ function fecha(strIso: string) {
   return `${strDia}/${strMes}/${strAnio}`;
 }
 
+/** Abre el calendario nativo con un click en cualquier parte del campo, no solo en el ícono. */
+function abrirCalendario(event: React.MouseEvent<HTMLInputElement>) {
+  try {
+    event.currentTarget.showPicker?.();
+  } catch {
+    // Algunos navegadores no permiten showPicker en ciertos contextos: queda el ícono como alternativa.
+  }
+}
+
 function mesActualBolivia() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/La_Paz", year: "numeric", month: "2-digit" }).format(new Date());
 }
@@ -441,6 +450,7 @@ export default function EstadoCuentaInmueblePage() {
                   <input
                     id="mes"
                     type="month"
+                    onClick={abrirCalendario}
                     value={strMes}
                     onChange={(event) => {
                       setStrMes(event.target.value);
@@ -458,6 +468,7 @@ export default function EstadoCuentaInmueblePage() {
                     <input
                       id="desde"
                       type="date"
+                      onClick={abrirCalendario}
                       value={strDesde}
                       aria-invalid={camposError.has("desde") || undefined}
                       onChange={(event) => {
@@ -474,6 +485,7 @@ export default function EstadoCuentaInmueblePage() {
                     <input
                       id="hasta"
                       type="date"
+                      onClick={abrirCalendario}
                       value={strHasta}
                       aria-invalid={camposError.has("hasta") || undefined}
                       onChange={(event) => {

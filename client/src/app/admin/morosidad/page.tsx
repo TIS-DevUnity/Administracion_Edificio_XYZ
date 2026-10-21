@@ -499,14 +499,24 @@ function ContenidoMorosidad() {
     setStrErrorPago("");
 
     try {
-      await financeService.registrarPago(expensaParaPago.id, {
+      const intPendienteAntes = calcularSaldoPendiente(expensaParaPago);
+      const respuesta = await financeService.registrarPago(expensaParaPago.id, {
         monto,
         metodoPago,
         referencia: strReferenciaPago.trim() || undefined,
       });
 
+      const intAplicado = Number(respuesta.montoAplicado ?? Math.min(monto, intPendienteAntes));
+      const intRestante = Math.max(intPendienteAntes - intAplicado, 0);
+      const intSaldoFavor = Number(respuesta.saldoFavorGenerado ?? 0);
       setExpensaParaPago(null);
-      setStrExito("Pago registrado correctamente.");
+      setStrExito(
+        `Pago de ${formatCurrency(monto)} registrado en ${expensaParaPago.inmueble.codigo} (${expensaParaPago.periodo}). ` +
+          (intRestante > 0
+            ? `Saldo pendiente de esta expensa: ${formatCurrency(intRestante)}.`
+            : "La expensa quedó pagada.") +
+          (intSaldoFavor > 0 ? ` ${formatCurrency(intSaldoFavor)} quedaron como saldo a favor.` : "")
+      );
       await actualizarExpensas();
     } catch (error) {
       setStrErrorPago(obtenerMensajeError(error, "Ocurrió un error al registrar el pago."));
@@ -595,6 +605,15 @@ function ContenidoMorosidad() {
     setMontoAgua(Number(exp.montoAgua) > 0 ? String(Number(exp.montoAgua)) : "");
     setBolEditandoAgua(bolCargarAgua && bolPuedeGestionar && (exp.moras?.length ?? 0) === 0);
   }
+
+  // Si el detalle está abierto cuando se recargan las expensas (tras un pago), se muestra la versión nueva.
+  useEffect(() => {
+    if (!expensaDetalle) return;
+    const actualizada = expensas.find((exp) => exp.id === expensaDetalle.id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (actualizada && actualizada !== expensaDetalle) setExpensaDetalle(actualizada);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expensas]);
 
   const hayFiltrosActivos =
     filtroPeriodo !== periodoActual() || filtroTipo !== "TODOS" || filtroEstado !== "TODOS" || Boolean(filtroInmuebleId) || Boolean(searchTerm.trim());
