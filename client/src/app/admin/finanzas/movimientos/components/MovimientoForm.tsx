@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "react";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownCircle, ArrowUpCircle, CheckCircle2, Paperclip, RotateCcw, Save } from "lucide-react";
@@ -73,7 +73,14 @@ function nuevaClave(): string {
   return `mov-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function MovimientoForm() {
+type MovimientoFormProps = {
+  enModal?: boolean;
+  onCancelar?: () => void;
+  onGuardado?: (respuesta: CrearMovimientoRespuesta, sinComprobante: boolean) => void;
+  onGuardandoCambio?: (guardando: boolean) => void;
+};
+
+export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuardandoCambio }: MovimientoFormProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(nuevoFormulario);
   const [claveSolicitud, setClaveSolicitud] = useState(nuevaClave);
@@ -111,6 +118,10 @@ export function MovimientoForm() {
     mutationFn: ({ movimiento, clave, archivo }: { movimiento: CrearMovimientoPayload; clave: string; archivo: File | null }) =>
       movimientosService.crearMovimiento(movimiento, clave, archivo),
   });
+
+  useEffect(() => {
+    onGuardandoCambio?.(crearMutation.isPending);
+  }, [crearMutation.isPending, onGuardandoCambio]);
 
   function actualizar(campo: "monto" | "fecha" | "categoriaId" | "concepto", valor: string) {
     setForm(prev => ({ ...prev, [campo]: valor }));
@@ -167,6 +178,7 @@ export function MovimientoForm() {
     borrarComprobante();
     setClaveSolicitud(nuevaClave());
     setErrores({});
+    onGuardado?.(respuesta, sinComprobante);
   }
 
   async function guardar(evento: FormEvent<HTMLFormElement>) {
@@ -219,12 +231,14 @@ export function MovimientoForm() {
   }
 
   return (
-    <Card>
-      <CardHeader className="border-b border-border pb-4">
-        <CardTitle>Registrar movimiento</CardTitle>
-        <p className="text-[13px] text-muted-foreground">Introduce los datos de un ingreso o gasto extraordinario.</p>
-      </CardHeader>
-      <CardContent>
+    <Card className={enModal ? "border-0 bg-transparent py-0 shadow-none ring-0" : undefined}>
+      {!enModal && (
+        <CardHeader className="border-b border-border pb-4">
+          <CardTitle>Registrar movimiento</CardTitle>
+          <p className="text-[13px] text-muted-foreground">Introduce los datos de un ingreso o gasto extraordinario.</p>
+        </CardHeader>
+      )}
+      <CardContent className={enModal ? "px-0" : undefined}>
         <form onSubmit={guardar} noValidate className="space-y-5">
           <fieldset disabled={crearMutation.isPending} className="space-y-5 disabled:opacity-70">
             <div className="space-y-2">
@@ -341,6 +355,11 @@ export function MovimientoForm() {
             </div>
           )}
           <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+            {enModal && (
+              <Button type="button" variant="outline" onClick={onCancelar} disabled={crearMutation.isPending}>
+                Cancelar
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={limpiar} disabled={crearMutation.isPending}>
               <RotateCcw className="size-4"/> Limpiar
             </Button>
