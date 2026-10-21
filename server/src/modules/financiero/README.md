@@ -8,6 +8,7 @@ Carpetas implementadas:
 - `cuenta-inmueble/` — saldo, estado de cuenta, pagos por inmueble y pagos anticipados
 - `recibos/` — recibos con folio, PDF y comprobante
 - `movimientos/` — gastos e ingresos extraordinarios, categorias, comprobantes y balance (HU6)
+- `saldo-edificio/` — saldo general del edificio: ingresos, gastos e historial en una sola consulta (BUG-04)
 - `planes-pago/` — planes de pago en cuotas (HU3 CA11)
 - `jobs/` y `notificaciones/` — cron de generacion, mora y avisos; correos con registro; campanita del residente (HU3 CA15 y CA16)
 
@@ -233,3 +234,33 @@ de expensas y de mora ya era repetible sin duplicar (una expensa por inmueble y 
 - `20261017120000_agua_manual_por_expensa`: el agua se carga a mano por expensa.
 - `20261017130000_movimientos_planes_pago_notificaciones`: categorias y movimientos financieros (convierte los que
   existian), clave de solicitud en recibos, planes de pago y cuotas, notificaciones y registro de correos.
+
+## Saldo del edificio (BUG-04)
+
+`GET /api/financiero/saldo-edificio` — solo consulta, la ven Administrador, Directorio y Consulta. Responde cuanto
+dinero tiene registrado el edificio, de donde viene y en que se gasto, sin revisar los pagos uno por uno.
+
+```
+saldo = ingresos - gastos
+ingresos = pagos de expensas + ingresos extraordinarios
+gastos   = gastos extraordinarios
+```
+
+- **Pagos de expensas:** el dinero que realmente entro, es decir la suma de los recibos, en la fecha del pago (hora de
+  Bolivia). Los pagos anticipados y los excesos suman; un pago cubierto con saldo a favor **no** suma (esa plata ya se
+  conto al entregarla) y una expensa sin pagar es una deuda, no un ingreso. Incluye los cobros de planes de cuotas.
+- **Extraordinarios:** los ingresos y gastos de `/api/financiero/movimientos`. Sus totales coinciden con
+  `GET /movimientos/balance`.
+- **Respuesta:** `saldoActual` (acumulado hasta `hasta`, o todo lo registrado), `totalIngresos`, `totalGastos`,
+  `saldoDelPeriodo` (del rango pedido; sin rango coincide con `saldoActual`), `ingresos` (`pagosDeExpensas` y
+  `extraordinarios`), `gastos`, `movimientos` (historial mezclado: fecha, concepto, tipo, monto y `origen`
+  `PAGO_EXPENSA` o `EXTRAORDINARIO`; mas reciente primero) y `paginacion`.
+- **Filtros:** `desde`, `hasta` (totales e historial), `tipo` (`INGRESO` o `GASTO`, solo el historial), `pagina`,
+  `porPagina`.
+- **`pendienteDeCobro`:** lo que los residentes todavia deben y el saldo a favor que tienen adelantado. Es solo
+  informativo y **no forma parte del saldo del edificio** (las deudas son otra cosa).
+- **Siempre al dia:** no hay un saldo guardado; se calcula en cada consulta, asi que al registrar o corregir un pago o un
+  movimiento el saldo cambia solo. No se puede editar (POST, PUT y PATCH no existen en esta ruta): si el saldo no cuadra,
+  se corrige el pago o el movimiento que lo origina.
+- **Pendiente:** los sueldos del personal todavia no se descuentan; se suman cuando ese modulo tenga API.
+- No requiere migracion.
