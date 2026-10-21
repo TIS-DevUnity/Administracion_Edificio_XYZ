@@ -111,6 +111,9 @@ interface CuentaInmuebleFila {
   // consulta al vuelo, un solo inmueble a la vez, recién cuando hace falta
   // (abrir "Registrar pago" o "Ver cuenta" de ESE inmueble).
   deudaPendiente: number;
+  /** Lo que falta de las expensas (tarifa fija + agua), sin recargos. */
+  deudaSinMora: number;
+  moraPendiente: number;
   tieneExpensasVencidas: boolean;
 }
 
@@ -157,11 +160,17 @@ export default function PagosPage() {
   // Diálogo: ver cuenta (estado de cuenta / historial)
   const [strInmuebleCuentaId, setStrInmuebleCuentaId] = useState<string | null>(null);
 
-  function deudaDeExpensa(exp: ExpensaDTO): number {
-    if (exp.estado === "PAGADA") return 0;
-    const total = Number(exp.montoTotal) + Number(exp.montoMora || 0);
-    const pagado = (exp.pagos ?? []).reduce((acc, pago) => acc + Number(pago.monto), 0);
-    return Math.max(total - pagado, 0);
+  // Mismo cálculo que el backend (saldo.util.js → pendientesDe): cada pago guarda cuánto fue a
+  // la expensa y cuánto a la mora, así que ambos pendientes se restan por separado.
+  function deudaDeExpensa(exp: ExpensaDTO): { sinMora: number; mora: number } {
+    if (exp.estado === "PAGADA") return { sinMora: 0, mora: 0 };
+    const pagos = exp.pagos ?? [];
+    const pagadoExpensa = pagos.reduce((acc, pago) => acc + Number(pago.montoExpensa ?? 0), 0);
+    const pagadoMora = pagos.reduce((acc, pago) => acc + Number(pago.montoMora ?? 0), 0);
+    return {
+      sinMora: Math.max(Number(exp.montoTotal) - pagadoExpensa, 0),
+      mora: Math.max(Number(exp.montoMora || 0) - pagadoMora, 0),
+    };
   }
 
   async function cargarCuentas() {
@@ -174,22 +183,29 @@ export default function PagosPage() {
       // ya traen sus pagos anidados), y la deuda por inmueble se agrupa en memoria.
       const [inmuebles, expensas] = await Promise.all([listarInmuebles(), financeService.getExpensas()]);
 
-      const deudaPorInmueble = new Map<string, number>();
+      const deudaPorInmueble = new Map<string, { sinMora: number; mora: number }>();
       const vencidaPorInmueble = new Set<string>();
       expensas.forEach((exp) => {
         const deuda = deudaDeExpensa(exp);
-        if (deuda > 0) {
-          deudaPorInmueble.set(exp.inmuebleId, (deudaPorInmueble.get(exp.inmuebleId) ?? 0) + deuda);
-        }
+        const acumulado = deudaPorInmueble.get(exp.inmuebleId) ?? { sinMora: 0, mora: 0 };
+        deudaPorInmueble.set(exp.inmuebleId, {
+          sinMora: acumulado.sinMora + deuda.sinMora,
+          mora: acumulado.mora + deuda.mora,
+        });
         if (exp.estado === "VENCIDA") vencidaPorInmueble.add(exp.inmuebleId);
       });
 
       setFilas(
-        inmuebles.map((inmueble) => ({
-          inmueble,
-          deudaPendiente: deudaPorInmueble.get(inmueble.id) ?? 0,
-          tieneExpensasVencidas: vencidaPorInmueble.has(inmueble.id),
-        }))
+        inmuebles.map((inmueble) => {
+          const deuda = deudaPorInmueble.get(inmueble.id) ?? { sinMora: 0, mora: 0 };
+          return {
+            inmueble,
+            deudaSinMora: deuda.sinMora,
+            moraPendiente: deuda.mora,
+            deudaPendiente: deuda.sinMora + deuda.mora,
+            tieneExpensasVencidas: vencidaPorInmueble.has(inmueble.id),
+          };
+        })
       );
     } catch (error) {
       console.error("Error al cargar cuentas de inmuebles:", error);
@@ -210,12 +226,14 @@ export default function PagosPage() {
 
   const totales = useMemo(() => {
     let intConDeuda = 0;
-    let totalDeuda = 0;
+    let totalSinMora = 0;
+    let totalMora = 0;
     filas.forEach((fila) => {
       if (fila.deudaPendiente > 0) intConDeuda += 1;
-      totalDeuda += fila.deudaPendiente;
+      totalSinMora += fila.deudaSinMora;
+      totalMora += fila.moraPendiente;
     });
-    return { intConDeuda, totalDeuda };
+    return { intConDeuda, totalSinMora, totalMora, totalDeuda: totalSinMora + totalMora };
   }, [filas]);
 
   function limpiarFormularioPago() {
@@ -436,21 +454,46 @@ export default function PagosPage() {
       )}
 
       {/* KPIs */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="shadow-sm">
           <CardContent className="p-5">
             <p className={CLASE_LABEL_CAMPO}>Inmuebles con deuda</p>
-            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-accent-secondary">
               {totales.intConDeuda}
             </h3>
           </CardContent>
         </Card>
         <Card className="shadow-sm">
           <CardContent className="p-5">
-            <p className={CLASE_LABEL_CAMPO}>Deuda pendiente total</p>
-            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-destructive">
+            <p className={CLASE_LABEL_CAMPO}>Deuda sin mora</p>
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-foreground">
+              {formatCurrency(totales.totalSinMora)}
+            </h3>
+            <p className="font-caption mt-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+              Tarifa fija + agua pendientes
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardContent className="p-5">
+            <p className={CLASE_LABEL_CAMPO}>Mora pendiente</p>
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-destructive">
+              {formatCurrency(totales.totalMora)}
+            </h3>
+            <p className="font-caption mt-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+              Recargos por atraso
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-sm">
+          <CardContent className="p-5">
+            <p className={CLASE_LABEL_CAMPO}>Total con mora</p>
+            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-destructive">
               {formatCurrency(totales.totalDeuda)}
             </h3>
+            <p className="font-caption mt-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
+              Deuda sin mora + mora pendiente
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -490,7 +533,9 @@ export default function PagosPage() {
                     <TableRow>
                       <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
                       <TableHead className={CLASE_HEADER_TABLA}>Tipo</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Deuda pendiente</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Deuda sin mora</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
+                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total con mora</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-center`}>Situación</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Acciones</TableHead>
                     </TableRow>
@@ -504,7 +549,17 @@ export default function PagosPage() {
                         <TableCell className="text-[13px] text-muted-foreground">
                           {fila.inmueble.tipoInmueble.nombre}
                         </TableCell>
-                        <TableCell className="text-right text-[13px] text-foreground">
+                        <TableCell className="text-right text-[13px] tabular-nums text-foreground">
+                          {formatCurrency(fila.deudaSinMora)}
+                        </TableCell>
+                        <TableCell
+                          className={`text-right text-[13px] tabular-nums ${
+                            fila.moraPendiente > 0 ? "text-destructive" : "text-muted-foreground"
+                          }`}
+                        >
+                          {fila.moraPendiente > 0 ? formatCurrency(fila.moraPendiente) : "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-[13px] font-medium tabular-nums text-foreground">
                           {formatCurrency(fila.deudaPendiente)}
                         </TableCell>
                         <TableCell className="text-center">
@@ -528,7 +583,7 @@ export default function PagosPage() {
                     ))}
                     {filasFiltradas.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={5} className="py-8 text-center text-[13px] text-muted-foreground">
+                        <TableCell colSpan={7} className="py-8 text-center text-[13px] text-muted-foreground">
                           No hay inmuebles que coincidan con la búsqueda.
                         </TableCell>
                       </TableRow>
@@ -552,9 +607,27 @@ export default function PagosPage() {
                       <BadgeSituacionFila fila={fila} />
                     </div>
 
-                    <div>
-                      <p className={CLASE_LABEL_CAMPO}>Deuda pendiente</p>
-                      <p className="text-[13px] text-foreground">{formatCurrency(fila.deudaPendiente)}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className={CLASE_LABEL_CAMPO}>Sin mora</p>
+                        <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(fila.deudaSinMora)}</p>
+                      </div>
+                      <div>
+                        <p className={CLASE_LABEL_CAMPO}>Mora</p>
+                        <p
+                          className={`text-[13px] tabular-nums ${
+                            fila.moraPendiente > 0 ? "text-destructive" : "text-muted-foreground"
+                          }`}
+                        >
+                          {fila.moraPendiente > 0 ? formatCurrency(fila.moraPendiente) : "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={CLASE_LABEL_CAMPO}>Con mora</p>
+                        <p className="text-[13px] font-medium tabular-nums text-foreground">
+                          {formatCurrency(fila.deudaPendiente)}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="mt-3 flex justify-end gap-1 border-t border-border pt-3">
@@ -622,9 +695,37 @@ export default function PagosPage() {
                       {ETIQUETA_SITUACION[cuentaSeleccionada.situacion]}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-[16px] font-semibold text-foreground">
+                  <p className="font-title mt-1 text-[20px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-foreground">
                     {formatCurrency(Number(cuentaSeleccionada.deudaPendiente))}
                   </p>
+                  {(() => {
+                    const intSinMora = cuentaSeleccionada.expensasPendientes.reduce(
+                      (acc, exp) => acc + Number(exp.pendienteExpensa ?? exp.pendiente),
+                      0
+                    );
+                    const intMora = cuentaSeleccionada.expensasPendientes.reduce(
+                      (acc, exp) => acc + Number(exp.pendienteMora ?? 0),
+                      0
+                    );
+                    return (
+                      <div className="mt-2 flex flex-col gap-1 text-[12px] tabular-nums">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Total sin mora (tarifa fija + agua)</span>
+                          <span className="text-foreground">{formatCurrency(intSinMora)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Mora</span>
+                          <span className={intMora > 0 ? "text-destructive" : "text-muted-foreground"}>
+                            {formatCurrency(intMora)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between border-t border-border pt-1 font-medium">
+                          <span className="text-foreground">Total con mora</span>
+                          <span className="text-foreground">{formatCurrency(intSinMora + intMora)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {Number(cuentaSeleccionada.saldoFavor) > 0 && (
                     <p className="mt-1 text-[12px] text-accent-secondary">
                       Saldo a favor disponible: {formatCurrency(Number(cuentaSeleccionada.saldoFavor))}
@@ -639,7 +740,15 @@ export default function PagosPage() {
                             {idx === 0 ? "Deuda más antigua · " : ""}
                             Periodo {exp.periodo}
                           </span>
-                          <span className="font-medium text-foreground">{formatCurrency(Number(exp.pendiente))}</span>
+                          <span className="text-right tabular-nums">
+                            <span className="font-medium text-foreground">{formatCurrency(Number(exp.pendiente))}</span>
+                            {Number(exp.pendienteMora ?? 0) > 0 && (
+                              <span className="font-caption block text-[11px] text-muted-foreground">
+                                {formatCurrency(Number(exp.pendienteExpensa ?? 0))} +{" "}
+                                <span className="text-destructive">mora {formatCurrency(Number(exp.pendienteMora))}</span>
+                              </span>
+                            )}
+                          </span>
                         </div>
                       ))}
                     </div>

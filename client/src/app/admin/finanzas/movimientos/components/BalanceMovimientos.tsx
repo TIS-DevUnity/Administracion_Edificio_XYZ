@@ -167,7 +167,7 @@ export function BalanceMovimientos() {
                     <AlertTriangle className="size-4 shrink-0" /> Los totales por categoría no coinciden con el balance recibido. Actualiza los datos y consulta al equipo de backend si persiste.
                   </p>
                 )}
-                <p className="text-[11px] text-muted-foreground">Los totales y categorías provienen del backend; no se calculan sumando solo la página visible.</p>
+
               </div>
             </>
           ) : null}

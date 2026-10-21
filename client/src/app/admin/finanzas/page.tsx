@@ -10,6 +10,7 @@ import {
   Download,
   Info,
   ReceiptText,
+  Landmark,
   WalletCards,
 } from "lucide-react";
 import {
@@ -33,6 +34,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { financeService } from "@/services/finance.service";
+import { saldoEdificioService } from "@/services/saldo-edificio.service";
+import type { ResumenSaldoEdificio, FiltrosSaldoEdificio } from "@/types/saldo-edificio";
 import { ExpensaDTO } from "@/types/finance";
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -41,11 +44,10 @@ import { ExpensaDTO } from "@/types/finance";
  *
  *  1. MOCK_FLUJO_CAJA          → gráfico "Comparativo mensual" (ingresos y egresos por mes)
  *  2. MOCK_DISTRIBUCION_GASTOS → gráfico "Distribución de gastos"
- *  3. Liquidez neta            → se deriva de MOCK_FLUJO_CAJA (último mes vs. anterior)
- *  4. Filtro "Cuenta contable" → sin modelo de cuentas en el backend, queda deshabilitado
+ *  3. Filtro "Cuenta contable" → sin modelo de cuentas en el backend, queda deshabilitado
  *
- * Todo lo demás (KPIs de recaudado, por cobrar y mora, y la exportación)
- * se calcula con las expensas reales de financeService.getExpensas().
+ * Saldo, ingresos y gastos generales: GET /financiero/saldo-edificio.
+ * Los demás KPI de expensas y la exportación permanecen sobre financeService.getExpensas().
  * ═══════════════════════════════════════════════════════════════════════ */
 interface FlujoCajaMes {
   mes: string;
@@ -213,6 +215,27 @@ export default function DashboardFinancieroPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [strError, setStrError] = useState("");
   const [rango, setRango] = useState<RangoFecha>("todo");
+  const [saldoEdificio, setSaldoEdificio] = useState<ResumenSaldoEdificio | null>(null);
+  const [cargandoSaldo, setCargandoSaldo] = useState(true);
+  const [rangoSaldo, setRangoSaldo] = useState<RangoFecha | null>(null);
+  const [errorSaldo, setErrorSaldo] = useState(false);
+
+  useEffect(() => {
+    let activo = true;
+    const hoy = new Date();
+    const fechaLocal = (fecha: Date) => `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+    const parametros: FiltrosSaldoEdificio = { porPagina: 1 };
+    if (rango !== "todo") {
+      const inicio = new Date(hoy.getFullYear(), rango === "anio" ? 0 : rango === "trimestre" ? hoy.getMonth() - 2 : hoy.getMonth(), 1);
+      parametros.desde = fechaLocal(inicio);
+      parametros.hasta = fechaLocal(hoy);
+    }
+    saldoEdificioService.obtener(parametros)
+      .then((resultado) => { if (activo) { setSaldoEdificio(resultado); setErrorSaldo(false); setRangoSaldo(rango); } })
+      .catch(() => { if (activo) { setSaldoEdificio(null); setErrorSaldo(true); setRangoSaldo(rango); } })
+      .finally(() => { if (activo) setCargandoSaldo(false); });
+    return () => { activo = false; };
+  }, [rango]);
 
   useEffect(() => {
     async function cargarDatos() {
@@ -258,15 +281,8 @@ export default function DashboardFinancieroPage() {
     return { totalRecaudado, carteraPendiente, moraActiva, intPagos, intConSaldo, intVencidas };
   }, [expensasEnRango]);
 
-  // Liquidez neta (mock): último mes del flujo de caja de ejemplo frente al anterior
-  const liquidezMock = useMemo(() => {
-    const ultimo = MOCK_FLUJO_CAJA[MOCK_FLUJO_CAJA.length - 1];
-    const anterior = MOCK_FLUJO_CAJA[MOCK_FLUJO_CAJA.length - 2];
-    const neta = ultimo.ingresos - ultimo.egresos;
-    const netaAnterior = anterior.ingresos - anterior.egresos;
-    const variacion = netaAnterior !== 0 ? ((neta - netaAnterior) / Math.abs(netaAnterior)) * 100 : 0;
-    return { neta, variacion };
-  }, []);
+  const saldoVisible = rangoSaldo === rango ? saldoEdificio : null;
+  const consultandoSaldo = cargandoSaldo || rangoSaldo !== rango;
 
   const totalGastosMock = MOCK_DISTRIBUCION_GASTOS.reduce((acc, item) => acc + item.amount, 0);
 
@@ -304,12 +320,20 @@ export default function DashboardFinancieroPage() {
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
           Control de liquidez, conciliación y balance de ingresos frente a egresos.
         </p>
-        <Button asChild className="shrink-0">
-          <Link href="/admin/finanzas/movimientos">
-            <ReceiptText className="mr-2 h-4 w-4" />
-            Movimientos financieros
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild>
+            <Link href="/admin/finanzas/saldo-edificio">
+              <Landmark className="mr-2 h-4 w-4" />
+              Consultar saldo del edificio
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/admin/finanzas/movimientos">
+              <ReceiptText className="mr-2 h-4 w-4" />
+              Movimientos financieros
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {strError && (
@@ -327,8 +351,8 @@ export default function DashboardFinancieroPage() {
           </h4>
         </div>
         <p className="mt-1 text-[13px] leading-[1.45] text-primary/80">
-          Recaudado, cuentas por cobrar y mora se calculan con las expensas reales. El flujo de caja, la
-          distribución de gastos y la liquidez neta son de ejemplo hasta que el backend exponga las estadísticas.
+          El saldo general, sus ingresos y gastos son datos reales del backend. Los gráficos comparativo mensual
+          y distribución de gastos todavía muestran datos de ejemplo; no deben interpretarse como saldos reales.
         </p>
       </div>
 
@@ -408,19 +432,30 @@ export default function DashboardFinancieroPage() {
             icon={<Building2 className="h-5 w-5" />}
           />
           <MetricCard
-            title="Liquidez neta"
-            value={formatCurrency(liquidezMock.neta)}
-            valueClassName="text-foreground"
-            variacion={{
-              texto: `${liquidezMock.variacion >= 0 ? "+" : ""}${liquidezMock.variacion.toFixed(1)}%`,
-              positiva: liquidezMock.variacion >= 0,
-            }}
-            detail="vs. mes anterior"
-            icon={<ArrowUpRight className="h-5 w-5" />}
-            esMock
+            title="Saldo acumulado del edificio"
+            value={consultandoSaldo ? "Consultando…" : saldoVisible ? formatCurrency(Number(saldoVisible.saldoActual)) : "No disponible"}
+            valueClassName={saldoVisible && Number(saldoVisible.saldoActual) < 0 ? "text-destructive" : "text-success"}
+            detail={saldoVisible ? (rango === "todo" ? "Ingresos recibidos menos gastos registrados" : "Acumulado hasta hoy; no solo del período") : errorSaldo ? "No se pudo consultar el saldo" : "Cargando datos reales"}
+            icon={<WalletCards className="h-5 w-5" />}
           />
         </div>
       )}
+
+      {/* Resumen general real: por fechas de cobro y registro, no por período de expensa */}
+      <Card className="mb-6 shadow-sm">
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+          <div>
+            <h3 className="font-subtitle text-sm font-semibold">Ingresos y gastos generales del edificio</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{rango === "todo" ? "Todos los registros" : `${ETIQUETA_RANGO[rango]} (según fecha del movimiento)`}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Incluye pagos de expensas e ingresos extraordinarios; no incluye deudas pendientes de cobro.</p>
+          </div>
+          <div className="flex flex-wrap gap-6">
+            <div><p className="text-xs text-muted-foreground">Ingresos</p><p className="font-title text-lg font-bold text-success">{consultandoSaldo ? "…" : saldoVisible ? formatCurrency(Number(saldoVisible.totalIngresos)) : "No disponible"}</p></div>
+            <div><p className="text-xs text-muted-foreground">Gastos</p><p className="font-title text-lg font-bold text-destructive">{consultandoSaldo ? "…" : saldoVisible ? formatCurrency(Number(saldoVisible.totalGastos)) : "No disponible"}</p></div>
+            <div><p className="text-xs text-muted-foreground">Resultado del período</p><p className="font-title text-lg font-bold">{consultandoSaldo ? "…" : saldoVisible ? formatCurrency(Number(saldoVisible.saldoDelPeriodo)) : "No disponible"}</p></div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Gráficos */}
       <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
