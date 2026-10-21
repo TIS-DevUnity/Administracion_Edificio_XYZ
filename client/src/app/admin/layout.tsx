@@ -12,6 +12,7 @@ import {
   LineChart,
   Menu,
   ReceiptText,
+  Landmark,
   ShieldCheck,
   UserCheck,
   UserCog,
@@ -170,6 +171,20 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                   </Link>
                   {seccion.id === "finanzas" && (
                     <Link
+                      href="/admin/finanzas/saldo-edificio"
+                      aria-current={pathname.startsWith("/admin/finanzas/saldo-edificio") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${
+                        pathname.startsWith("/admin/finanzas/saldo-edificio")
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      }`}
+                    >
+                      <Landmark className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Saldo del edificio</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && (
+                    <Link
                       href="/admin/finanzas/movimientos"
                       aria-current={pathname.startsWith("/admin/finanzas/movimientos") ? "page" : undefined}
                       className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${
@@ -282,6 +297,21 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                   <Icono className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 truncate">{seccion.label}</span>
                   </Link>
+                  {seccion.id === "finanzas" && (
+                    <Link
+                      href="/admin/finanzas/saldo-edificio"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/saldo-edificio") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${
+                        pathname.startsWith("/admin/finanzas/saldo-edificio")
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                          : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      }`}
+                    >
+                      <Landmark className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Saldo del edificio</span>
+                    </Link>
+                  )}
                   {seccion.id === "finanzas" && (
                     <Link
                       href="/admin/finanzas/movimientos"
