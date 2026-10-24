@@ -149,7 +149,13 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  *         favor supera la deuda se informa `saldoAFavorRestante`.
  *       - `deudasPendientes`: obligaciones no pagadas completas al cierre del periodo.
  *       - `sinMovimientos` y `mensaje`: si no hay movimientos en el periodo, el mensaje lo indica.
- *       - `expensas`, `movimientosSaldo` y `resumen` conservan el formato anterior.
+ *       - `expensas`, `movimientosSaldo` y `resumen` conservan el formato anterior. Cada expensa suma
+ *         `planPagoId`: el plan de pagos que la cubre, o `null` si se cobra por el pago normal.
+ *       - `planesPago`: planes de pago en cuotas del inmueble, en cualquier estado (ACTIVO, COMPLETADO o
+ *         CANCELADO) y sin filtrar por el periodo consultado, con el mismo formato que `GET /planes-pago`.
+ *         Cada plan trae sus `cuotas` (`numero`, `monto`, `montoPagado`, `saldoPendiente`,
+ *         `fechaVencimiento`, `estado` PENDIENTE, PARCIAL, PAGADA o VENCIDA, y sus `pagos`), las `expensas`
+ *         que cubre y `proximaCuota`. Un inmueble sin planes devuelve `[]`.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
