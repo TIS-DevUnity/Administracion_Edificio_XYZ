@@ -26,6 +26,7 @@ const {
   deudaEnPlanes
 } = require('../expensas/saldo.util')
 const campanita = require('../notificaciones/campanita.service')
+const planesPagoService = require('../planes-pago/planes-pago.service')
 const reglas = require('../expensas/reglas-pago.util')
 const { fechaCalendario } = require('../expensas/mora.util')
 const { filtroOcupanteVigente } = require('../../operativo-seguridad/inmuebles/asignacion.util')
@@ -118,7 +119,7 @@ function parsearFecha(valor, campo, { finDeDia, offset }) {
   return fecha
 }
 
-async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
+async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referencia, fechaPago, cuentaId, claveSolicitud, usuarioId, ip }) {
   const montoAbono = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
@@ -147,7 +148,8 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
       referencia: referenciaLimpia,
       fechaPago: fecha,
       usuarioId,
-      claveSolicitud: clave
+      claveSolicitud: clave,
+      cuentaId
     })
     const creado = await tx.movimientoSaldo.create({
       data: {
@@ -225,7 +227,7 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
  * a favor; si el inmueble no debe nada, todo es saldo a favor.
  * Los meses atrasados solo se aceptan completos (ver reglas-pago.util.js).
  */
-async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
+async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia, fechaPago, cuentaId, claveSolicitud, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
@@ -257,7 +259,8 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
       referencia: referenciaLimpia,
       fechaPago: fecha,
       usuarioId,
-      claveSolicitud: clave
+      claveSolicitud: clave,
+      cuentaId
     })
 
     const { aplicaciones, restante } = await repartirPago(tx, {
@@ -581,7 +584,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
   const periodo = resolverPeriodo({ desde, hasta, mes })
   const inmueble = await obtenerInmueble(inmuebleId)
 
-  const [expensas, movimientosSaldo, ocupantes, saldoFavor, periodoReciente] = await Promise.all([
+  const [expensas, movimientosSaldo, ocupantes, saldoFavor, periodoReciente, { planes: planesPago }] = await Promise.all([
     prisma.expensa.findMany({
       where: { inmuebleId },
       include: {
@@ -603,7 +606,8 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
       orderBy: [{ esPropietario: 'desc' }, { fechaInicio: 'asc' }]
     }),
     saldoFavorDe(prisma, inmuebleId),
-    periodoMasReciente(prisma, inmuebleId)
+    periodoMasReciente(prisma, inmuebleId),
+    planesPagoService.listar({ inmuebleId })
   ])
 
   const dentroDelPeriodo = (fechaIso) =>
@@ -660,6 +664,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
         aguaRegistradaEn: e.aguaRegistradaEn,
         montoTotal: e.montoTotal, // expensa fija + agua (sin mora)
         montoMora: e.montoMora,
+        planPagoId: e.planPagoId,
         pagado: pagado.toFixed(2),
         pagadoMora: sumarCampo(e.pagos, 'montoMora').toFixed(2),
         pagadoExpensa: sumarCampo(e.pagos, 'montoExpensa').toFixed(2),
@@ -712,6 +717,9 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
       saldoFinal: libro.saldoFinal
     },
     expensas: filas,
+    // Planes de pago del inmueble (todos los estados, sin filtrar por periodo), tal como los presenta
+    // GET /planes-pago: cada cuota con su estado, lo pagado y su saldo.
+    planesPago,
     movimientosSaldo: movimientosSaldoPeriodo,
     resumen: {
       totalFacturado: totalFacturado.toFixed(2),

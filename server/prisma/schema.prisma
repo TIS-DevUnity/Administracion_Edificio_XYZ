@@ -41,6 +41,12 @@ model Usuario {
   documentosSubidos      Documento[]
   cambiosVencimiento      CambioVencimiento[]
   planesPagoRegistrados   PlanPago[]
+  movimientosCajaRegistrados  MovimientoCaja[]     @relation("CajaRegistradoPor")
+  movimientosCajaConciliados  MovimientoCaja[]     @relation("CajaConciliadoPor")
+  saldosRealesRegistrados     SaldoRealPeriodo[]   @relation("SaldoRealRegistradoPor")
+  saldosRealesRevisados       SaldoRealPeriodo[]   @relation("SaldoRealRevisadaPor")
+  cierresCaja                 CierreCaja[]         @relation("CierreCajaPor")
+  eventosConciliacion         ConciliacionEvento[] @relation("ConciliacionEventoPor")
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -286,6 +292,36 @@ enum TipoMovimiento {
   EGRESO
 }
 
+enum TipoCuenta {
+  CAJA   // efectivo
+  BANCO  // transferencia, tarjeta, cheque
+}
+
+enum EstadoConciliacion {
+  PENDIENTE       // todavia no se comparo con el extracto o el arqueo
+  CONCILIADO      // coincide en fecha, monto, tipo y referencia; cuenta para el saldo conciliado
+  CON_DIFERENCIA  // algo no coincide: sigue sin conciliar, pendiente de revision, no cuenta
+}
+
+enum OrigenMovimientoCaja {
+  RECIBO                 // cobro de expensa / pago anticipado / cuota de plan
+  MOVIMIENTO_FINANCIERO  // ingreso o egreso extraordinario (incluye comisiones manuales)
+  TRASPASO               // deposito de caja al banco (dos patas unidas por traspasoId)
+}
+
+enum OperacionConciliacion {
+  CONCILIAR
+  REVISAR_DIFERENCIA
+  SALDO_REAL
+  CIERRE
+}
+
+enum ResultadoConciliacion {
+  EXITOSO         // la operacion se aplico (movimiento conciliado, saldo guardado, mes cerrado...)
+  CON_DIFERENCIA  // se intento conciliar y algo no coincide
+  RECHAZADO       // se intento y no se pudo (ej. cierre con pendientes)
+}
+
 // Cobro mensual de expensas por inmueble
 model Expensa {
   id               String        @id @default(uuid())
@@ -469,6 +505,7 @@ model Recibo {
   pagos             Pago[]
   movimientosSaldo  MovimientoSaldo[]
   pagosCuota        PagoCuota[]
+  movimientoCaja    MovimientoCaja?
 
   registradoPor     Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId   String?
@@ -549,6 +586,8 @@ model MovimientoFinanciero {
   claveSolicitud    String?             @unique
   huella            String?
 
+  movimientoCaja    MovimientoCaja?
+
   registradoPor     Usuario?            @relation(fields: [registradoPorId], references: [id])
   registradoPorId   String?
 
@@ -562,23 +601,37 @@ model MovimientoFinanciero {
   @@index([huella, createdAt])
 }
 
-// Cuentas de banco/caja del edificio
+// Cuentas de banco / caja del edificio. Una cuenta CAJA y una BANCO son las "por defecto":
+// crearRecibo las usa cuando el endpoint no indica `cuentaId`. Que haya una sola por defecto por
+// tipo lo asegura la aplicacion dentro de una transaccion (no hay indice parcial en la base).
 model CuentaBancaria {
-  id           String   @id @default(uuid())
+  id           String     @id @default(uuid())
   nombre       String
-  banco        String
-  numeroCuenta String   @unique
-  saldoActual  Decimal  @default(0) @db.Decimal(12, 2)
+  tipo         TipoCuenta @default(BANCO)
+  banco        String?    // era obligatorio; la caja no tiene banco
+  numeroCuenta String?    @unique // era obligatorio; la caja no tiene numero
+  esPorDefecto Boolean    @default(false)
+  activa       Boolean    @default(true)
 
-  movimientos  MovimientoCaja[]
+  // Saldo con el que arranca la cuenta antes del primer asiento. Los saldos se calculan en cada
+  // consulta: saldoInicial + ingresos - egresos hasta la fecha de corte.
+  saldoInicial Decimal    @default(0) @db.Decimal(12, 2)
+  // EN DESUSO: nunca se escribe ni se lee. Se elimina en una migracion posterior.
+  saldoActual  Decimal    @default(0) @db.Decimal(12, 2)
 
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  movimientos        MovimientoCaja[]
+  saldosReales       SaldoRealPeriodo[]
+  cierres            CierreCajaCuenta[]
+  eventosConciliacion ConciliacionEvento[]
+
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @db.Timestamptz(3)
 
   @@map("cuentas_bancarias")
 }
 
-// Movimientos de caja/banco (para conciliacion)
+// Libro unico de caja y bancos. Se alimenta solo: crearRecibo y movimientos.service crean el asiento
+// en la misma transaccion que su origen. La FK unica al origen impide duplicados.
 model MovimientoCaja {
   id         String         @id @default(uuid())
 
@@ -588,12 +641,154 @@ model MovimientoCaja {
   tipo       TipoMovimiento
   monto      Decimal        @db.Decimal(12, 2)
   concepto   String
-  conciliado Boolean        @default(false)
   fecha      DateTime       @default(now()) @db.Timestamptz(3)
+  // "YYYY-MM" de `fecha` en hora de Bolivia (America/La_Paz). Base del cierre y del bloqueo.
+  periodo    String
+
+  // EN DESUSO: reemplazado por `estado`.
+  conciliado Boolean        @default(false)
+
+  // --- Origen (exactamente uno; lo asegura un CHECK en la migracion) ---
+  origen                 OrigenMovimientoCaja
+  recibo                 Recibo?               @relation(fields: [reciboId], references: [id])
+  reciboId               String?               @unique
+  movimientoFinanciero   MovimientoFinanciero? @relation(fields: [movimientoFinancieroId], references: [id])
+  movimientoFinancieroId String?               @unique
+  traspasoId             String?               // une las dos patas de un deposito caja -> banco
+
+  // Referencia de la operacion tal como la registramos (la del recibo; null en movimientos que no la tienen).
+  referencia String?
+
+  // --- Conciliacion ---
+  estado     EstadoConciliacion @default(PENDIENTE)
+  // Lo que informa el extracto / arqueo. Se comparan, de forma estricta, contra lo nuestro:
+  //   fecha (por dia, en America/La_Paz) vs fechaBanco, monto vs montoBanco,
+  //   tipo vs tipoBanco, referencia vs referenciaBanco.
+  // Si todo coincide -> CONCILIADO. Si algo difiere -> CON_DIFERENCIA con observacion obligatoria.
+  montoBanco      Decimal?        @db.Decimal(12, 2)
+  fechaBanco      DateTime?       @db.Date
+  tipoBanco       TipoMovimiento?
+  referenciaBanco String?
+  diferencia      Decimal?        @db.Decimal(12, 2) // monto - montoBanco
+  observacion     String?         // obligatoria cuando estado = CON_DIFERENCIA
+
+  conciliadoPor   Usuario?        @relation("CajaConciliadoPor", fields: [conciliadoPorId], references: [id])
+  conciliadoPorId String?
+  conciliadoEn    DateTime?       @db.Timestamptz(3)
+
+  registradoPor   Usuario?        @relation("CajaRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  eventosConciliacion ConciliacionEvento[]
+
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @db.Timestamptz(3)
 
   @@map("movimientos_caja")
   @@index([cuentaId])
   @@index([fecha])
+  @@index([periodo, estado])
+  @@index([cuentaId, periodo])
+  @@index([traspasoId])
+}
+
+// Saldo real (extracto bancario o arqueo de caja) que el Administrador introduce para una cuenta
+// y un periodo. Se puede guardar y consultar mientras el mes esta abierto (upsert); al cerrar, el
+// valor se copia a CierreCajaCuenta. La diferencia (real - registrado) se calcula, no se guarda.
+model SaldoRealPeriodo {
+  id        String         @id @default(uuid())
+
+  cuenta    CuentaBancaria @relation(fields: [cuentaId], references: [id])
+  cuentaId  String
+  periodo   String         // "YYYY-MM"
+
+  saldoReal   Decimal      @db.Decimal(12, 2) // puede ser negativo (sobregiro)
+  observacion String?
+
+  // Una diferencia no se considera resuelta hasta que el Administrador la revisa. Si cambia el
+  // saldo real o los asientos del periodo, la aplicacion vuelve `diferenciaRevisada` a false.
+  diferenciaRevisada Boolean   @default(false)
+  revisadaPor        Usuario?  @relation("SaldoRealRevisadaPor", fields: [revisadaPorId], references: [id])
+  revisadaPorId      String?
+  revisadaEn         DateTime? @db.Timestamptz(3)
+
+  registradoPor   Usuario?  @relation("SaldoRealRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("saldos_reales_periodo")
+  @@unique([cuentaId, periodo])
+}
+
+// Cierre mensual. Una fila por periodo cerrado; su existencia es la marca de bloqueo del periodo.
+// Los cierres son consecutivos, no se reabren y no se modifican (solo se consultan).
+model CierreCaja {
+  id           String   @id @default(uuid())
+  periodo      String   @unique // "YYYY-MM"
+  observacion  String?
+
+  cerradoPor   Usuario? @relation("CierreCajaPor", fields: [cerradoPorId], references: [id])
+  cerradoPorId String?
+  cerradoEn    DateTime @default(now()) @db.Timestamptz(3)
+
+  cuentas      CierreCajaCuenta[]
+
+  @@map("cierres_caja")
+}
+
+// Foto de los saldos de cada cuenta al momento del cierre (CA19: resultado mensual).
+model CierreCajaCuenta {
+  id        String         @id @default(uuid())
+
+  cierre    CierreCaja     @relation(fields: [cierreId], references: [id], onDelete: Cascade)
+  cierreId  String
+  cuenta    CuentaBancaria @relation(fields: [cuentaId], references: [id])
+  cuentaId  String
+
+  saldoRegistrado Decimal  @db.Decimal(12, 2)
+  saldoConciliado Decimal  @db.Decimal(12, 2) // solo asientos CONCILIADO
+  saldoReal       Decimal  @db.Decimal(12, 2)
+  diferencia      Decimal  @db.Decimal(12, 2) // real - registrado
+  observacion     String?
+  diferenciaConfirmada Boolean @default(false)
+
+  @@map("cierres_caja_cuenta")
+  @@unique([cierreId, cuentaId])
+  @@index([cuentaId])
+}
+
+// Historial de conciliaciones (CA20 y CA21): una fila por cada operacion de conciliacion, revision,
+// saldo real o cierre, con quien, cuando, sobre que movimiento y con que resultado. Solo se agregan
+// filas. `movimientoCajaId` es null en las operaciones de cuenta o periodo (SALDO_REAL, CIERRE...).
+model ConciliacionEvento {
+  id               String                @id @default(uuid())
+
+  movimientoCaja   MovimientoCaja?       @relation(fields: [movimientoCajaId], references: [id])
+  movimientoCajaId String?
+
+  cuenta           CuentaBancaria        @relation(fields: [cuentaId], references: [id])
+  cuentaId         String
+  periodo          String                // "YYYY-MM"
+
+  operacion        OperacionConciliacion
+  resultado        ResultadoConciliacion
+  estadoAnterior   EstadoConciliacion?   // solo en operaciones sobre un movimiento
+  estadoNuevo      EstadoConciliacion?
+
+  usuario          Usuario?              @relation("ConciliacionEventoPor", fields: [usuarioId], references: [id])
+  usuarioId        String?
+
+  // Que se comparo y que difirio, saldos del cierre, motivo del rechazo, etc.
+  detalle          Json?
+
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@map("conciliacion_eventos")
+  @@index([movimientoCajaId, createdAt])
+  @@index([cuentaId, periodo, createdAt])
+  @@index([operacion, createdAt])
 }
 
 // Personal del edificio (conserjes, seguridad, mantenimiento, etc.)
