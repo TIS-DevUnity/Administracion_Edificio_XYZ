@@ -1,12 +1,12 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
-const { autorizar } = require("../../../middlewares/rbac.middleware");
+const { permitir } = require("../../../middlewares/permisos");
 const controller = require("./usuarios.controller");
 
 const router = Router();
 
-const GESTION = autorizar("ADMINISTRADOR");
-const CONSULTA = autorizar("ADMINISTRADOR", "DIRECTORIO");
+const GESTION = permitir("usuarios", "gestionar");
+const CONSULTA = permitir("usuarios", "ver");
 
 /**
  * @openapi
