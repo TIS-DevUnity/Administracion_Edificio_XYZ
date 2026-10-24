@@ -18,8 +18,9 @@ function diaDelMes(fecha = new Date()) {
 }
 
 /**
- * Si hoy coincide con el dia de generacion configurado (o si se pasa
- * { forzar: true }, usado por el endpoint manual de administracion), genera
+ * Si hoy es el dia de generacion configurado, o uno posterior en que el periodo todavia no
+ * se genero (por ejemplo, el servidor estaba apagado ese dia), o si se pasa
+ * { forzar: true } (usado por el endpoint manual de administracion), genera
  * la expensa del periodo actual para cada departamento activo y con alguien
  * asignado que todavia no la tenga, y notifica por correo a sus ocupantes.
  * Un inmueble que ya tiene expensa (o falla por cualquier otro motivo) no
@@ -39,11 +40,16 @@ async function ejecutarGeneracionAutomatica(
     return { generadas: 0, omitidas: 0 }
   }
 
-  if (!forzar && diaDelMes(fecha) !== config.diaGeneracion) {
+  const periodo = periodoActual(fecha)
+  const dia = diaDelMes(fecha)
+  if (!forzar && dia < config.diaGeneracion) {
     return { generadas: 0, omitidas: 0, motivo: 'no es el dia de generacion' }
   }
-
-  const periodo = periodoActual(fecha)
+  // Pasado el dia de generacion solo se recupera un mes que nunca se genero: si el periodo ya tiene
+  // expensas no se hace nada (el dia exacto sigue completando los inmuebles que falten).
+  if (!forzar && dia > config.diaGeneracion && (await prisma.expensa.count({ where: { periodo } })) > 0) {
+    return { generadas: 0, omitidas: 0, motivo: 'el periodo ya fue generado' }
+  }
   const fechaVencimiento = vencimientoDelPeriodo(periodo, config.diaVencimiento)
 
   const inmuebles = await prisma.inmueble.findMany({
