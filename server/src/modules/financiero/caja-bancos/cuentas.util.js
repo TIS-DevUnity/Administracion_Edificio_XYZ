@@ -86,23 +86,28 @@ function normalizarNumeroCuenta(valor) {
 }
 
 /**
- * Saldo con el que arranca una cuenta. A diferencia de un pago, puede ser cero o negativo
- * (sobregiro); admite hasta 2 decimales y el maximo de DECIMAL(12,2).
+ * Importe con signo de una cuenta (saldo inicial, saldo real). A diferencia de un pago, puede ser cero o
+ * negativo (sobregiro); admite hasta 2 decimales y el maximo de DECIMAL(12,2).
  */
-function parsearSaldoInicial(valor) {
+function parsearSaldo(valor, campo = 'saldoInicial') {
   if (valor === undefined || valor === null || valor === '' || typeof valor === 'boolean') {
-    throw errorHttp('saldoInicial es requerido', 400)
+    throw errorHttp(`${campo} es requerido`, 400)
   }
   let saldo
   try {
     saldo = new Decimal(valor)
   } catch {
-    throw errorHttp('saldoInicial debe ser un numero', 400)
+    throw errorHttp(`${campo} debe ser un numero`, 400)
   }
-  if (!saldo.isFinite()) throw errorHttp('saldoInicial debe ser un numero', 400)
-  if (saldo.decimalPlaces() > 2) throw errorHttp('saldoInicial admite como maximo 2 decimales', 400)
-  if (saldo.abs().gt(SALDO_INICIAL_MAXIMO)) throw errorHttp('saldoInicial supera el maximo permitido', 400)
+  if (!saldo.isFinite()) throw errorHttp(`${campo} debe ser un numero`, 400)
+  if (saldo.decimalPlaces() > 2) throw errorHttp(`${campo} admite como maximo 2 decimales`, 400)
+  if (saldo.abs().gt(SALDO_INICIAL_MAXIMO)) throw errorHttp(`${campo} supera el maximo permitido`, 400)
   return saldo.isZero() ? new Decimal(0) : saldo // evita "-0.00"
+}
+
+/** Saldo con el que arranca una cuenta. */
+function parsearSaldoInicial(valor) {
+  return parsearSaldo(valor, 'saldoInicial')
 }
 
 /** Texto con 2 decimales (como se devuelve al cliente). */
@@ -164,6 +169,7 @@ module.exports = {
   normalizarNombre,
   normalizarBanco,
   normalizarNumeroCuenta,
+  parsearSaldo,
   parsearSaldoInicial,
   dinero,
   tipoDeCuentaPara,
