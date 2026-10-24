@@ -52,8 +52,9 @@ router.get('/', autenticar, controller.listar)
  *     description: |
  *       Cada aviso por correo (expensa generada o mora aplicada) deja constancia: ENVIADO, FALLIDO (correo
  *       invalido o error del servidor de correo) u OMITIDO (sin correo registrado, sin ocupantes o correo
- *       no configurado), con el motivo. La expensa se genera igual aunque el correo falle y la campanita
- *       sigue disponible.
+ *       no configurado, o fuera de produccion sin bandeja de pruebas), con el motivo. Fuera de produccion
+ *       los ENVIADO van a la bandeja de pruebas, no al residente. La expensa se genera igual aunque el
+ *       correo falle y la campanita sigue disponible.
  *     tags: [Notificaciones]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -74,6 +75,45 @@ router.get('/', autenticar, controller.listar)
  *       403: { description: Solo Administrador o Directorio }
  */
 router.get('/correos', autenticar, SUPERVISION, controller.listarCorreos)
+
+/**
+ * @openapi
+ * /api/financiero/notificaciones/correos/estado:
+ *   get:
+ *     summary: Estado del servicio de correo (si esta configurado y como se esta enviando)
+ *     description: |
+ *       Nunca devuelve valores de las variables de entorno, solo si estan y el nombre de las que faltan.
+ *       `modo` indica a quien se escribe: PRODUCCION (a los residentes), REDIRIGIDO (fuera de produccion,
+ *       todo va a una bandeja de pruebas con el destinatario real en el asunto) o BLOQUEADO (fuera de
+ *       produccion y sin bandeja de pruebas: no se envia nada y los avisos quedan OMITIDOS).
+ *       Con `verificar=true` (solo ADMINISTRADOR) tambien prueba la conexion y la autenticacion con el
+ *       servidor de correo, sin enviar ningun correo.
+ *     tags: [Notificaciones]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: verificar
+ *         description: "true prueba la conexion con el servidor SMTP (solo Administrador)"
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: |
+ *           { configurado, faltan: [nombres de variables], modo }. Con verificar=true se agrega
+ *           { conexion: "OK" | "ERROR", motivo? }
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 configurado: { type: boolean }
+ *                 faltan: { type: array, items: { type: string }, example: ["SMTP_HOST", "SMTP_PASS"] }
+ *                 modo: { type: string, enum: [PRODUCCION, REDIRIGIDO, BLOQUEADO] }
+ *                 conexion: { type: string, enum: [OK, ERROR] }
+ *                 motivo: { type: string }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio; verificar=true solo el Administrador }
+ */
+router.get('/correos/estado', autenticar, SUPERVISION, controller.estadoCorreo)
 
 /**
  * @openapi

@@ -43,4 +43,20 @@ async function listarCorreos(req, res, next) {
   }
 }
 
-module.exports = { listar, obtenerDetalle, marcarLeida, marcarTodasLeidas, listarCorreos }
+/**
+ * Estado del servicio de correo. Solo el ADMINISTRADOR puede pedir `verificar=true` (prueba la
+ * conexion con el servidor SMTP, sin enviar ningun correo); el resto solo ve si esta configurado.
+ */
+async function estadoCorreo(req, res, next) {
+  try {
+    const verificar = req.query.verificar === 'true'
+    if (verificar && req.usuario.rol !== 'ADMINISTRADOR') {
+      return res.status(403).json({ error: 'Solo el Administrador puede verificar la conexion con el servidor de correo' })
+    }
+    res.json(await notificaciones.estadoCorreo({ verificar }))
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { listar, obtenerDetalle, marcarLeida, marcarTodasLeidas, listarCorreos, estadoCorreo }
