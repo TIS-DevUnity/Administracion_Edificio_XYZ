@@ -25,6 +25,7 @@ const {
   bloquearExpensa,
   aplicarSaldoAExpensa,
   calcularEstado,
+  pendientesDe,
   sumarCampo,
   saldoFavorDe
 } = require('./saldo.util')
@@ -343,6 +344,32 @@ async function listar({ periodo, estado, inmuebleId, aguaCargada, pagina, porPag
   }
 }
 
+/** Pasa a VENCIDA una expensa con deuda cuya gracia ya termino, sin crear lineas de mora. */
+async function marcarVencida(expensa, { usuarioId, ip, origen }) {
+  const resultado = await prisma.$transaction(async (tx) => {
+    await bloquearExpensa(tx, expensa.id)
+    const actual = await tx.expensa.findUnique({ where: { id: expensa.id }, include: { pagos: true } })
+    if (!actual || !['PENDIENTE', 'PARCIAL'].includes(actual.estado)) return null
+    if (pendientesDe(actual).total.lte(0)) return null
+    return tx.expensa.update({
+      where: { id: expensa.id },
+      data: { estado: 'VENCIDA' },
+      include: INCLUIR_COMPLETO
+    })
+  }, OPCIONES_TX)
+  if (!resultado) return null
+
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'UPDATE',
+    entidad: 'Expensa',
+    entidadId: expensa.id,
+    detalle: { origen, motivo: 'VENCIMIENTO', estado: { antes: expensa.estado, despues: 'VENCIDA' } },
+    ip
+  })
+  return resultado
+}
+
 /**
  * Genera las lineas de mora que correspondan a una expensa segun la configuracion de su periodo:
  * una por cada mes de atraso, calculada sobre lo que falta pagar. `moraActualizada` indica
@@ -388,7 +415,16 @@ async function aplicarMora(expensaId, { usuarioId = null, ip = null, origen = 'M
 
   if (pendientes.length === 0) {
     const ultimoDiaSinMora = sumarDias(fechaCalendario(expensa.fechaVencimiento), config.diasGracia)
-    const dentroDeGracia = fechaEnZona() <= ultimoDiaSinMora && expensa.moras.length === 0
+    const pasoGracia = fechaEnZona() > ultimoDiaSinMora
+    const dentroDeGracia = !pasoGracia && expensa.moras.length === 0
+
+    // Pasada la gracia con deuda, la expensa esta vencida aunque la mora calculada sea 0.
+    if (pasoGracia && ['PENDIENTE', 'PARCIAL'].includes(expensa.estado)) {
+      const vencida = await marcarVencida(expensa, { usuarioId, ip, origen })
+      if (vencida) {
+        return { ...vencida, moraActualizada: false, mensaje: 'La expensa paso a VENCIDA (sin mora por calcular)' }
+      }
+    }
     return {
       ...expensa,
       moraActualizada: false,
@@ -843,7 +879,12 @@ async function cargarAgua(expensaId, { montoAgua, usuarioId = null, ip = null })
       )
     }
 
-    const estado = calcularEstado({ montoTotal, montoMora: expensa.montoMora, pagos: expensa.pagos })
+    const estado = calcularEstado({
+      montoTotal,
+      montoMora: expensa.montoMora,
+      pagos: expensa.pagos,
+      vencida: expensa.estado === 'VENCIDA'
+    })
     const actualizada = await tx.expensa.update({
       where: { id: expensaId },
       data: { montoAgua: agua, montoTotal, estado, aguaRegistradaEn: new Date() }
@@ -953,7 +994,7 @@ async function cambiarVencimiento(expensaId, { fechaVencimiento, motivo, usuario
 
     const expensa = await tx.expensa.findUnique({
       where: { id: expensaId },
-      include: { moras: { select: { id: true } } }
+      include: { moras: { select: { id: true } }, pagos: true }
     })
     if (!expensa) {
       throw errorHttp('Expensa no encontrada', 404)
@@ -977,6 +1018,21 @@ async function cambiarVencimiento(expensaId, { fechaVencimiento, motivo, usuario
       throw errorHttp('El vencimiento no puede ser anterior al dia en que se genero la expensa', 400)
     }
 
+    // Una VENCIDA sin mora lo es solo por fecha: si la nueva fecha (mas la gracia) todavia no
+    // paso, deja de estar vencida y vuelve al estado que le corresponde segun lo pagado.
+    const estadoAnterior = expensa.estado
+    let estadoNuevo = estadoAnterior
+    if (estadoAnterior === 'VENCIDA') {
+      const config = await configuracionDeLaExpensa(tx, expensa)
+      if (config && fechaEnZona() <= sumarDias(fechaVencimiento, config.diasGracia)) {
+        estadoNuevo = calcularEstado({
+          montoTotal: expensa.montoTotal,
+          montoMora: expensa.montoMora,
+          pagos: expensa.pagos
+        })
+      }
+    }
+
     const cambio = await tx.cambioVencimiento.create({
       data: {
         expensaId,
@@ -989,14 +1045,14 @@ async function cambiarVencimiento(expensaId, { fechaVencimiento, motivo, usuario
     // Se actualiza despues de registrar el cambio para que la respuesta ya lo incluya.
     const actualizada = await tx.expensa.update({
       where: { id: expensaId },
-      data: { fechaVencimiento: nueva },
+      data: { fechaVencimiento: nueva, estado: estadoNuevo },
       include: INCLUIR_COMPLETO
     })
 
-    return { actualizada, cambio, anterior }
+    return { actualizada, cambio, anterior, estadoAnterior }
   }, OPCIONES_TX)
 
-  const { actualizada, cambio, anterior } = resultado
+  const { actualizada, cambio, anterior, estadoAnterior } = resultado
 
   await registrarAuditoria({
     usuarioId,
@@ -1006,6 +1062,7 @@ async function cambiarVencimiento(expensaId, { fechaVencimiento, motivo, usuario
     detalle: {
       motivo: 'CAMBIO_VENCIMIENTO',
       fechaVencimiento: { antes: anterior, despues: fechaVencimiento },
+      estado: { antes: estadoAnterior, despues: actualizada.estado },
       motivoTexto: cambio.motivo,
       periodo: actualizada.periodo,
       inmueble: actualizada.inmueble.codigo

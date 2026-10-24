@@ -183,10 +183,10 @@ function pendientesDe(expensa) {
  * se mantiene VENCIDA hasta pagarse completa (monto y mora): asi un pago parcial no la
  * devuelve a PARCIAL (lo que hacia que el cron la re-procesara y re-notificara).
  */
-function calcularEstado({ montoTotal, montoMora, pagos }) {
+function calcularEstado({ montoTotal, montoMora, pagos, vencida = false }) {
   const { total } = pendientesDe({ montoTotal, montoMora, pagos })
   if (total.lte(0)) return 'PAGADA'
-  if (new Decimal(montoMora ?? 0).gt(0)) return 'VENCIDA'
+  if (vencida || new Decimal(montoMora ?? 0).gt(0)) return 'VENCIDA'
   if (sumarPagos(pagos).gt(0)) return 'PARCIAL'
   return 'PENDIENTE'
 }
@@ -305,7 +305,8 @@ async function repartirPago(tx, { reciboId, expensas, monto, metodoPago, referen
     const estado = calcularEstado({
       montoTotal: expensa.montoTotal,
       montoMora: expensa.montoMora,
-      pagos: [...(expensa.pagos ?? []), pago]
+      pagos: [...(expensa.pagos ?? []), pago],
+      vencida: expensa.estado === 'VENCIDA'
     })
     await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
 
@@ -373,7 +374,8 @@ async function aplicarSaldoAExpensa(tx, expensa, usuarioId = null) {
   const estado = calcularEstado({
     montoTotal: expensa.montoTotal,
     montoMora: expensa.montoMora,
-    pagos: [...(expensa.pagos ?? []), pago]
+    pagos: [...(expensa.pagos ?? []), pago],
+    vencida: expensa.estado === 'VENCIDA'
   })
   await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
 
