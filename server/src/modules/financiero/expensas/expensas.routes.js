@@ -137,11 +137,12 @@ router.post('/:id/aplicar-mora', autenticar, GESTION, controller.aplicarMora)
  *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
  *               referencia: { type: string, example: "Comprobante 00123", maxLength: 200 }
  *               fechaPago: { type: string, example: "2026-10-03", description: "Dia en que se pago (YYYY-MM-DD, hora de Bolivia). Opcional: sin ella se usa el momento actual. No puede ser futura." }
+ *               cuentaId: { type: string, description: "Opcional. Cuenta de caja o banco que recibe el dinero. Solo se aplica cuando los asientos estan activos (CAJA_BANCOS_ASIENTOS=true); con la variable apagada se ignora. Si se omite: el efectivo va a la caja por defecto y el resto de los metodos al banco por defecto. Debe estar activa y ser del tipo que corresponde al metodo (EFECTIVO a una caja; los demas a una cuenta de banco)." }
  *     responses:
  *       201: { description: "Pago registrado. Incluye montoRecibido, montoAplicado (montoAplicadoMora y montoAplicadoExpensa), saldoFavorGenerado, tipoPago (CUOTA | PAGO_COMPLETO | ANTICIPADO) y el recibo (folio y enlace al PDF)" }
- *       400: { description: monto, metodoPago o fechaPago invalidos o ausentes }
+ *       400: { description: "monto, metodoPago o fechaPago invalidos o ausentes; con asientos activos, tambien cuentaId inexistente o incompatible con el metodo (codigo CUENTA_INCOMPATIBLE)" }
  *       404: { description: Expensa no encontrada }
- *       409: { description: "La expensa ya esta pagada, o el pago incumple las reglas (orden de meses, mes atrasado incompleto)" }
+ *       409: { description: "La expensa ya esta pagada, o el pago incumple las reglas (orden de meses, mes atrasado incompleto). Con asientos activos, tambien codigos PERIODO_CERRADO (la fecha cae en un mes ya cerrado), CUENTA_INACTIVA y CUENTA_POR_DEFECTO_FALTANTE" }
  */
 router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
 

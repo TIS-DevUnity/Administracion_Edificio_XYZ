@@ -135,6 +135,20 @@ repositorio ni pegarla en capturas, issues o chats.
 Con `?verificar=true` (solo ADMINISTRADOR) tambien prueba la conexion y la autenticacion con el
 servidor, **sin enviar ningun correo**, y agrega `conexion: "OK" | "ERROR"` con el motivo.
 
+## Caja y bancos (asientos automaticos)
+
+Cada cobro (recibo) y cada movimiento extraordinario genera un asiento en el libro de caja y bancos
+(`movimientos_caja`), y un periodo ya cerrado deja de aceptar movimientos con fecha en ese mes. Esto
+solo funciona con la migracion `hu7_caja_bancos` aplicada.
+
+| Variable | Obligatoria | Descripcion |
+|---|---|---|
+| `CAJA_BANCOS_ASIENTOS` | No | `true` enciende los asientos y la guarda de periodos cerrados. Cualquier otro valor, o que falte, los apaga: cobros y movimientos se comportan como antes de HU7. |
+
+> **ADVERTENCIA: no activarla sin la migracion.** Con `CAJA_BANCOS_ASIENTOS=true` en una base sin la
+> migracion aplicada, **todos los cobros fallan**. Orden de salida: desplegar el codigo, aplicar la
+> migracion, correr el backfill y por ultimo encenderla. Cambiar el `.env` requiere reiniciar el servidor.
+
 ## Auditoria
 
 Toda accion sensible (login, altas, bajas, modificaciones) debe registrarse con:

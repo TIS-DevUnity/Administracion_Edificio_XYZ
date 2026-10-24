@@ -119,7 +119,7 @@ function parsearFecha(valor, campo, { finDeDia, offset }) {
   return fecha
 }
 
-async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
+async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referencia, fechaPago, cuentaId, claveSolicitud, usuarioId, ip }) {
   const montoAbono = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
@@ -148,7 +148,8 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
       referencia: referenciaLimpia,
       fechaPago: fecha,
       usuarioId,
-      claveSolicitud: clave
+      claveSolicitud: clave,
+      cuentaId
     })
     const creado = await tx.movimientoSaldo.create({
       data: {
@@ -226,7 +227,7 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
  * a favor; si el inmueble no debe nada, todo es saldo a favor.
  * Los meses atrasados solo se aceptan completos (ver reglas-pago.util.js).
  */
-async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
+async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia, fechaPago, cuentaId, claveSolicitud, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
@@ -258,7 +259,8 @@ async function registrarPagoInmueble({ inmuebleId, monto, metodoPago, referencia
       referencia: referenciaLimpia,
       fechaPago: fecha,
       usuarioId,
-      claveSolicitud: clave
+      claveSolicitud: clave,
+      cuentaId
     })
 
     const { aplicaciones, restante } = await repartirPago(tx, {

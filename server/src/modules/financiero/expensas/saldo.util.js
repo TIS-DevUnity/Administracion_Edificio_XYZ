@@ -1,5 +1,6 @@
 const { Prisma } = require('@prisma/client')
 const { fechaEnZona } = require('./mora.util')
+const { asientosActivos } = require('../caja-bancos/activacion.util')
 
 const Decimal = Prisma.Decimal
 const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
@@ -225,9 +226,21 @@ function expensasConDeudaOrdenadas(tx, inmuebleId) {
   })
 }
 
-/** Crea el recibo (folio) de una operacion de cobro. Debe llamarse dentro de la transaccion. */
-function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId, claveSolicitud = null }) {
-  return tx.recibo.create({
+/**
+ * Crea el recibo (folio) de una operacion de cobro. Debe llamarse dentro de la transaccion.
+ * Con CAJA_BANCOS_ASIENTOS encendida (HU7) tambien comprueba que el periodo este abierto, decide la
+ * cuenta (`cuentaId` opcional; sin ella, efectivo a la caja y el resto al banco) y crea el asiento de
+ * caja y bancos en la misma transaccion. Apagada, solo crea el recibo, como antes de HU7.
+ */
+async function crearRecibo(
+  tx,
+  { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId, claveSolicitud = null, cuentaId = null }
+) {
+  // require perezoso: asientos.util.js importa este archivo, y asi no se forma un ciclo al cargarlos.
+  const asientos = asientosActivos() ? require('../caja-bancos/asientos.util') : null
+  const destino = asientos ? await asientos.prepararAsientoRecibo(tx, { metodoPago, fechaPago, cuentaId }) : null
+
+  const recibo = await tx.recibo.create({
     data: {
       inmuebleId,
       montoTotal,
@@ -238,6 +251,9 @@ function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fecha
       registradoPorId: usuarioId
     }
   })
+
+  if (asientos) await asientos.crearAsientoRecibo(tx, recibo, destino)
+  return recibo
 }
 
 /**

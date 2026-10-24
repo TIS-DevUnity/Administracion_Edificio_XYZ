@@ -127,12 +127,13 @@ router.get('/:id', autenticar, CONSULTA, controller.obtener)
  *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
  *               referencia: { type: string, maxLength: 200 }
  *               fechaPago: { type: string, example: "2026-11-15", description: "YYYY-MM-DD, no puede ser futura. Opcional" }
+ *               cuentaId: { type: string, description: "Opcional. Cuenta de caja o banco que recibe el dinero. Solo se aplica cuando los asientos estan activos (CAJA_BANCOS_ASIENTOS=true); con la variable apagada se ignora. Si se omite: el efectivo va a la caja por defecto y el resto de los metodos al banco por defecto. Debe estar activa y ser del tipo que corresponde al metodo (EFECTIVO a una caja; los demas a una cuenta de banco)." }
  *     responses:
  *       201: { description: "Pago registrado: recibo, aplicacionesCuotas, aplicacionesExpensas y el plan actualizado" }
  *       200: { description: El pago ya estaba registrado (duplicado true) }
- *       400: { description: Datos invalidos }
+ *       400: { description: "Datos invalidos; con asientos activos, tambien cuentaId inexistente o incompatible con el metodo (codigo CUENTA_INCOMPATIBLE)" }
  *       404: { description: Plan no encontrado }
- *       409: { description: "El plan no esta activo o el monto supera el saldo del plan" }
+ *       409: { description: "El plan no esta activo o el monto supera el saldo del plan. Con asientos activos, tambien codigos PERIODO_CERRADO (la fecha cae en un mes ya cerrado), CUENTA_INACTIVA y CUENTA_POR_DEFECTO_FALTANTE" }
  */
 router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
 

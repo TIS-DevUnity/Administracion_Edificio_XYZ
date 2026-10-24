@@ -3,6 +3,8 @@ const prisma = require('../../../config/prisma')
 const { supabase, STORAGE_BUCKET } = require('../../../config/supabase')
 const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
 const { Decimal, errorHttp, parsearMonto } = require('../expensas/saldo.util')
+const { asientosActivos } = require('../caja-bancos/activacion.util')
+const asientos = require('../caja-bancos/asientos.util')
 
 const CARPETA_COMPROBANTES = 'comprobantes-movimientos'
 const MAX_COMPROBANTE_BYTES = 5 * 1024 * 1024 // 5 MB
@@ -336,6 +338,8 @@ async function crear({ datos, archivo, claveSolicitud, usuarioId, ip }) {
   const categoria = await resolverCategoria(prisma, datos.categoriaId, tipo)
   const clave = normalizarClave(claveSolicitud)
   const formato = archivo ? validarComprobante(archivo) : null
+  // HU7: el formato de cuentaId se valida antes de subir el comprobante. Con los asientos apagados no se usa.
+  const cuentaId = asientosActivos() ? asientos.normalizarCuentaId(datos.cuentaId) : null
 
   const huella = crypto
     .createHash('sha256')
@@ -361,6 +365,10 @@ async function crear({ datos, archivo, claveSolicitud, usuarioId, ip }) {
       })
       if (reciente) return { movimiento: reciente, duplicado: true }
 
+      // HU7: periodo abierto y cuenta (la indicada o el banco por defecto). Va despues de detectar el reenvio,
+      // para que un reenvio devuelva el movimiento ya guardado aunque su mes se haya cerrado.
+      const destino = asientosActivos() ? await asientos.prepararAsientoMovimiento(tx, { fecha, cuentaId }) : null
+
       const creado = await tx.movimientoFinanciero.create({
         data: {
           tipo,
@@ -375,6 +383,7 @@ async function crear({ datos, archivo, claveSolicitud, usuarioId, ip }) {
         },
         include: INCLUIR
       })
+      if (destino) await asientos.crearAsientoMovimiento(tx, creado, destino)
       return { movimiento: creado, duplicado: false }
     }, OPCIONES_TX)
   } catch (err) {
@@ -526,7 +535,11 @@ async function actualizar(id, { datos, archivo, usuarioId, ip }) {
       detalle: { campos: vacios }
     })
   }
-  if (!campos.some((campo) => datos[campo] !== undefined) && !archivo) {
+  // HU7: con los asientos activos tambien se puede cambiar solo la cuenta. `cambiaDatos` excluye el comprobante:
+  // adjuntar solo un comprobante no toca el asiento ni se bloquea en un periodo cerrado.
+  const cuentaId = asientosActivos() ? asientos.normalizarCuentaId(datos.cuentaId) : null
+  const cambiaDatos = asientosActivos() && (campos.some((campo) => datos[campo] !== undefined) || Boolean(cuentaId))
+  if (!campos.some((campo) => datos[campo] !== undefined) && !cuentaId && !archivo) {
     throw errorHttp(`Envie al menos uno de: ${campos.join(', ')} o un comprobante`, 400)
   }
 
@@ -550,10 +563,19 @@ async function actualizar(id, { datos, archivo, usuarioId, ip }) {
   if (subido) Object.assign(data, subido)
 
   let despues
+  let cambioCuenta = null // HU7: { antes, despues } cuando el asiento cambia de cuenta (se audita abajo)
   try {
     despues = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "movimientos_financieros" WHERE "id" = ${id} FOR UPDATE`
-      return tx.movimientoFinanciero.update({ where: { id }, data, include: INCLUIR })
+      const actualizado = await tx.movimientoFinanciero.update({ where: { id }, data, include: INCLUIR })
+      // HU7: el asiento sigue al movimiento (periodos abiertos, no conciliado).
+      if (cambiaDatos) {
+        const sincronizado = await asientos.sincronizarAsientoMovimiento(tx, { antes, despues: actualizado, cuentaId })
+        if (sincronizado.cuentaAnteriorId) {
+          cambioCuenta = { antes: sincronizado.cuentaAnteriorId, despues: sincronizado.asiento.cuentaId }
+        }
+      }
+      return actualizado
     }, OPCIONES_TX)
   } catch (err) {
     await borrarArchivo(subido?.comprobantePath)
@@ -571,6 +593,7 @@ async function actualizar(id, { datos, archivo, usuarioId, ip }) {
       cambios[campo] = { antes: antesDetalle[campo], despues: despuesDetalle[campo] }
     }
   }
+  if (cambioCuenta) cambios.cuentaId = cambioCuenta
   if (Object.keys(cambios).length > 0) {
     await registrarAuditoria({
       usuarioId,

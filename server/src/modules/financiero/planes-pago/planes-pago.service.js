@@ -334,7 +334,7 @@ async function listar({ inmuebleId, estado } = {}) {
  * del plan. No puede superar el saldo del plan. Con la misma `claveSolicitud` un reenvio no cobra
  * dos veces.
  */
-async function registrarPago({ planId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
+async function registrarPago({ planId, monto, metodoPago, referencia, fechaPago, cuentaId, claveSolicitud, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
@@ -381,7 +381,8 @@ async function registrarPago({ planId, monto, metodoPago, referencia, fechaPago,
         referencia: referenciaLimpia,
         fechaPago: fecha,
         usuarioId,
-        claveSolicitud: clave
+        claveSolicitud: clave,
+        cuentaId
       })
 
       // Cubre las expensas del plan: la mas antigua primero y, en cada una, primero la mora.

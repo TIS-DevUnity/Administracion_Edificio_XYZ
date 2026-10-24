@@ -533,7 +533,7 @@ async function aplicarMora(expensaId, { usuarioId = null, ip = null, origen = 'M
   return { ...actualizada, moraActualizada: true }
 }
 
-async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPago, claveSolicitud, usuarioId, ip }) {
+async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPago, cuentaId, claveSolicitud, usuarioId, ip }) {
   const montoRecibido = parsearMonto(monto)
   validarMetodoPago(metodoPago)
   const referenciaLimpia = normalizarReferencia(referencia)
@@ -587,7 +587,8 @@ async function registrarPago({ expensaId, monto, metodoPago, referencia, fechaPa
       referencia: referenciaLimpia,
       fechaPago: fecha,
       usuarioId,
-      claveSolicitud: clave
+      claveSolicitud: clave,
+      cuentaId
     })
 
     // Lo que alcanza la expensa se aplica como pago (primero la mora, luego el monto);
