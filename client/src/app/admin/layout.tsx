@@ -13,6 +13,8 @@ import {
   Menu,
   ReceiptText,
   Landmark,
+  ArrowLeftRight,
+  ChartColumnIncreasing,
   ShieldCheck,
   UserCheck,
   UserCog,
@@ -198,6 +200,28 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                       <span className="truncate">Movimientos</span>
                     </Link>
                   )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/conciliacion"
+                      
+                      aria-current={pathname.startsWith("/admin/finanzas/conciliacion") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/conciliacion") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ArrowLeftRight className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Conciliación caja y bancos</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/flujo-caja"
+                      
+                      aria-current={pathname.startsWith("/admin/finanzas/flujo-caja") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/flujo-caja") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ChartColumnIncreasing className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Flujo de caja y gráficos</span>
+                    </Link>
+                  )}
                 </div>
               );
             })}
@@ -326,6 +350,28 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                     >
                       <ReceiptText className="h-4 w-4 shrink-0" />
                       <span className="truncate">Movimientos</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/conciliacion"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/conciliacion") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/conciliacion") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ArrowLeftRight className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Conciliación caja y bancos</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/flujo-caja"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/flujo-caja") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/flujo-caja") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ChartColumnIncreasing className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Flujo de caja y gráficos</span>
                     </Link>
                   )}
                 </div>
