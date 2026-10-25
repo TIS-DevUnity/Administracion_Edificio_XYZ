@@ -1,5 +1,6 @@
 const { Prisma } = require('@prisma/client')
 const { fechaEnZona } = require('./mora.util')
+const { asientosActivos } = require('../caja-bancos/activacion.util')
 
 const Decimal = Prisma.Decimal
 const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
@@ -183,10 +184,10 @@ function pendientesDe(expensa) {
  * se mantiene VENCIDA hasta pagarse completa (monto y mora): asi un pago parcial no la
  * devuelve a PARCIAL (lo que hacia que el cron la re-procesara y re-notificara).
  */
-function calcularEstado({ montoTotal, montoMora, pagos }) {
+function calcularEstado({ montoTotal, montoMora, pagos, vencida = false }) {
   const { total } = pendientesDe({ montoTotal, montoMora, pagos })
   if (total.lte(0)) return 'PAGADA'
-  if (new Decimal(montoMora ?? 0).gt(0)) return 'VENCIDA'
+  if (vencida || new Decimal(montoMora ?? 0).gt(0)) return 'VENCIDA'
   if (sumarPagos(pagos).gt(0)) return 'PARCIAL'
   return 'PENDIENTE'
 }
@@ -225,9 +226,21 @@ function expensasConDeudaOrdenadas(tx, inmuebleId) {
   })
 }
 
-/** Crea el recibo (folio) de una operacion de cobro. Debe llamarse dentro de la transaccion. */
-function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId, claveSolicitud = null }) {
-  return tx.recibo.create({
+/**
+ * Crea el recibo (folio) de una operacion de cobro. Debe llamarse dentro de la transaccion.
+ * Con CAJA_BANCOS_ASIENTOS encendida (HU7) tambien comprueba que el periodo este abierto, decide la
+ * cuenta (`cuentaId` opcional; sin ella, efectivo a la caja y el resto al banco) y crea el asiento de
+ * caja y bancos en la misma transaccion. Apagada, solo crea el recibo, como antes de HU7.
+ */
+async function crearRecibo(
+  tx,
+  { inmuebleId, montoTotal, metodoPago, referencia, fechaPago, usuarioId, claveSolicitud = null, cuentaId = null }
+) {
+  // require perezoso: asientos.util.js importa este archivo, y asi no se forma un ciclo al cargarlos.
+  const asientos = asientosActivos() ? require('../caja-bancos/asientos.util') : null
+  const destino = asientos ? await asientos.prepararAsientoRecibo(tx, { metodoPago, fechaPago, cuentaId }) : null
+
+  const recibo = await tx.recibo.create({
     data: {
       inmuebleId,
       montoTotal,
@@ -238,6 +251,9 @@ function crearRecibo(tx, { inmuebleId, montoTotal, metodoPago, referencia, fecha
       registradoPorId: usuarioId
     }
   })
+
+  if (asientos) await asientos.crearAsientoRecibo(tx, recibo, destino)
+  return recibo
 }
 
 /**
@@ -305,7 +321,8 @@ async function repartirPago(tx, { reciboId, expensas, monto, metodoPago, referen
     const estado = calcularEstado({
       montoTotal: expensa.montoTotal,
       montoMora: expensa.montoMora,
-      pagos: [...(expensa.pagos ?? []), pago]
+      pagos: [...(expensa.pagos ?? []), pago],
+      vencida: expensa.estado === 'VENCIDA'
     })
     await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
 
@@ -373,7 +390,8 @@ async function aplicarSaldoAExpensa(tx, expensa, usuarioId = null) {
   const estado = calcularEstado({
     montoTotal: expensa.montoTotal,
     montoMora: expensa.montoMora,
-    pagos: [...(expensa.pagos ?? []), pago]
+    pagos: [...(expensa.pagos ?? []), pago],
+    vencida: expensa.estado === 'VENCIDA'
   })
   await tx.expensa.update({ where: { id: expensa.id }, data: { estado } })
 

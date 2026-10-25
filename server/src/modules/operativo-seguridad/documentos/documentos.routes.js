@@ -1,14 +1,14 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
-const { autorizar } = require("../../../middlewares/rbac.middleware");
+const { permitir } = require("../../../middlewares/permisos");
 const { upload } = require("../../../middlewares/upload.middleware");
 const controller = require("./documentos.controller");
 
 const router = Router();
 
-const GESTION = autorizar("ADMINISTRADOR", "DIRECTORIO");
-const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
-const ELIMINAR = autorizar("ADMINISTRADOR");
+const GESTION = permitir("documentos", "gestionar");
+const LECTURA = permitir("documentos", "ver");
+const ELIMINAR = permitir("documentos", "eliminar");
 
 /**
  * @openapi

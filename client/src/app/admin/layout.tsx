@@ -13,6 +13,8 @@ import {
   Menu,
   ReceiptText,
   Landmark,
+  ArrowLeftRight,
+  ChartColumnIncreasing,
   ShieldCheck,
   UserCheck,
   UserCog,
@@ -33,6 +35,7 @@ import {
 } from "@/lib/permissions";
 import { AccesoDenegado } from "@/components/AccesoDenegado";
 import { BusquedaGlobal } from "@/components/BusquedaGlobal";
+import { CampanitaNotificaciones } from "@/components/CampanitaNotificaciones";
 import { LogoMark } from "@/components/LogoMark";
 
 const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
@@ -197,6 +200,28 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                       <span className="truncate">Movimientos</span>
                     </Link>
                   )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/conciliacion"
+                      
+                      aria-current={pathname.startsWith("/admin/finanzas/conciliacion") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/conciliacion") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ArrowLeftRight className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Conciliación caja y bancos</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/flujo-caja"
+                      
+                      aria-current={pathname.startsWith("/admin/finanzas/flujo-caja") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/flujo-caja") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ChartColumnIncreasing className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Flujo de caja y gráficos</span>
+                    </Link>
+                  )}
                 </div>
               );
             })}
@@ -327,6 +352,28 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                       <span className="truncate">Movimientos</span>
                     </Link>
                   )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/conciliacion"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/conciliacion") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/conciliacion") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ArrowLeftRight className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Conciliación caja y bancos</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && rol !== "CONSULTA" && (
+                    <Link
+                      href="/admin/finanzas/flujo-caja"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/flujo-caja") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/flujo-caja") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <ChartColumnIncreasing className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Flujo de caja y gráficos</span>
+                    </Link>
+                  )}
                 </div>
               );
             })}
@@ -393,31 +440,8 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
               <BusquedaGlobal />
             </div>
 
-            {/* Notificaciones */}
-            <button
-              type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Notificaciones"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                className="h-4 w-4"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13.73 21a2 2 0 0 1-3.46 0"
-                />
-              </svg>
-            </button>
+            {/* Notificaciones (campanita, HU3 CA-15) */}
+            <CampanitaNotificaciones />
 
             {/* Avatar */}
             <div className="h-9 w-9 shrink-0 rounded-full bg-muted" />

@@ -1,5 +1,10 @@
 const { Prisma } = require('@prisma/client')
-const { obtenerTransporter } = require('../../../config/mailer')
+const {
+  obtenerTransporter,
+  variablesFaltantes,
+  redireccionDeSeguridad,
+  verificarConexion
+} = require('../../../config/mailer')
 const prisma = require('../../../config/prisma')
 const { filtroOcupanteVigente } = require('../../operativo-seguridad/inmuebles/asignacion.util')
 const { pendientesDe } = require('../expensas/saldo.util')
@@ -51,14 +56,42 @@ async function enviarCorreo({ to, subject, html, expensaId = null, tipo = 'EXPEN
     return 'OMITIDO'
   }
 
+  // Fuera de produccion nunca se escribe a los residentes reales (la base de datos es compartida):
+  // todo va a SMTP_REDIRIGIR_A y, sin esa variable, no se envia nada. En el registro queda siempre
+  // el destinatario real, para poder revisarlo o reenviarlo despues.
+  const redireccion = redireccionDeSeguridad()
+  if (redireccion && !redireccion.destino) {
+    await registrarEnvio({
+      ...contexto,
+      destinatario,
+      estado: 'OMITIDO',
+      motivo: 'Fuera de produccion (NODE_ENV distinto de production) y sin SMTP_REDIRIGIR_A: no se envian correos a residentes reales'
+    })
+    return 'OMITIDO'
+  }
+  if (redireccion && !CORREO_VALIDO.test(redireccion.destino)) {
+    await registrarEnvio({
+      ...contexto,
+      destinatario,
+      estado: 'OMITIDO',
+      motivo: 'SMTP_REDIRIGIR_A no es un correo valido: no se envio el aviso'
+    })
+    return 'OMITIDO'
+  }
+
   try {
     await transporter.sendMail({
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: destinatario,
-      subject,
+      to: redireccion ? redireccion.destino : destinatario,
+      subject: redireccion ? `[PRUEBA - para ${destinatario}] ${subject}` : subject,
       html
     })
-    await registrarEnvio({ ...contexto, destinatario, estado: 'ENVIADO' })
+    await registrarEnvio({
+      ...contexto,
+      destinatario,
+      estado: 'ENVIADO',
+      motivo: redireccion ? 'Fuera de produccion: redirigido a la bandeja de pruebas' : null
+    })
     return 'ENVIADO'
   } catch (err) {
     console.error(`[notificaciones] No se pudo enviar correo a ${destinatario}:`, err.message)
@@ -234,11 +267,30 @@ async function listarEnvios({ estado, expensaId, pagina, porPagina } = {}) {
   }
 }
 
+/**
+ * Estado del servicio de correo, sin exponer valores de las variables:
+ *  - configurado / faltan: si estan las variables SMTP obligatorias (y los nombres de las que faltan).
+ *  - modo: PRODUCCION (se escribe a los residentes), REDIRIGIDO (todo va a SMTP_REDIRIGIR_A) o
+ *    BLOQUEADO (fuera de produccion sin SMTP_REDIRIGIR_A: no se envia nada).
+ *  - con `verificar`, ademas prueba la conexion con el servidor SMTP sin enviar ningun correo.
+ */
+async function estadoCorreo({ verificar = false } = {}) {
+  const faltan = variablesFaltantes()
+  const redireccion = redireccionDeSeguridad()
+  let modo = 'PRODUCCION'
+  if (redireccion) modo = redireccion.destino ? 'REDIRIGIDO' : 'BLOQUEADO'
+
+  const estado = { configurado: faltan.length === 0, faltan, modo }
+  if (verificar) Object.assign(estado, await verificarConexion())
+  return estado
+}
+
 module.exports = {
   enviarCorreo,
   obtenerOcupantes,
   obtenerDestinatariosInmueble,
   notificarExpensaGenerada,
   notificarMoraAplicada,
-  listarEnvios
+  listarEnvios,
+  estadoCorreo
 }

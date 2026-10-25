@@ -74,6 +74,81 @@ Para proteger un endpoint:
 router.post("/", autenticar, autorizar("ADMINISTRADOR"), controller.crear);
 ```
 
+## Correo (SMTP)
+
+El sistema envia avisos por correo (expensa generada y mora aplicada) a los ocupantes de cada
+inmueble. Cada envio, sea `ENVIADO`, `FALLIDO` u `OMITIDO`, queda registrado con su motivo
+(`GET /api/financiero/notificaciones/correos`).
+
+> **ADVERTENCIA: en produccion `NODE_ENV` debe ser `production`.**
+> La base de datos (Supabase) es compartida y contiene los correos de los residentes. Por eso, con
+> cualquier valor de `NODE_ENV` distinto de `production` (`development`, `test`, vacio o sin definir)
+> el sistema **nunca escribe a los residentes**:
+> - con `SMTP_REDIRIGIR_A`: todo se envia a esa bandeja de pruebas y el destinatario real se escribe en
+>   el asunto (`[PRUEBA - para residente@correo.com] ...`);
+> - sin `SMTP_REDIRIGIR_A`: no se envia nada y el aviso queda `OMITIDO` con el motivo.
+>
+> Si en produccion `NODE_ENV` no es `production`, los residentes **no recibiran sus avisos**.
+
+### Variables (en `server/.env`, que no se sube al repositorio)
+
+| Variable | Obligatoria | Descripcion |
+|---|---|---|
+| `SMTP_HOST` | Si | Servidor SMTP |
+| `SMTP_PORT` | Si | Puerto (465 usa TLS directo; 587 usa STARTTLS) |
+| `SMTP_USER` | Si | Usuario de la cuenta de correo |
+| `SMTP_PASS` | Si | Contrasena (en Gmail, una contrasena de aplicacion) |
+| `SMTP_FROM` | No | Remitente; si falta se usa `SMTP_USER` |
+| `SMTP_REDIRIGIR_A` | Fuera de produccion | Bandeja de pruebas a la que va todo fuera de produccion |
+
+Si falta alguna de las cuatro primeras, los envios quedan `OMITIDO` ("SMTP no configurado"). Las
+conexiones tienen un limite de 10 a 15 segundos para que un servidor que no responde no deje colgada
+la peticion. Cambiar el `.env` requiere reiniciar el servidor.
+
+### Configurar Gmail con contrasena de aplicacion
+
+1. Usar una cuenta de Gmail **dedicada al equipo para pruebas**, no una personal.
+2. Activar la verificacion en dos pasos de esa cuenta.
+3. Crear una contrasena de aplicacion: Cuenta de Google -> Seguridad -> Contrasenas de aplicaciones.
+   Google entrega 16 caracteres; se pegan **sin espacios** en `SMTP_PASS`.
+4. En `server/.env` (cada integrante en el suyo, sin subirlo al repositorio):
+   - `SMTP_HOST` = `smtp.gmail.com`
+   - `SMTP_PORT` = `465` (o `587`)
+   - `SMTP_USER` = el correo de Gmail completo
+   - `SMTP_PASS` = la contrasena de aplicacion
+   - `SMTP_FROM` = nombre y el mismo correo de Gmail (Gmail reescribe un remitente distinto)
+   - `SMTP_REDIRIGIR_A` = la bandeja donde se revisaran las pruebas
+5. Reiniciar el servidor y comprobar con `GET /api/financiero/notificaciones/correos/estado`.
+
+Limite de Gmail: unos 500 destinatarios por dia en una cuenta normal. Nunca subir la contrasena al
+repositorio ni pegarla en capturas, issues o chats.
+
+### Comprobar el estado
+
+`GET /api/financiero/notificaciones/correos/estado` (ADMINISTRADOR y DIRECTORIO) devuelve
+`{ configurado, faltan, modo }`, sin mostrar valores:
+
+- `modo: PRODUCCION`: se escribe a los residentes.
+- `modo: REDIRIGIDO`: fuera de produccion, todo va a la bandeja de pruebas.
+- `modo: BLOQUEADO`: fuera de produccion y sin `SMTP_REDIRIGIR_A`: no se envia nada.
+
+Con `?verificar=true` (solo ADMINISTRADOR) tambien prueba la conexion y la autenticacion con el
+servidor, **sin enviar ningun correo**, y agrega `conexion: "OK" | "ERROR"` con el motivo.
+
+## Caja y bancos (asientos automaticos)
+
+Cada cobro (recibo) y cada movimiento extraordinario genera un asiento en el libro de caja y bancos
+(`movimientos_caja`), y un periodo ya cerrado deja de aceptar movimientos con fecha en ese mes. Esto
+solo funciona con la migracion `hu7_caja_bancos` aplicada.
+
+| Variable | Obligatoria | Descripcion |
+|---|---|---|
+| `CAJA_BANCOS_ASIENTOS` | No | `true` enciende los asientos y la guarda de periodos cerrados. Cualquier otro valor, o que falte, los apaga: cobros y movimientos se comportan como antes de HU7. |
+
+> **ADVERTENCIA: no activarla sin la migracion.** Con `CAJA_BANCOS_ASIENTOS=true` en una base sin la
+> migracion aplicada, **todos los cobros fallan**. Orden de salida: desplegar el codigo, aplicar la
+> migracion, correr el backfill y por ultimo encenderla. Cambiar el `.env` requiere reiniciar el servidor.
+
 ## Auditoria
 
 Toda accion sensible (login, altas, bajas, modificaciones) debe registrarse con:

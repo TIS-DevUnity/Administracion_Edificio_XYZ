@@ -2,10 +2,13 @@
 
 import React, { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { QueryProvider } from "./QueryProvider";
 import { BadgeEstadoExpensa, ETIQUETA_ESTADO, TablaExpensas } from "./components/TablaExpensas";
 import { ResumenMorosidad } from "./components/ResumenMorosidad";
+import { DialogoCargaAgua } from "./components/DialogoCargaAgua";
+import { AvisoServicioCorreo, DialogoRegistroCorreos } from "./components/RegistroCorreos";
 import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
 import axios from "axios";
 import {
@@ -14,6 +17,8 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Droplets,
+  Mail,
   UserRound,
   X,
   RefreshCw,
@@ -95,6 +100,10 @@ function ContenidoMorosidad() {
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
   const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
+  // GET /notificaciones/correos: ADMINISTRADOR y DIRECTORIO (notificaciones.routes.js).
+  const bolPuedeVerCorreos = rol !== "CONSULTA";
+  const [bolCargaAguaAbierta, setBolCargaAguaAbierta] = useState(false);
+  const [bolRegistroCorreosAbierto, setBolRegistroCorreosAbierto] = useState(false);
 
   // Carga manual del agua de la expensa abierta en el detalle.
   const [bolEditandoAgua, setBolEditandoAgua] = useState(false);
@@ -803,6 +812,7 @@ function ContenidoMorosidad() {
       </div>
 
       {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
+      {bolPuedeVerCorreos && <AvisoServicioCorreo onVerRegistro={() => setBolRegistroCorreosAbierto(true)} />}
       {errorCarga && (
         <div role="alert" className={`${CLASE_AVISO_ERROR} mb-4 flex flex-wrap items-center justify-between gap-3`}>
           <span>{errorCarga}</span>
@@ -858,6 +868,17 @@ function ContenidoMorosidad() {
               </details>
             )}
             {resultadoGeneracion.motivo && <p className={`${CLASE_AYUDA} sm:col-span-2 xl:col-span-4`}>Motivo: {resultadoGeneracion.motivo}</p>}
+            {resultadoGeneracion.correos && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between xl:col-span-4">
+                <p className="text-[13px] text-foreground">
+                  <Mail className="mr-1.5 inline h-4 w-4 text-muted-foreground" />
+                  Avisos por correo: <span className="font-medium text-success">{resultadoGeneracion.correos.enviados} enviados</span>
+                  {" · "}<span className="font-medium text-destructive">{resultadoGeneracion.correos.fallidos} fallidos</span>
+                  {" · "}<span className="font-medium text-muted-foreground">{resultadoGeneracion.correos.omitidos} omitidos</span>
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setBolRegistroCorreosAbierto(true)}>Ver registro de correos</Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -887,6 +908,15 @@ function ContenidoMorosidad() {
             </span>
             .
           </p>
+          {bolPuedeVerCorreos && (
+            <button
+              type="button"
+              onClick={() => setBolRegistroCorreosAbierto(true)}
+              className="font-caption mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:text-primary/80"
+            >
+              <Mail className="h-3.5 w-3.5" /> Ver registro de avisos por correo
+            </button>
+          )}
         </div>
       )}
 
@@ -925,7 +955,15 @@ function ContenidoMorosidad() {
           </section>
 
           <section className="space-y-3">
-            <h3 className={CLASE_LABEL_CAMPO}>Agua de {etiquetaPeriodo(filtroPeriodo)}</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className={CLASE_LABEL_CAMPO}>Agua de {etiquetaPeriodo(filtroPeriodo)}</h3>
+              {bolPuedeGestionar && (
+                <Button size="sm" onClick={() => setBolCargaAguaAbierta(true)}>
+                  <Droplets className="h-4 w-4" />
+                  Cargar agua del mes
+                </Button>
+              )}
+            </div>
             {expensasSinAgua.length === 0 ? (
               <p className="rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">
                 {expensas.length === 0
@@ -1230,7 +1268,18 @@ function ContenidoMorosidad() {
                     Mora aplicada
                   </Badge>
                 )}
+                {expensaDetalle.planPagoId && (
+                  <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
+                    En plan de pagos
+                  </Badge>
+                )}
               </div>
+              {expensaDetalle.planPagoId && (
+                <p className="rounded-lg border border-accent-secondary/30 bg-accent-secondary/10 px-3 py-2 text-[13px] text-foreground">
+                  Esta expensa se cobra por las cuotas de un plan de pagos.{" "}
+                  <Link href="/admin/pagos/planes" className="font-medium text-primary hover:text-primary/80">Ver planes de pago</Link>
+                </p>
+              )}
 
               <div className="flex items-start gap-3 rounded-lg border border-border p-3">
                 <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -1268,10 +1317,24 @@ function ContenidoMorosidad() {
               <div className="rounded-lg border border-border p-3">
                 <p className={`${CLASE_LABEL_CAMPO} mb-3`}>Desglose de la expensa</p>
                 <div className="flex flex-col gap-2 text-[13px] tabular-nums">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">Tarifa fija</span>
-                    <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoBase))}</span>
-                  </div>
+                  {/* Un cargo por concepto: el departamento y cada baulera/parqueo con cobro (HU3 CA-4). */}
+                  {(expensaDetalle.cargos?.length ?? 0) > 0 ? (
+                    expensaDetalle.cargos!.map((cargo) => (
+                      <div key={cargo.id} className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">
+                          {cargo.clase === "DEPARTAMENTO"
+                            ? `Tarifa fija · Departamento ${cargo.codigo}${expensaDetalle.tipoNombre ? ` (tipo ${expensaDetalle.tipoNombre})` : ""}`
+                            : `${cargo.clase === "BAULERA" ? "Baulera" : "Parqueo"} ${cargo.codigo}`}
+                        </span>
+                        <span className="text-foreground">{formatCurrency(Number(cargo.monto))}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Tarifa fija</span>
+                      <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoBase))}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground">
                       Agua del período
@@ -1446,6 +1509,19 @@ function ContenidoMorosidad() {
       </Dialog>
 
       <DialogoEstadoCuenta strInmuebleId={strInmuebleCuentaId} onCerrar={() => setStrInmuebleCuentaId(null)} />
+
+      {bolPuedeGestionar && (
+        <DialogoCargaAgua
+          bolAbierto={bolCargaAguaAbierta}
+          onCerrar={() => setBolCargaAguaAbierta(false)}
+          strPeriodoInicial={filtroPeriodo}
+          tiposInmueble={tiposInmueble}
+          onGuardado={() => void actualizarExpensas()}
+        />
+      )}
+      {bolPuedeVerCorreos && (
+        <DialogoRegistroCorreos bolAbierto={bolRegistroCorreosAbierto} onCerrar={() => setBolRegistroCorreosAbierto(false)} />
+      )}
 
       <Dialog open={expensaVencimiento !== null} onOpenChange={(abierto) => !abierto && !guardandoVencimiento && setExpensaVencimiento(null)}>
         <DialogContent className="sm:max-w-[430px]">

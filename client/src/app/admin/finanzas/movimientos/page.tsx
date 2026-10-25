@@ -10,6 +10,13 @@ import { MovimientoForm } from "./components/MovimientoForm";
 import { MovimientosListado } from "./components/MovimientosListado";
 import { BalanceMovimientos } from "./components/BalanceMovimientos";
 import { QueryProvider } from "./QueryProvider";
+import {
+  CLASE_AVISO_ADVERTENCIA,
+  CLASE_AVISO_EXITO,
+  CLASE_DESCRIPCION_DIALOGO,
+  CLASE_TITULO_DIALOGO,
+  CLASE_TITULO_SECCION,
+} from "./utils/ui";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol } from "@/lib/permissions";
 
@@ -43,8 +50,9 @@ function Contenido() {
         <div className="flex items-start gap-3">
           <div className="rounded-lg bg-primary/10 p-3"><Wallet className="size-5 text-primary" /></div>
           <div>
-            <h1 className="font-title text-[24px] font-bold">Gastos e ingresos extraordinarios</h1>
-            <p className="text-[13px] text-muted-foreground">Movimientos financieros del edificio</p>
+            {/* El H1 de la vista ya lo pone el layout ("Finanzas"): aquí va un subtítulo. */}
+            <h2 className={CLASE_TITULO_SECCION}>Gastos e ingresos extraordinarios</h2>
+            <p className="mt-1 text-[13px] leading-[1.45] text-muted-foreground">Movimientos financieros del edificio</p>
           </div>
         </div>
         {administrador && (
@@ -57,9 +65,9 @@ function Contenido() {
       {administrador ? (
         <>
           {aviso && (
-            <div role="status" className={`flex items-start justify-between gap-3 rounded-lg border p-3 text-[13px] ${aviso.sinComprobante ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/30 bg-emerald-500/5"}`}>
+            <div role="status" className={`flex items-start justify-between gap-3 ${aviso.sinComprobante ? CLASE_AVISO_ADVERTENCIA : CLASE_AVISO_EXITO}`}>
               <div className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className={`mt-0.5 size-4 shrink-0 ${aviso.sinComprobante ? "text-accent-secondary" : "text-success"}`} />
                 <p>{aviso.texto}</p>
               </div>
               <Button type="button" size="icon-sm" variant="ghost" aria-label="Cerrar mensaje" onClick={() => setAviso(null)}>
@@ -78,8 +86,8 @@ function Contenido() {
               onInteractOutside={evento => { if (guardando) evento.preventDefault(); }}
             >
               <DialogHeader>
-                <DialogTitle>Registrar movimiento financiero</DialogTitle>
-                <DialogDescription>
+                <DialogTitle className={CLASE_TITULO_DIALOGO}>Registrar movimiento financiero</DialogTitle>
+                <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>
                   Registra un gasto o ingreso extraordinario del edificio.
                 </DialogDescription>
               </DialogHeader>

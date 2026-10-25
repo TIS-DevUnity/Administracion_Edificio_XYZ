@@ -39,7 +39,7 @@ async function obtener(req, res, next) {
 
 async function registrarPago(req, res, next) {
   try {
-    const { monto, metodoPago, referencia, fechaPago } = req.body ?? {}
+    const { monto, metodoPago, referencia, fechaPago, cuentaId } = req.body ?? {}
     if (monto === undefined || !metodoPago) {
       return res.status(400).json({ error: 'monto y metodoPago son requeridos' })
     }
@@ -49,6 +49,7 @@ async function registrarPago(req, res, next) {
       metodoPago,
       referencia,
       fechaPago,
+      cuentaId,
       claveSolicitud: req.get('Idempotency-Key'),
       usuarioId: req.usuario.id,
       ip: req.ip

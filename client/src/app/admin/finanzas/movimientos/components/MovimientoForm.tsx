@@ -13,6 +13,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { movimientosService } from "@/services/movimientos.service";
 import { validarComprobante } from "../utils/comprobantes";
+import {
+  CLASE_AVISO_ADVERTENCIA,
+  CLASE_AVISO_ERROR,
+  CLASE_AVISO_EXITO,
+  CLASE_AYUDA,
+  CLASE_ERROR_CAMPO,
+  CLASE_LABEL,
+  CLASE_TITULO_SECCION,
+  abrirCalendario,
+} from "../utils/ui";
 import type { CrearMovimientoPayload, CrearMovimientoRespuesta, TipoMovimientoFormulario } from "@/types/movimientos";
 
 type Campo = keyof CrearMovimientoPayload;
@@ -234,15 +244,15 @@ export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuar
     <Card className={enModal ? "border-0 bg-transparent py-0 shadow-none ring-0" : undefined}>
       {!enModal && (
         <CardHeader className="border-b border-border pb-4">
-          <CardTitle>Registrar movimiento</CardTitle>
-          <p className="text-[13px] text-muted-foreground">Introduce los datos de un ingreso o gasto extraordinario.</p>
+          <CardTitle className={CLASE_TITULO_SECCION}>Registrar movimiento</CardTitle>
+          <p className="text-[13px] leading-[1.45] text-muted-foreground">Introduce los datos de un ingreso o gasto extraordinario.</p>
         </CardHeader>
       )}
       <CardContent className={enModal ? "px-0" : undefined}>
         <form onSubmit={guardar} noValidate className="space-y-5">
           <fieldset disabled={crearMutation.isPending} className="space-y-5 disabled:opacity-70">
             <div className="space-y-2">
-              <span className="text-[13px] font-medium">Tipo de movimiento *</span>
+              <span className={CLASE_LABEL}>Tipo de movimiento *</span>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant={form.tipo === "GASTO" ? "default" : "outline"}
                   aria-pressed={form.tipo === "GASTO"} onClick={() => cambiarTipo("GASTO")}
@@ -251,30 +261,30 @@ export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuar
                   aria-pressed={form.tipo === "INGRESO"} onClick={() => cambiarTipo("INGRESO")}
                   className="w-full"><ArrowUpCircle className="size-4"/> Ingreso</Button>
               </div>
-              <p className="text-[12px] text-muted-foreground">
+              <p className={CLASE_AYUDA}>
                 {form.tipo === "GASTO" ? "El gasto reduce el balance de movimientos extraordinarios." : "El ingreso aumenta el balance de movimientos extraordinarios."}
               </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label htmlFor="hu6-monto" className="text-[13px] font-medium">Monto en Bs *</label>
+                <label htmlFor="hu6-monto" className={CLASE_LABEL}>Monto en Bs *</label>
                 <Input id="hu6-monto" name="monto" type="number" min="0.01" step="0.01"
                   placeholder="Ej. 250.50" value={form.monto} onChange={e => actualizar("monto", e.target.value)}
                   aria-invalid={Boolean(errores.monto)} aria-describedby={errores.monto ? "hu6-monto-error" : undefined}/>
-                {errores.monto && <p id="hu6-monto-error" role="alert" className="text-[12px] text-destructive">{errores.monto}</p>}
+                {errores.monto && <p id="hu6-monto-error" role="alert" className={CLASE_ERROR_CAMPO}>{errores.monto}</p>}
               </div>
               <div className="space-y-2">
-                <label htmlFor="hu6-fecha" className="text-[13px] font-medium">Fecha *</label>
-                <Input id="hu6-fecha" name="fecha" type="date" value={form.fecha}
-                  onChange={e => actualizar("fecha", e.target.value)}
+                <label htmlFor="hu6-fecha" className={CLASE_LABEL}>Fecha *</label>
+                <Input id="hu6-fecha" name="fecha" type="date" value={form.fecha} className="cursor-pointer"
+                  onClick={abrirCalendario} onChange={e => actualizar("fecha", e.target.value)}
                   aria-invalid={Boolean(errores.fecha)} aria-describedby={errores.fecha ? "hu6-fecha-error" : undefined}/>
-                {errores.fecha && <p id="hu6-fecha-error" role="alert" className="text-[12px] text-destructive">{errores.fecha}</p>}
+                {errores.fecha && <p id="hu6-fecha-error" role="alert" className={CLASE_ERROR_CAMPO}>{errores.fecha}</p>}
               </div>
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="hu6-categoria" className="text-[13px] font-medium">Categoría *</label>
+              <label htmlFor="hu6-categoria" className={CLASE_LABEL}>Categoría *</label>
               {categoriasQuery.isLoading ? <Skeleton className="h-9 w-full"/> : (
                 <Select value={form.categoriaId} onValueChange={valor => actualizar("categoriaId", valor)}
                   disabled={categoriasQuery.isError || categorias.length === 0}>
@@ -286,25 +296,25 @@ export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuar
                   </SelectContent>
                 </Select>
               )}
-              {categoriasQuery.isError && <p role="alert" className="text-[12px] text-destructive">No se pudieron cargar las categorías. <button type="button" onClick={() => void categoriasQuery.refetch()} className="underline">Reintentar</button></p>}
-              {!categoriasQuery.isLoading && !categoriasQuery.isError && !categorias.length && <p className="text-[12px] text-muted-foreground">No hay categorías activas para este tipo. Solicita su configuración al administrador.</p>}
-              {errores.categoriaId && <p role="alert" className="text-[12px] text-destructive">{errores.categoriaId}</p>}
+              {categoriasQuery.isError && <p role="alert" className={CLASE_ERROR_CAMPO}>No se pudieron cargar las categorías. <button type="button" onClick={() => void categoriasQuery.refetch()} className="underline">Reintentar</button></p>}
+              {!categoriasQuery.isLoading && !categoriasQuery.isError && !categorias.length && <p className={CLASE_AYUDA}>No hay categorías activas para este tipo. Solicita su configuración al administrador.</p>}
+              {errores.categoriaId && <p role="alert" className={CLASE_ERROR_CAMPO}>{errores.categoriaId}</p>}
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="hu6-concepto" className="text-[13px] font-medium">Concepto *</label>
+              <label htmlFor="hu6-concepto" className={CLASE_LABEL}>Concepto *</label>
               <textarea id="hu6-concepto" name="concepto" maxLength={200} rows={3} value={form.concepto}
                 onChange={e => actualizar("concepto", e.target.value)}
                 placeholder="Ej. Reparación de la bomba de agua"
                 aria-invalid={Boolean(errores.concepto)} aria-describedby={errores.concepto ? "hu6-concepto-error" : undefined}
                 className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive"/>
               <div className="flex justify-between gap-2">
-                {errores.concepto ? <p id="hu6-concepto-error" role="alert" className="text-[12px] text-destructive">{errores.concepto}</p> : <span className="text-[11px] text-muted-foreground">Describe el motivo del movimiento.</span>}
-                <span className="text-[11px] text-muted-foreground">{form.concepto.length}/200</span>
+                {errores.concepto ? <p id="hu6-concepto-error" role="alert" className={CLASE_ERROR_CAMPO}>{errores.concepto}</p> : <span className={CLASE_AYUDA}>Describe el motivo del movimiento.</span>}
+                <span className={`${CLASE_AYUDA} tabular-nums`}>{form.concepto.length}/200</span>
               </div>
             </div>
             <div className="space-y-2">
-              <label htmlFor="hu6-comprobante" className="flex items-center gap-2 text-[13px] font-medium">
+              <label htmlFor="hu6-comprobante" className={`flex items-center gap-2 ${CLASE_LABEL}`}>
                 <Paperclip className="size-4" /> Comprobante (opcional)
               </label>
               <Input
@@ -313,16 +323,16 @@ export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuar
                 onChange={elegirComprobante} aria-invalid={Boolean(errorComprobante)}
                 aria-describedby="hu6-comprobante-ayuda"
               />
-              <p id="hu6-comprobante-ayuda" className="text-[12px] text-muted-foreground">
+              <p id="hu6-comprobante-ayuda" className={CLASE_AYUDA}>
                 Archivo JPG, PNG o PDF · Máximo 5 MB. Se guardará junto al movimiento.
               </p>
               {comprobante && <p className="break-all text-[12px] text-muted-foreground">Seleccionado: {comprobante.name} · <button type="button" className="underline" onClick={borrarComprobante}>Quitar</button></p>}
-              {errorComprobante && <p role="alert" className="text-[12px] text-destructive">{errorComprobante}</p>}
+              {errorComprobante && <p role="alert" className={CLASE_ERROR_CAMPO}>{errorComprobante}</p>}
             </div>
           </fieldset>
 
           {crearMutation.isError && (
-            <div role="alert" className="space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-[13px] text-destructive">
+            <div role="alert" className={`space-y-3 ${CLASE_AVISO_ERROR}`}>
               <p>{mensajeError(crearMutation.error)}</p>
               {falloAlSubir && comprobante && (
                 <div className="space-y-2">
@@ -339,14 +349,14 @@ export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuar
             </div>
           )}
           {resultado && (
-            <div role="status" className="space-y-1 rounded-lg border border-emerald-300/40 bg-emerald-500/5 p-3">
-              <div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-600"/>
+            <div role="status" className={`space-y-1 ${CLASE_AVISO_EXITO}`}>
+              <div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-success"/>
                 <span className="text-[13px] font-medium">{resultado.mensaje}</span>
-                {resultado.duplicado && <Badge variant="outline">Reenvío detectado</Badge>}
+                {resultado.duplicado && <Badge variant="outline" className="font-caption text-[11px]">Reenvío detectado</Badge>}
               </div>
-              <p className="text-[12px] text-muted-foreground">{resultado.movimiento.tipoEtiqueta}: Bs {Number(resultado.movimiento.monto).toFixed(2)} · {resultado.movimiento.fecha} · {resultado.movimiento.categoria.nombre ?? "Categoría registrada"}</p>
+              <p className={CLASE_AYUDA}>{resultado.movimiento.tipoEtiqueta}: Bs {Number(resultado.movimiento.monto).toFixed(2)} · {resultado.movimiento.fecha} · {resultado.movimiento.categoria.nombre ?? "Categoría registrada"}</p>
               {guardadoSinComprobante && (
-                <p className="text-[12px] font-medium text-amber-700 dark:text-amber-400">
+                <p className={`${CLASE_AVISO_ADVERTENCIA} text-[12px] font-medium`}>
                   El movimiento SÍ está registrado, pero el comprobante NO se guardó.
                   Cuando esté disponible el almacenamiento, adjúntalo desde «Ver detalle» en el listado.
                   Conserva el archivo original: el navegador no lo almacena para más tarde.
@@ -367,7 +377,7 @@ export function MovimientoForm({ enModal = false, onCancelar, onGuardado, onGuar
               <Save className="size-4"/> Guardar movimiento
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">Si no dispones de comprobante, puedes adjuntarlo después desde el detalle del movimiento.</p>
+          <p className={CLASE_AYUDA}>Si no dispones de comprobante, puedes adjuntarlo después desde el detalle del movimiento.</p>
         </form>
       </CardContent>
     </Card>

@@ -42,11 +42,12 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
  *               referencia: { type: string, example: "Transferencia 4521", maxLength: 200 }
  *               fechaPago: { type: string, example: "2026-10-03", description: "YYYY-MM-DD, hora de Bolivia. Opcional (por defecto ahora). No puede ser futura." }
+ *               cuentaId: { type: string, description: "Opcional. Cuenta de caja o banco que recibe el dinero. Solo se aplica cuando los asientos estan activos (CAJA_BANCOS_ASIENTOS=true); con la variable apagada se ignora. Si se omite: el efectivo va a la caja por defecto y el resto de los metodos al banco por defecto. Debe estar activa y ser del tipo que corresponde al metodo (EFECTIVO a una caja; los demas a una cuenta de banco)." }
  *     responses:
  *       201: { description: Saldo a favor registrado (devuelve el saldo vigente y el recibo con su folio) }
- *       400: { description: monto, metodoPago o fechaPago invalidos }
+ *       400: { description: "monto, metodoPago o fechaPago invalidos; con asientos activos, tambien cuentaId inexistente o incompatible con el metodo (codigo CUENTA_INCOMPATIBLE)" }
  *       404: { description: Inmueble no encontrado }
- *       409: { description: "El inmueble tiene deuda pendiente (codigo DEUDA_PENDIENTE) o no es un departamento" }
+ *       409: { description: "El inmueble tiene deuda pendiente (codigo DEUDA_PENDIENTE) o no es un departamento. Con asientos activos, tambien codigos PERIODO_CERRADO (la fecha cae en un mes ya cerrado), CUENTA_INACTIVA y CUENTA_POR_DEFECTO_FALTANTE" }
  */
 router.post('/:id/pagos-anticipados', autenticar, GESTION, controller.registrarPagoAnticipado)
 
@@ -82,12 +83,13 @@ router.post('/:id/pagos-anticipados', autenticar, GESTION, controller.registrarP
  *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE] }
  *               fechaPago: { type: string, example: "2026-10-03", description: "Dia en que se pago (YYYY-MM-DD, hora de Bolivia). No puede ser futura." }
  *               referencia: { type: string, example: "Transferencia 4521", maxLength: 200 }
+ *               cuentaId: { type: string, description: "Opcional. Cuenta de caja o banco que recibe el dinero. Solo se aplica cuando los asientos estan activos (CAJA_BANCOS_ASIENTOS=true); con la variable apagada se ignora. Si se omite: el efectivo va a la caja por defecto y el resto de los metodos al banco por defecto. Debe estar activa y ser del tipo que corresponde al metodo (EFECTIVO a una caja; los demas a una cuenta de banco)." }
  *     responses:
  *       201:
  *         description: "Pago registrado. Devuelve recibo (folio, urlPdf), estadoPago (PAGADO | PAGO_PARCIAL | SALDO_A_FAVOR), tipoPago (CUOTA | PAGO_COMPLETO | ANTICIPADO), aplicaciones por expensa (de la mas antigua, con montoMora y montoExpensa), saldoFavorGenerado y saldoFavor vigente"
- *       400: { description: "Faltan campos obligatorios (la respuesta lista cuales) o monto, metodoPago o fechaPago invalidos" }
+ *       400: { description: "Faltan campos obligatorios (la respuesta lista cuales) o monto, metodoPago o fechaPago invalidos; con asientos activos, tambien cuentaId inexistente o incompatible con el metodo (codigo CUENTA_INCOMPATIBLE)" }
  *       404: { description: Inmueble no encontrado }
- *       409: { description: "El pago incumple las reglas (mes atrasado sin completar) o el inmueble no es un departamento" }
+ *       409: { description: "El pago incumple las reglas (mes atrasado sin completar) o el inmueble no es un departamento. Con asientos activos, tambien codigos PERIODO_CERRADO (la fecha cae en un mes ya cerrado), CUENTA_INACTIVA y CUENTA_POR_DEFECTO_FALTANTE" }
  *   get:
  *     summary: Historial de pagos del inmueble (mas reciente primero) con monto, fecha, metodo, folio y estado de la expensa que cubrieron (ultimos 200)
  *     tags: [Financiero]
@@ -149,7 +151,13 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  *         favor supera la deuda se informa `saldoAFavorRestante`.
  *       - `deudasPendientes`: obligaciones no pagadas completas al cierre del periodo.
  *       - `sinMovimientos` y `mensaje`: si no hay movimientos en el periodo, el mensaje lo indica.
- *       - `expensas`, `movimientosSaldo` y `resumen` conservan el formato anterior.
+ *       - `expensas`, `movimientosSaldo` y `resumen` conservan el formato anterior. Cada expensa suma
+ *         `planPagoId`: el plan de pagos que la cubre, o `null` si se cobra por el pago normal.
+ *       - `planesPago`: planes de pago en cuotas del inmueble, en cualquier estado (ACTIVO, COMPLETADO o
+ *         CANCELADO) y sin filtrar por el periodo consultado, con el mismo formato que `GET /planes-pago`.
+ *         Cada plan trae sus `cuotas` (`numero`, `monto`, `montoPagado`, `saldoPendiente`,
+ *         `fechaVencimiento`, `estado` PENDIENTE, PARCIAL, PAGADA o VENCIDA, y sus `pagos`), las `expensas`
+ *         que cubre y `proximaCuota`. Un inmueble sin planes devuelve `[]`.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
