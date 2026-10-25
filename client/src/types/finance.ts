@@ -83,6 +83,17 @@ export interface ResultadoGeneracionDTO {
   yaGeneradas?: string[];
   pendientes?: { inmuebleId: string; codigo: string; motivo: string }[];
   excluidos?: { codigo: string; motivo: string }[];
+  /** Resultado de los avisos por correo de las expensas nuevas (HU3 CA-16). */
+  correos?: { enviados: number; fallidos: number; omitidos: number };
+}
+
+/** Una línea por concepto cobrado en la expensa: el departamento y cada baulera/parqueo con cobro (HU3 CA-4). */
+export interface CargoExpensaDTO {
+  id: string;
+  clase: "DEPARTAMENTO" | "BAULERA" | "PARQUEO";
+  inmuebleId: string;
+  codigo: string;
+  monto: number | string;
 }
 
 export interface InmuebleResumen {
@@ -115,6 +126,9 @@ export interface ExpensaDTO {
   pagos: PagoDTO[];
   moras?: MoraExpensaDTO[];
   cambiosVencimiento?: CambioVencimientoDTO[];
+  cargos?: CargoExpensaDTO[];
+  /** Si no es null, la expensa se cobra por las cuotas de ese plan de pagos. */
+  planPagoId?: string | null;
 }
 /** Tipos de departamento; el backend devuelve estos campos dentro de {tiposInmueble}. */
 export interface TipoInmuebleDTO {
@@ -143,4 +157,6 @@ export interface FiltrosExpensasDTO {
   periodo?: string;
   estado?: EstadoExpensa;
   inmuebleId?: string;
+  /** "false" = solo las que todavía no tienen el agua cargada. */
+  aguaCargada?: "true" | "false";
 }

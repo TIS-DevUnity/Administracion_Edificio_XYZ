@@ -185,7 +185,7 @@ export function InmueblesDeLaPersona({
     <div className="flex flex-col gap-4">
       <div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <p className={CLASE_ETIQUETA_CAMPO}>Inmuebles asociados ({datos.resumen.total})</p>
+          <p className={CLASE_ETIQUETA_CAMPO}>Inmuebles y ocupación ({datos.resumen.total})</p>
           <p className="font-caption text-[11px] text-muted-foreground">
             {datos.resumen.departamentos} depto. · {datos.resumen.bauleras} baulera
             {datos.resumen.bauleras === 1 ? "" : "s"} · {datos.resumen.parqueos} parqueo

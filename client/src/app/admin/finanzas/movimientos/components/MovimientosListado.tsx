@@ -17,6 +17,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { movimientosService } from "@/services/movimientos.service";
 import { MovimientoDetalle } from "./MovimientoDetalle";
 import { MovimientoEditar } from "./MovimientoEditar";
+import {
+  CLASE_AVISO_ERROR,
+  CLASE_AVISO_EXITO,
+  CLASE_AYUDA,
+  CLASE_BADGE_GASTO,
+  CLASE_BADGE_INGRESO,
+  CLASE_CIFRA,
+  CLASE_ERROR_CAMPO,
+  CLASE_LABEL,
+  CLASE_TEXTO_GASTO,
+  CLASE_TEXTO_INGRESO,
+  CLASE_TITULO_SECCION,
+  abrirCalendario,
+} from "../utils/ui";
 import type {
   FiltrosMovimientosAPI,
   MovimientoFinanciero,
@@ -53,11 +67,11 @@ function mensajeError(error: unknown): string {
 
 function etiquetaTipo(movimiento: MovimientoFinanciero) {
   return movimiento.tipo === "INGRESO" ? (
-    <Badge variant="outline" className="gap-1 border-emerald-300/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+    <Badge variant="outline" className={CLASE_BADGE_INGRESO}>
       <ArrowUpRight className="size-3" /> Ingreso
     </Badge>
   ) : (
-    <Badge variant="outline" className="gap-1 border-rose-300/60 bg-rose-500/10 text-rose-700 dark:text-rose-400">
+    <Badge variant="outline" className={CLASE_BADGE_GASTO}>
       <ArrowDownRight className="size-3" /> Gasto
     </Badge>
   );
@@ -66,7 +80,7 @@ function etiquetaTipo(movimiento: MovimientoFinanciero) {
 function importe(movimiento: MovimientoFinanciero) {
   const ingreso = movimiento.tipo === "INGRESO";
   return (
-    <span className={ingreso ? "font-semibold text-emerald-700 dark:text-emerald-400" : "font-semibold text-rose-700 dark:text-rose-400"}>
+    <span className={`font-semibold ${ingreso ? CLASE_TEXTO_INGRESO : CLASE_TEXTO_GASTO}`}>
       {ingreso ? "+" : "−"}{formatoBs(movimiento.monto)}
     </span>
   );
@@ -74,17 +88,17 @@ function importe(movimiento: MovimientoFinanciero) {
 
 function Resumen({ resumen }: { resumen: ResumenMovimientos }) {
   const indicadores = [
-    { clave: "ingresos", titulo: "Ingresos filtrados", valor: resumen.ingresos, clase: "text-emerald-700 dark:text-emerald-400" },
-    { clave: "gastos", titulo: "Gastos filtrados", valor: resumen.gastos, clase: "text-rose-700 dark:text-rose-400" },
-    { clave: "neto", titulo: "Resultado neto filtrado", valor: resumen.balance, clase: "text-foreground" },
+    { clave: "ingresos", titulo: "Ingresos filtrados", valor: resumen.ingresos, clase: CLASE_TEXTO_INGRESO },
+    { clave: "gastos", titulo: "Gastos filtrados", valor: resumen.gastos, clase: CLASE_TEXTO_GASTO },
+    { clave: "neto", titulo: "Resultado neto filtrado", valor: resumen.balance, clase: Number(resumen.balance) < 0 ? CLASE_TEXTO_GASTO : "text-foreground" },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-3" aria-label="Resumen de resultados filtrados">
       {indicadores.map(indicador => (
         <Card key={indicador.clave}>
           <CardContent className="space-y-2 py-4">
-            <p className="text-[12px] text-muted-foreground">{indicador.titulo}</p>
-            <p className={`text-[21px] font-semibold tabular-nums ${indicador.clase}`}>{formatoBs(indicador.valor)}</p>
+            <p className={CLASE_LABEL}>{indicador.titulo}</p>
+            <p className={`${CLASE_CIFRA} ${indicador.clase}`}>{formatoBs(indicador.valor)}</p>
           </CardContent>
         </Card>
       ))}
@@ -163,8 +177,8 @@ export function MovimientosListado() {
     <section aria-label="Listado de movimientos extraordinarios" className="space-y-4">
       <Card>
         <CardHeader className="border-b border-border pb-4">
-          <CardTitle>Consultar movimientos</CardTitle>
-          <p className="text-[12px] text-muted-foreground">
+          <CardTitle className={CLASE_TITULO_SECCION}>Consultar movimientos</CardTitle>
+          <p className={CLASE_AYUDA}>
             Filtra por tipo, categoría y fecha. El listado utiliza movimientos registrados en el sistema.
           </p>
         </CardHeader>
@@ -172,7 +186,7 @@ export function MovimientosListado() {
           <form className="space-y-3" onSubmit={aplicar}>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="space-y-1.5">
-                <label htmlFor="hu6-filtro-tipo" className="text-[12px] font-medium">Tipo</label>
+                <label htmlFor="hu6-filtro-tipo" className={CLASE_LABEL}>Tipo</label>
                 <Select value={borrador.tipo || "TODOS"} onValueChange={cambiarTipo}>
                   <SelectTrigger id="hu6-filtro-tipo" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -183,7 +197,7 @@ export function MovimientosListado() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <label htmlFor="hu6-filtro-categoria" className="text-[12px] font-medium">Categoría</label>
+                <label htmlFor="hu6-filtro-categoria" className={CLASE_LABEL}>Categoría</label>
                 <Select value={borrador.categoriaId || "TODAS"} onValueChange={valor => setBorrador(prev => ({ ...prev, categoriaId: valor === "TODAS" ? "" : valor }))}
                   disabled={categoriasQuery.isLoading || categoriasQuery.isError}>
                   <SelectTrigger id="hu6-filtro-categoria" className="w-full"><SelectValue /></SelectTrigger>
@@ -197,21 +211,21 @@ export function MovimientosListado() {
                   </SelectContent>
                 </Select>
                 {categoriasQuery.isError && (
-                  <p role="alert" className="text-[11px] text-destructive">
+                  <p role="alert" className={CLASE_ERROR_CAMPO}>
                     No se cargaron las categorías. <button type="button" className="underline" onClick={() => void categoriasQuery.refetch()}>Reintentar</button>
                   </p>
                 )}
               </div>
               <div className="space-y-1.5">
-                <label htmlFor="hu6-filtro-desde" className="text-[12px] font-medium">Desde</label>
-                <Input id="hu6-filtro-desde" type="date" value={borrador.desde} onChange={e => { setBorrador(prev => ({ ...prev, desde: e.target.value })); setErrorFechas(""); }} />
+                <label htmlFor="hu6-filtro-desde" className={CLASE_LABEL}>Desde</label>
+                <Input id="hu6-filtro-desde" type="date" className="cursor-pointer" value={borrador.desde} onClick={abrirCalendario} onChange={e => { setBorrador(prev => ({ ...prev, desde: e.target.value })); setErrorFechas(""); }} />
               </div>
               <div className="space-y-1.5">
-                <label htmlFor="hu6-filtro-hasta" className="text-[12px] font-medium">Hasta</label>
-                <Input id="hu6-filtro-hasta" type="date" value={borrador.hasta} onChange={e => { setBorrador(prev => ({ ...prev, hasta: e.target.value })); setErrorFechas(""); }} />
+                <label htmlFor="hu6-filtro-hasta" className={CLASE_LABEL}>Hasta</label>
+                <Input id="hu6-filtro-hasta" type="date" className="cursor-pointer" value={borrador.hasta} onClick={abrirCalendario} onChange={e => { setBorrador(prev => ({ ...prev, hasta: e.target.value })); setErrorFechas(""); }} />
               </div>
             </div>
-            {errorFechas && <p role="alert" className="text-[12px] text-destructive">{errorFechas}</p>}
+            {errorFechas && <p role="alert" className={CLASE_ERROR_CAMPO}>{errorFechas}</p>}
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button type="button" variant="outline" onClick={limpiar}><FilterX className="size-4" /> Limpiar filtros</Button>
               <Button type="submit"><Search className="size-4" /> Aplicar filtros</Button>
@@ -221,7 +235,7 @@ export function MovimientosListado() {
       </Card>
 
       {confirmacionEdicion && (
-        <div role="status" className="rounded-lg border border-emerald-300/40 bg-emerald-500/5 p-3 text-[12px] text-emerald-700 dark:text-emerald-400">
+        <div role="status" className={CLASE_AVISO_EXITO}>
           {confirmacionEdicion}
         </div>
       )}
@@ -231,7 +245,7 @@ export function MovimientosListado() {
         </div>
       )}
       {movimientosQuery.isError && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-[13px] text-destructive">
+        <div role="alert" className={`flex flex-wrap items-center justify-between gap-3 ${CLASE_AVISO_ERROR}`}>
           <span>{mensajeError(movimientosQuery.error)}</span>
           <Button type="button" variant="outline" onClick={() => void movimientosQuery.refetch()}><RefreshCw className="size-4" /> Reintentar</Button>
         </div>
@@ -241,8 +255,8 @@ export function MovimientosListado() {
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="space-y-1">
-            <CardTitle>Movimientos registrados</CardTitle>
-            <p className="text-[12px] text-muted-foreground">
+            <CardTitle className={CLASE_TITULO_SECCION}>Movimientos registrados</CardTitle>
+            <p className={CLASE_AYUDA}>
               {movimientosQuery.isLoading ? "Consultando registros…" : `${total} registro${total === 1 ? "" : "s"} con los filtros aplicados`}
             </p>
           </div>
@@ -267,14 +281,14 @@ export function MovimientosListado() {
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[760px] text-left text-[13px]">
                   <thead>
-                    <tr className="border-b border-border text-[12px] text-muted-foreground">
-                      <th scope="col" className="px-3 py-3 font-medium">Fecha</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Tipo</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Categoría</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Concepto</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Comprobante</th>
-                      <th scope="col" className="px-3 py-3 text-right font-medium">Importe</th>
-                      <th scope="col" className="px-3 py-3 text-right font-medium">Acciones</th>
+                    <tr className="border-b border-border">
+                      <th scope="col" className={`px-3 py-3 ${CLASE_LABEL}`}>Fecha</th>
+                      <th scope="col" className={`px-3 py-3 ${CLASE_LABEL}`}>Tipo</th>
+                      <th scope="col" className={`px-3 py-3 ${CLASE_LABEL}`}>Categoría</th>
+                      <th scope="col" className={`px-3 py-3 ${CLASE_LABEL}`}>Concepto</th>
+                      <th scope="col" className={`px-3 py-3 ${CLASE_LABEL}`}>Comprobante</th>
+                      <th scope="col" className={`px-3 py-3 text-right ${CLASE_LABEL}`}>Importe</th>
+                      <th scope="col" className={`px-3 py-3 text-right ${CLASE_LABEL}`}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -330,7 +344,7 @@ export function MovimientosListado() {
                 ))}
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-                <p className="text-[12px] text-muted-foreground" aria-live="polite">
+                <p className={CLASE_AYUDA} aria-live="polite">
                   Mostrando {rangoInicio}–{rangoFin} de {total} · Página {pagina} de {paginas}
                 </p>
                 <div className="flex gap-2">
@@ -353,7 +367,7 @@ export function MovimientosListado() {
       <MovimientoEditar key={editando ?? "sin-edicion"} movimientoId={editando}
         onCerrar={() => setEditando(null)}
         onGuardado={mensaje => { setEditando(null); setConfirmacionEdicion(mensaje); }} />
-      <p className="text-[11px] text-muted-foreground">
+      <p className={CLASE_AYUDA}>
         Los totales corresponden a todos los movimientos que coinciden con los filtros, no solo a la página actual.
         No representan necesariamente el saldo total de caja y bancos del edificio.
       </p>

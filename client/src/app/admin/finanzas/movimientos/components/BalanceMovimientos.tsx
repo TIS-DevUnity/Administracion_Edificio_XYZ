@@ -9,6 +9,18 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { movimientosService } from "@/services/movimientos.service";
 import type { RespuestaBalanceMovimientos } from "@/types/movimientos";
+import {
+  CLASE_AVISO_ADVERTENCIA,
+  CLASE_AVISO_ERROR,
+  CLASE_AYUDA,
+  CLASE_CIFRA,
+  CLASE_ERROR_CAMPO,
+  CLASE_LABEL,
+  CLASE_TEXTO_GASTO,
+  CLASE_TEXTO_INGRESO,
+  CLASE_TITULO_SECCION,
+  abrirCalendario,
+} from "../utils/ui";
 
 type Rango = { desde: string; hasta: string };
 const RANGO_VACIO: Rango = { desde: "", hasta: "" };
@@ -80,8 +92,8 @@ export function BalanceMovimientos() {
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
           <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2"><Wallet className="size-5"/> Balance de movimientos extraordinarios</CardTitle>
-            <p className="text-[12px] text-muted-foreground">
+            <CardTitle className={`flex items-center gap-2 ${CLASE_TITULO_SECCION}`}><Wallet className="size-5"/> Balance de movimientos extraordinarios</CardTitle>
+            <p className={CLASE_AYUDA}>
               Ingresos menos gastos registrados. No representa el saldo bancario ni incluye automáticamente cobros de expensas.
             </p>
           </div>
@@ -93,20 +105,20 @@ export function BalanceMovimientos() {
         <CardContent className="space-y-4 pt-4">
           <form onSubmit={aplicar} className="flex flex-wrap items-end gap-3">
             <div className="min-w-[165px] flex-1 space-y-1.5">
-              <label htmlFor="hu6-balance-desde" className="text-[12px] font-medium">Desde</label>
-              <Input id="hu6-balance-desde" type="date" value={borrador.desde}
+              <label htmlFor="hu6-balance-desde" className={CLASE_LABEL}>Desde</label>
+              <Input id="hu6-balance-desde" type="date" className="cursor-pointer" value={borrador.desde} onClick={abrirCalendario}
                 onChange={e => {setBorrador(prev => ({...prev, desde:e.target.value}));setErrorFechas("");}} />
             </div>
             <div className="min-w-[165px] flex-1 space-y-1.5">
-              <label htmlFor="hu6-balance-hasta" className="text-[12px] font-medium">Hasta</label>
-              <Input id="hu6-balance-hasta" type="date" value={borrador.hasta}
+              <label htmlFor="hu6-balance-hasta" className={CLASE_LABEL}>Hasta</label>
+              <Input id="hu6-balance-hasta" type="date" className="cursor-pointer" value={borrador.hasta} onClick={abrirCalendario}
                 onChange={e => {setBorrador(prev => ({...prev, hasta:e.target.value}));setErrorFechas("");}} />
             </div>
             <Button type="submit" variant="outline"><CalendarRange className="size-4" /> Aplicar período</Button>
             <Button type="button" variant="ghost" onClick={() => {setBorrador({...RANGO_VACIO});setRango({...RANGO_VACIO});setErrorFechas("");}}>Ver todo</Button>
           </form>
-          {errorFechas && <p role="alert" className="text-[12px] text-destructive">{errorFechas}</p>}
-          <p className="text-[11px] text-muted-foreground">
+          {errorFechas && <p role="alert" className={CLASE_ERROR_CAMPO}>{errorFechas}</p>}
+          <p className={CLASE_AYUDA}>
             {rango.desde || rango.hasta
               ? `Período: ${rango.desde || "inicio"} a ${rango.hasta || "actualidad"}`
               : "Período: todos los movimientos extraordinarios registrados"}
@@ -116,7 +128,7 @@ export function BalanceMovimientos() {
               {[0,1,2].map(n => <Skeleton key={n} className="h-24 w-full" />)}
             </div>
           ) : balanceQuery.isError ? (
-            <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 p-3 text-[13px] text-destructive">
+            <div role="alert" className={`flex flex-wrap items-center gap-3 ${CLASE_AVISO_ERROR}`}>
               <AlertTriangle className="size-4" /> No se pudo consultar el balance. Comprueba la conexión e inténtalo de nuevo.
               <Button size="sm" variant="outline" onClick={() => void balanceQuery.refetch()}>Reintentar</Button>
             </div>
@@ -124,38 +136,38 @@ export function BalanceMovimientos() {
             <>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="rounded-lg border border-border p-4">
-                  <p className="flex items-center gap-1 text-[12px] text-muted-foreground"><ArrowUpRight className="size-4 text-emerald-600" /> Ingresos extraordinarios</p>
-                  <p className="mt-2 text-[22px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">{bs(data.ingresos)}</p>
-                  <p className="text-[11px] text-muted-foreground">{data.cantidadIngresos} registros</p>
+                  <p className={`flex items-center gap-1 ${CLASE_LABEL}`}><ArrowUpRight className="size-4 text-success" /> Ingresos extraordinarios</p>
+                  <p className={`mt-2 ${CLASE_CIFRA} ${CLASE_TEXTO_INGRESO}`}>{bs(data.ingresos)}</p>
+                  <p className={CLASE_AYUDA}>{data.cantidadIngresos} registros</p>
                 </div>
                 <div className="rounded-lg border border-border p-4">
-                  <p className="flex items-center gap-1 text-[12px] text-muted-foreground"><ArrowDownRight className="size-4 text-rose-600" /> Gastos extraordinarios</p>
-                  <p className="mt-2 text-[22px] font-semibold tabular-nums text-rose-700 dark:text-rose-400">{bs(data.gastos)}</p>
-                  <p className="text-[11px] text-muted-foreground">{data.cantidadGastos} registros</p>
+                  <p className={`flex items-center gap-1 ${CLASE_LABEL}`}><ArrowDownRight className="size-4 text-destructive" /> Gastos extraordinarios</p>
+                  <p className={`mt-2 ${CLASE_CIFRA} ${CLASE_TEXTO_GASTO}`}>{bs(data.gastos)}</p>
+                  <p className={CLASE_AYUDA}>{data.cantidadGastos} registros</p>
                 </div>
                 <div className="rounded-lg border border-border p-4">
-                  <p className="text-[12px] text-muted-foreground">Resultado neto extraordinario</p>
-                  <p className={`mt-2 text-[22px] font-semibold tabular-nums ${Number(data.balance) < 0 ? "text-rose-700 dark:text-rose-400" : "text-foreground"}`}>{bs(data.balance)}</p>
-                  <p className="text-[11px] text-muted-foreground">Ingresos − gastos</p>
+                  <p className={CLASE_LABEL}>Resultado neto extraordinario</p>
+                  <p className={`mt-2 ${CLASE_CIFRA} ${Number(data.balance) < 0 ? CLASE_TEXTO_GASTO : "text-foreground"}`}>{bs(data.balance)}</p>
+                  <p className={CLASE_AYUDA}>Ingresos − gastos</p>
                 </div>
               </div>
               <div className="space-y-3 rounded-lg border border-border p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-[14px] font-semibold">Desglose por categoría</h3>
-                  <span className="text-[11px] text-muted-foreground">{categorias.length} categorías con movimientos</span>
+                  <h3 className={CLASE_TITULO_SECCION}>Desglose por categoría</h3>
+                  <span className={CLASE_AYUDA}>{categorias.length} categorías con movimientos</span>
                 </div>
                 {categorias.length === 0 ? (
-                  <p className="text-[12px] text-muted-foreground">No hay movimientos en este período.</p>
+                  <p className={CLASE_AYUDA}>No hay movimientos en este período.</p>
                 ) : (
                   <div className="grid gap-3 md:grid-cols-2">
                     {categorias.map(c => (
                       <div key={`${c.tipo}-${c.categoriaId}`} className="space-y-1.5 rounded-md bg-muted/40 p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
                           <div className="min-w-0"><span className="font-medium">{c.categoria ?? "Categoría eliminada"}</span> <span className="text-muted-foreground">· {c.tipoEtiqueta} · {c.cantidad} mov.</span></div>
-                          <span className={`font-semibold tabular-nums ${c.tipo === "INGRESO" ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>{bs(c.total)}</span>
+                          <span className={`font-semibold tabular-nums ${c.tipo === "INGRESO" ? CLASE_TEXTO_INGRESO : CLASE_TEXTO_GASTO}`}>{bs(c.total)}</span>
                         </div>
                         <div className="h-2 overflow-hidden rounded-full bg-border">
-                          <div className={`h-full rounded-full ${c.tipo === "INGRESO" ? "bg-emerald-500" : "bg-rose-500"}`}
+                          <div className={`h-full rounded-full ${c.tipo === "INGRESO" ? "bg-success" : "bg-destructive"}`}
                             style={{width:`${Math.max(0,Math.min(100,Number(c.total)/maximo*100))}%`}} />
                         </div>
                       </div>
@@ -163,8 +175,8 @@ export function BalanceMovimientos() {
                   </div>
                 )}
                 {!concuerda && (
-                  <p role="alert" className="flex items-start gap-2 rounded-md border border-amber-500/40 p-3 text-[12px] text-amber-700 dark:text-amber-400">
-                    <AlertTriangle className="size-4 shrink-0" /> Los totales por categoría no coinciden con el balance recibido. Actualiza los datos y consulta al equipo de backend si persiste.
+                  <p role="alert" className={`flex items-start gap-2 ${CLASE_AVISO_ADVERTENCIA}`}>
+                    <AlertTriangle className="size-4 shrink-0 text-accent-secondary" /> Los totales por categoría no coinciden con el balance recibido. Actualiza los datos y consulta al equipo de backend si persiste.
                   </p>
                 )}
 

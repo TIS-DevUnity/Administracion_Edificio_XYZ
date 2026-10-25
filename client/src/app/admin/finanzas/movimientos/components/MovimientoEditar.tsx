@@ -11,6 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { movimientosService } from "@/services/movimientos.service";
 import { validarComprobante } from "../utils/comprobantes";
+import {
+  CLASE_AVISO_ERROR,
+  CLASE_AYUDA,
+  CLASE_DESCRIPCION_DIALOGO,
+  CLASE_ERROR_CAMPO,
+  CLASE_LABEL,
+  CLASE_TITULO_DIALOGO,
+  abrirCalendario,
+} from "../utils/ui";
 import type {
   ActualizarMovimientoPayload,
   MovimientoFinanciero,
@@ -181,31 +190,31 @@ function FormularioEdicion({ movimiento, onCerrar, onGuardado }: {
     <form onSubmit={guardar} noValidate className="space-y-4">
       <fieldset disabled={actualizarMutation.isPending} className="space-y-4 disabled:opacity-65">
         <div className="space-y-2">
-          <p className="text-[13px] font-medium">Tipo de movimiento *</p>
+          <p className={CLASE_LABEL}>Tipo de movimiento *</p>
           <div className="grid grid-cols-2 gap-2">
             <Button type="button" variant={form.tipo === "GASTO" ? "default" : "outline"}
               aria-pressed={form.tipo === "GASTO"} onClick={() => cambiarTipo("GASTO")}>Gasto</Button>
             <Button type="button" variant={form.tipo === "INGRESO" ? "default" : "outline"}
               aria-pressed={form.tipo === "INGRESO"} onClick={() => cambiarTipo("INGRESO")}>Ingreso</Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">Cambiar el tipo requiere seleccionar otra categoría compatible.</p>
+          <p className={CLASE_AYUDA}>Cambiar el tipo requiere seleccionar otra categoría compatible.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <label htmlFor="hu6-editar-monto" className="text-[12px] font-medium">Monto en Bs *</label>
+            <label htmlFor="hu6-editar-monto" className={CLASE_LABEL}>Monto en Bs *</label>
             <Input id="hu6-editar-monto" type="number" inputMode="decimal" min="0.01" step="0.01" value={form.monto}
               onChange={e => modificar("monto", e.target.value)} aria-invalid={Boolean(errores.monto)} />
-            {errores.monto && <p className="text-[11px] text-destructive" role="alert">{errores.monto}</p>}
+            {errores.monto && <p className={CLASE_ERROR_CAMPO} role="alert">{errores.monto}</p>}
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="hu6-editar-fecha" className="text-[12px] font-medium">Fecha *</label>
-            <Input id="hu6-editar-fecha" type="date" value={form.fecha} onChange={e => modificar("fecha", e.target.value)}
-              aria-invalid={Boolean(errores.fecha)} />
-            {errores.fecha && <p className="text-[11px] text-destructive" role="alert">{errores.fecha}</p>}
+            <label htmlFor="hu6-editar-fecha" className={CLASE_LABEL}>Fecha *</label>
+            <Input id="hu6-editar-fecha" type="date" className="cursor-pointer" value={form.fecha} onClick={abrirCalendario}
+              onChange={e => modificar("fecha", e.target.value)} aria-invalid={Boolean(errores.fecha)} />
+            {errores.fecha && <p className={CLASE_ERROR_CAMPO} role="alert">{errores.fecha}</p>}
           </div>
         </div>
         <div className="space-y-1.5">
-          <label htmlFor="hu6-editar-categoria" className="text-[12px] font-medium">Categoría *</label>
+          <label htmlFor="hu6-editar-categoria" className={CLASE_LABEL}>Categoría *</label>
           <Select value={form.categoriaId} onValueChange={v => modificar("categoriaId", v)}
             disabled={categoriasQuery.isLoading || categoriasQuery.isError}>
             <SelectTrigger id="hu6-editar-categoria" className="w-full" aria-invalid={Boolean(errores.categoriaId)}>
@@ -217,35 +226,35 @@ function FormularioEdicion({ movimiento, onCerrar, onGuardado }: {
               </SelectItem>)}
             </SelectContent>
           </Select>
-          {categoriasQuery.isError && <p role="alert" className="text-[11px] text-destructive">No se pudieron cargar las categorías. <button type="button" className="underline" onClick={() => void categoriasQuery.refetch()}>Reintentar</button></p>}
-          {errores.categoriaId && <p role="alert" className="text-[11px] text-destructive">{errores.categoriaId}</p>}
+          {categoriasQuery.isError && <p role="alert" className={CLASE_ERROR_CAMPO}>No se pudieron cargar las categorías. <button type="button" className="underline" onClick={() => void categoriasQuery.refetch()}>Reintentar</button></p>}
+          {errores.categoriaId && <p role="alert" className={CLASE_ERROR_CAMPO}>{errores.categoriaId}</p>}
         </div>
         <div className="space-y-1.5">
-          <label htmlFor="hu6-editar-concepto" className="text-[12px] font-medium">Concepto *</label>
+          <label htmlFor="hu6-editar-concepto" className={CLASE_LABEL}>Concepto *</label>
           <textarea id="hu6-editar-concepto" rows={3} maxLength={201} value={form.concepto}
             onChange={e => modificar("concepto", e.target.value)} aria-invalid={Boolean(errores.concepto)}
             className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:border-destructive" />
-          <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <div className={`flex items-center justify-between gap-2 ${CLASE_AYUDA}`}>
             <span>{errores.concepto ? <span className="text-destructive" role="alert">{errores.concepto}</span> : "Describe el motivo del movimiento."}</span>
-            <span>{form.concepto.length}/200</span>
+            <span className="tabular-nums">{form.concepto.length}/200</span>
           </div>
         </div>
         <div className="space-y-2 rounded-lg border border-border p-3">
-          <label htmlFor="hu6-editar-archivo" className="flex items-center gap-2 text-[12px] font-medium">
+          <label htmlFor="hu6-editar-archivo" className={`flex items-center gap-2 ${CLASE_LABEL}`}>
             <Paperclip className="size-4" /> {movimiento.tieneComprobante ? "Reemplazar comprobante (opcional)" : "Adjuntar comprobante (opcional)"}
           </label>
           {movimiento.tieneComprobante && <div className="text-[12px] text-muted-foreground">Actual: <span className="break-all">{movimiento.comprobante?.nombre ?? "Comprobante adjunto"}</span></div>}
           <Input ref={entradaArchivo} id="hu6-editar-archivo" type="file"
             accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" onChange={elegirArchivo}
             aria-invalid={Boolean(errores.comprobante)} />
-          <p className="text-[11px] text-muted-foreground">JPG, PNG o PDF · Máximo 5 MB. Si no eliges archivo, el anterior se conserva.</p>
+          <p className={CLASE_AYUDA}>JPG, PNG o PDF · Máximo 5 MB. Si no eliges archivo, el anterior se conserva.</p>
           {archivo && <p className="break-all text-[12px]">Seleccionado: {archivo.name} · <button type="button" className="underline" onClick={quitarArchivo}>Quitar</button></p>}
-          {errores.comprobante && <p role="alert" className="text-[11px] text-destructive">{errores.comprobante}</p>}
+          {errores.comprobante && <p role="alert" className={CLASE_ERROR_CAMPO}>{errores.comprobante}</p>}
         </div>
       </fieldset>
 
       {actualizarMutation.isError && (
-        <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-[12px] text-destructive" role="alert">
+        <div className={`space-y-2 ${CLASE_AVISO_ERROR}`} role="alert">
           <p>{mensajeError(actualizarMutation.error)}</p>
           {falloAlSubir && archivo && cambianDatos && (
             <div className="space-y-2">
@@ -285,21 +294,21 @@ export function MovimientoEditar({ movimientoId, onCerrar, onGuardado }: {
     <Dialog open={Boolean(movimientoId)} onOpenChange={abierto => { if (!abierto) onCerrar(); }}>
       <DialogContent className="max-h-[90dvh] w-full overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Editar movimiento financiero</DialogTitle>
-          <DialogDescription>Corrige los datos del movimiento y, si corresponde, reemplaza su comprobante.</DialogDescription>
+          <DialogTitle className={CLASE_TITULO_DIALOGO}>Editar movimiento financiero</DialogTitle>
+          <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>Corrige los datos del movimiento y, si corresponde, reemplaza su comprobante.</DialogDescription>
         </DialogHeader>
         {detalle.isPending ? (
           <div className="space-y-3" aria-label="Cargando movimiento"><Skeleton className="h-12" /><Skeleton className="h-40" /><Loader2 className="size-5 animate-spin" /></div>
         ) : detalle.isError ? (
-          <div className="space-y-3 rounded-lg border border-destructive/30 p-3" role="alert">
-            <p className="text-[12px] text-destructive">{mensajeError(detalle.error)}</p>
+          <div className={`space-y-3 ${CLASE_AVISO_ERROR}`} role="alert">
+            <p>{mensajeError(detalle.error)}</p>
             <Button type="button" variant="outline" onClick={() => void detalle.refetch()}><RotateCcw className="size-4" /> Reintentar</Button>
           </div>
         ) : detalle.data?.movimiento ? (
           <FormularioEdicion key={detalle.data.movimiento.id} movimiento={detalle.data.movimiento}
             onCerrar={onCerrar} onGuardado={onGuardado} />
         ) : (
-          <p className="text-[12px] text-muted-foreground"><AlertTriangle className="inline size-4" /> Movimiento no disponible.</p>
+          <p className={CLASE_AYUDA}><AlertTriangle className="inline size-4" /> Movimiento no disponible.</p>
         )}
       </DialogContent>
     </Dialog>
