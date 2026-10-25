@@ -8,7 +8,6 @@ import {
   Building2,
   CircleDollarSign,
   Download,
-  Info,
   ReceiptText,
   Landmark,
   WalletCards,
@@ -38,48 +37,17 @@ import { saldoEdificioService } from "@/services/saldo-edificio.service";
 import type { ResumenSaldoEdificio, FiltrosSaldoEdificio } from "@/types/saldo-edificio";
 import { ExpensaDTO } from "@/types/finance";
 
-/* ═══════════════════════════════════════════════════════════════════════
- * DATOS MOCK (de ejemplo) — NO vienen del backend
- * Reemplazar cuando exista un endpoint de estadísticas financieras.
- *
- *  1. MOCK_FLUJO_CAJA          → gráfico "Comparativo mensual" (ingresos y egresos por mes)
- *  2. MOCK_DISTRIBUCION_GASTOS → gráfico "Distribución de gastos"
- *  3. Filtro "Cuenta contable" → sin modelo de cuentas en el backend, queda deshabilitado
- *
- * Saldo, ingresos y gastos generales: GET /financiero/saldo-edificio.
- * Los demás KPI de expensas y la exportación permanecen sobre financeService.getExpensas().
- * ═══════════════════════════════════════════════════════════════════════ */
+/* Gráficos Recharts alimentados por GET /financiero/saldo-edificio.
+ * No dependen del flag HU7 de generación de asientos. */
 interface FlujoCajaMes {
   mes: string;
   ingresos: number;
   egresos: number;
 }
-
-interface GastoCategoria {
+interface SegmentoIngreso {
   name: string;
   amount: number;
 }
-
-const MOCK_FLUJO_CAJA: FlujoCajaMes[] = [
-  { mes: "Ene", ingresos: 95000, egresos: 72000 },
-  { mes: "Feb", ingresos: 112000, egresos: 85000 },
-  { mes: "Mar", ingresos: 105000, egresos: 79000 },
-  { mes: "Abr", ingresos: 128000, egresos: 91000 },
-  { mes: "May", ingresos: 118000, egresos: 98000 },
-  { mes: "Jun", ingresos: 142000, egresos: 103000 },
-  { mes: "Jul", ingresos: 132000, egresos: 96000 },
-  { mes: "Ago", ingresos: 168000, egresos: 109000 },
-  { mes: "Sep", ingresos: 145000, egresos: 115000 },
-];
-
-// Solo montos: el total y los porcentajes se calculan, así siempre suman 100%
-const MOCK_DISTRIBUCION_GASTOS: GastoCategoria[] = [
-  { name: "Servicios básicos", amount: 25000 },
-  { name: "Nómina de personal", amount: 19600 },
-  { name: "Mantenimiento", amount: 16000 },
-  { name: "Seguridad", amount: 14200 },
-  { name: "Gastos administrativos", amount: 8900 },
-];
 
 /* ───────── Estilos (mismos que la pantalla de morosidad) ───────── */
 const CLASE_LABEL_CAMPO =
@@ -158,25 +126,16 @@ function celdaCsv(valor: string | number): string {
 }
 
 /* ───────── Componentes ───────── */
-function BadgeMock() {
-  return (
-    <Badge variant="outline" className="font-caption border-dashed text-[10px] text-muted-foreground">
-      Datos de ejemplo
-    </Badge>
-  );
-}
-
 interface MetricCardProps {
   title: string;
   value: string;
   valueClassName: string;
   detail: string;
   icon: React.ReactNode;
-  esMock?: boolean;
   variacion?: { texto: string; positiva: boolean };
 }
 
-function MetricCard({ title, value, valueClassName, detail, icon, esMock = false, variacion }: MetricCardProps) {
+function MetricCard({ title, value, valueClassName, detail, icon, variacion }: MetricCardProps) {
   return (
     <Card className="shadow-sm">
       <CardContent className="p-5">
@@ -202,7 +161,6 @@ function MetricCard({ title, value, valueClassName, detail, icon, esMock = false
             </span>
           )}
           <span className={CLASE_DETALLE}>{detail}</span>
-          {esMock && <BadgeMock />}
         </div>
       </CardContent>
     </Card>
@@ -219,6 +177,9 @@ export default function DashboardFinancieroPage() {
   const [cargandoSaldo, setCargandoSaldo] = useState(true);
   const [rangoSaldo, setRangoSaldo] = useState<RangoFecha | null>(null);
   const [errorSaldo, setErrorSaldo] = useState(false);
+  const [serieMensual, setSerieMensual] = useState<FlujoCajaMes[]>([]);
+  const [cargandoSerie, setCargandoSerie] = useState(true);
+  const [errorSerie, setErrorSerie] = useState(false);
 
   useEffect(() => {
     let activo = true;
@@ -236,6 +197,36 @@ export default function DashboardFinancieroPage() {
       .finally(() => { if (activo) setCargandoSaldo(false); });
     return () => { activo = false; };
   }, [rango]);
+
+  useEffect(() => {
+    let activo = true;
+
+    const hoy = new Date();
+    const meses = Array.from({ length: 6 }, (_, index) =>
+      new Date(hoy.getFullYear(), hoy.getMonth() - (5 - index), 1)
+    );
+    const fechaLocal = (fecha: Date) =>
+      `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+    Promise.all(
+      meses.map(async (mes) => {
+        const ultimoDia = new Date(mes.getFullYear(), mes.getMonth() + 1, 0);
+        const resultado = await saldoEdificioService.obtener({
+          desde: fechaLocal(mes),
+          hasta: fechaLocal(ultimoDia),
+          porPagina: 1,
+        });
+        return {
+          mes: mes.toLocaleDateString("es-BO", { month: "short", year: "2-digit" }),
+          ingresos: Number(resultado.totalIngresos),
+          egresos: Number(resultado.totalGastos),
+        };
+      })
+    )
+      .then((datos) => { if (activo) setSerieMensual(datos); })
+      .catch(() => { if (activo) { setSerieMensual([]); setErrorSerie(true); } })
+      .finally(() => { if (activo) setCargandoSerie(false); });
+    return () => { activo = false; };
+  }, []);
 
   useEffect(() => {
     async function cargarDatos() {
@@ -284,7 +275,13 @@ export default function DashboardFinancieroPage() {
   const saldoVisible = rangoSaldo === rango ? saldoEdificio : null;
   const consultandoSaldo = cargandoSaldo || rangoSaldo !== rango;
 
-  const totalGastosMock = MOCK_DISTRIBUCION_GASTOS.reduce((acc, item) => acc + item.amount, 0);
+  const distribucionIngresos: SegmentoIngreso[] = saldoVisible
+    ? [
+        { name: "Pagos de expensas", amount: Number(saldoVisible.ingresos.pagosDeExpensas) },
+        { name: "Ingresos extraordinarios", amount: Number(saldoVisible.ingresos.extraordinarios) },
+      ]
+    : [];
+  const totalDistribucion = distribucionIngresos.reduce((acc, item) => acc + item.amount, 0);
 
   function exportarReporte() {
     const encabezado = ["Periodo", "Inmueble", "Vencimiento", "Monto base", "Mora", "Total", "Pagado", "Saldo", "Estado"];
@@ -321,6 +318,16 @@ export default function DashboardFinancieroPage() {
           Control de liquidez, conciliación y balance de ingresos frente a egresos.
         </p>
         <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/admin/finanzas/conciliacion">
+              Conciliación bancaria
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/admin/finanzas/flujo-caja">
+              Flujo de caja real
+            </Link>
+          </Button>
           <Button asChild>
             <Link href="/admin/finanzas/saldo-edificio">
               <Landmark className="mr-2 h-4 w-4" />
@@ -342,20 +349,6 @@ export default function DashboardFinancieroPage() {
         </div>
       )}
 
-      {/* Aviso de datos de ejemplo */}
-      <div className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
-        <div className="flex items-center gap-2 text-primary">
-          <Info className="h-5 w-5" />
-          <h4 className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em]">
-            Parte de esta pantalla usa datos de ejemplo
-          </h4>
-        </div>
-        <p className="mt-1 text-[13px] leading-[1.45] text-primary/80">
-          El saldo general, sus ingresos y gastos son datos reales del backend. Los gráficos comparativo mensual
-          y distribución de gastos todavía muestran datos de ejemplo; no deben interpretarse como saldos reales.
-        </p>
-      </div>
-
       {/* Filtros */}
       <Card className="mb-6 shadow-sm">
         <CardContent className="flex flex-col gap-4 p-4 xl:flex-row xl:items-end">
@@ -376,17 +369,10 @@ export default function DashboardFinancieroPage() {
           </div>
 
           <div className="flex-1">
-            <label className={`${CLASE_LABEL_CAMPO} mb-1 flex items-center gap-2`}>
-              Cuenta contable <BadgeMock />
-            </label>
-            <Select value="consolidado" disabled>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="consolidado">Consolidado</SelectItem>
-              </SelectContent>
-            </Select>
+            <p className={`${CLASE_LABEL_CAMPO} mb-1`}>Saldos por cuenta</p>
+            <Button asChild variant="outline" className="w-full justify-start">
+              <Link href="/admin/finanzas/flujo-caja">Ver Caja y Banco por separado</Link>
+            </Button>
           </div>
 
           <Button
@@ -463,19 +449,25 @@ export default function DashboardFinancieroPage() {
           <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className={CLASE_TITULO_CARD}>Comparativo mensual</CardTitle>
-              <p className={`${CLASE_DETALLE} mt-1`}>Flujo de caja histórico</p>
+              <p className={`${CLASE_DETALLE} mt-1`}>Ingresos y gastos del edificio según fecha de registro</p>
             </div>
             <div className="flex items-center gap-2">
-              <BadgeMock />
               <Badge variant="outline" className="font-caption text-[11px] text-muted-foreground">
-                Últimos {MOCK_FLUJO_CAJA.length} meses
+                Últimos 6 meses ·
               </Badge>
             </div>
           </CardHeader>
           <CardContent className="pt-4">
+            {errorSerie ? (
+              <p role="alert" className="py-14 text-center text-sm text-destructive">No se pudo cargar el comparativo mensual.</p>
+            ) : cargandoSerie ? (
+              <Skeleton className="h-[330px] w-full" />
+            ) : serieMensual.length === 0 || serieMensual.every(m => m.ingresos === 0 && m.egresos === 0) ? (
+              <p className="py-14 text-center text-sm text-muted-foreground">Sin movimientos en los últimos 6 meses.</p>
+            ) : (
             <div className="h-[330px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={MOCK_FLUJO_CAJA} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} barGap={4}>
+                <BarChart data={serieMensual} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} barGap={4}>
                   <CartesianGrid strokeDasharray="3 3" stroke={COLOR_BORDE} vertical={false} />
                   <XAxis dataKey="mes" tick={{ fontSize: 12, fill: COLOR_TEXTO }} axisLine={false} tickLine={false} />
                   <YAxis
@@ -499,21 +491,29 @@ export default function DashboardFinancieroPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            )}
           </CardContent>
         </Card>
 
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between border-b border-border pb-4">
-            <CardTitle className={CLASE_TITULO_CARD}>Distribución de gastos</CardTitle>
-            <BadgeMock />
+            <CardTitle className={CLASE_TITULO_CARD}>Origen de ingresos</CardTitle>
+            <Badge variant="outline">.</Badge>
           </CardHeader>
           <CardContent className="pt-4">
+            {consultandoSaldo ? (
+              <Skeleton className="h-[260px] w-full" />
+            ) : !saldoVisible ? (
+              <p role="alert" className="py-12 text-center text-sm text-destructive">No se pudo consultar la distribución de ingresos.</p>
+            ) : totalDistribucion === 0 ? (
+              <p className="py-12 text-center text-sm text-muted-foreground">Sin ingresos registrados en el rango seleccionado.</p>
+            ) : (
             <div className="grid items-center gap-4 md:grid-cols-2">
               <div className="relative h-[260px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={MOCK_DISTRIBUCION_GASTOS}
+                      data={distribucionIngresos}
                       cx="50%"
                       cy="50%"
                       innerRadius={62}
@@ -523,7 +523,7 @@ export default function DashboardFinancieroPage() {
                       nameKey="name"
                       stroke="none"
                     >
-                      {MOCK_DISTRIBUCION_GASTOS.map((item, index) => (
+                      {distribucionIngresos.map((item, index) => (
                         <Cell key={item.name} fill={COLORES_GRAFICO[index % COLORES_GRAFICO.length]} />
                       ))}
                     </Pie>
@@ -541,13 +541,13 @@ export default function DashboardFinancieroPage() {
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                   <span className={CLASE_DETALLE}>Total</span>
                   <span className="font-title text-[18px] font-bold leading-[1.2] text-foreground">
-                    {formatCurrencyEntero(totalGastosMock)}
+                    {formatCurrencyEntero(totalDistribucion)}
                   </span>
                 </div>
               </div>
 
               <div className="space-y-3">
-                {MOCK_DISTRIBUCION_GASTOS.map((item, index) => (
+                {distribucionIngresos.map((item, index) => (
                   <div key={item.name} className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <span
@@ -557,12 +557,13 @@ export default function DashboardFinancieroPage() {
                       <span className="text-[13px] text-muted-foreground">{item.name}</span>
                     </div>
                     <span className="text-[13px] font-semibold text-foreground">
-                      {((item.amount / totalGastosMock) * 100).toFixed(1)}%
+                      {((item.amount / totalDistribucion) * 100).toFixed(1)}%
                     </span>
                   </div>
                 ))}
               </div>
             </div>
+            )}
           </CardContent>
         </Card>
       </div>
