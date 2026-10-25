@@ -13,6 +13,19 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { movimientosService } from "@/services/movimientos.service";
 import { validarComprobante } from "../utils/comprobantes";
+import {
+  CLASE_AVISO_ERROR,
+  CLASE_AYUDA,
+  CLASE_BADGE_GASTO,
+  CLASE_BADGE_INGRESO,
+  CLASE_DESCRIPCION_DIALOGO,
+  CLASE_ERROR_CAMPO,
+  CLASE_LABEL,
+  CLASE_TEXTO_GASTO,
+  CLASE_TEXTO_INGRESO,
+  CLASE_TITULO_DIALOGO,
+  CLASE_TITULO_SECCION,
+} from "../utils/ui";
 import type { EnlaceComprobante, MovimientoFinanciero } from "@/types/movimientos";
 
 function mensajeError(error: unknown): string {
@@ -41,7 +54,7 @@ function formatoBs(monto: string | number) {
 function Campo({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
     <div className="space-y-1">
-      <dt className="text-[12px] text-muted-foreground">{etiqueta}</dt>
+      <dt className={CLASE_LABEL}>{etiqueta}</dt>
       <dd className="break-words text-[13px] font-medium">{valor}</dd>
     </div>
   );
@@ -52,12 +65,10 @@ function DatosMovimiento({ movimiento }: { movimiento: MovimientoFinanciero }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3">
-        <Badge variant="outline" className={ingreso
-          ? "border-emerald-300/60 text-emerald-700 dark:text-emerald-400"
-          : "border-rose-300/60 text-rose-700 dark:text-rose-400"}>
+        <Badge variant="outline" className={ingreso ? CLASE_BADGE_INGRESO : CLASE_BADGE_GASTO}>
           {ingreso ? "Ingreso · Entrada" : "Gasto · Salida"}
         </Badge>
-        <strong className={`text-[18px] tabular-nums ${ingreso ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+        <strong className={`font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums ${ingreso ? CLASE_TEXTO_INGRESO : CLASE_TEXTO_GASTO}`}>
           {ingreso ? "+" : "−"}{formatoBs(movimiento.monto)}
         </strong>
       </div>
@@ -165,15 +176,15 @@ export function MovimientoDetalle({ movimientoId, onCerrar }: {
     <Dialog open={Boolean(movimientoId)} onOpenChange={abierto => { if (!abierto) cerrar(); }}>
       <DialogContent className="max-h-[90dvh] w-full overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Detalle del movimiento</DialogTitle>
-          <DialogDescription>Consulta los datos registrados y el comprobante asociado.</DialogDescription>
+          <DialogTitle className={CLASE_TITULO_DIALOGO}>Detalle del movimiento</DialogTitle>
+          <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>Consulta los datos registrados y el comprobante asociado.</DialogDescription>
         </DialogHeader>
         {detalleQuery.isPending ? (
           <div className="space-y-3" aria-label="Cargando detalle">
             <Skeleton className="h-16 w-full" /><Skeleton className="h-36 w-full" />
           </div>
         ) : detalleQuery.isError ? (
-          <div role="alert" className="space-y-3 rounded-lg border border-destructive/30 p-4 text-[13px] text-destructive">
+          <div role="alert" className={`space-y-3 ${CLASE_AVISO_ERROR}`}>
             <p>{mensajeError(detalleQuery.error)}</p>
             <Button type="button" variant="outline" onClick={() => void detalleQuery.refetch()}>
               <RefreshCw className="size-4" /> Reintentar
@@ -184,8 +195,8 @@ export function MovimientoDetalle({ movimientoId, onCerrar }: {
             <DatosMovimiento movimiento={movimiento} />
             <section aria-label="Comprobante" className="space-y-3 rounded-lg border border-border p-4">
               <div className="flex items-center gap-2">
-                <FileText className="size-4" /><h3 className="font-semibold">Comprobante</h3>
-                <Badge variant="outline">{movimiento.tieneComprobante ? "Adjunto" : "Sin adjunto"}</Badge>
+                <FileText className="size-4" /><h3 className={CLASE_TITULO_SECCION}>Comprobante</h3>
+                <Badge variant="outline" className="font-caption text-[11px]">{movimiento.tieneComprobante ? "Adjunto" : "Sin adjunto"}</Badge>
               </div>
               {movimiento.tieneComprobante && movimiento.comprobante ? (
                 <>
@@ -202,7 +213,7 @@ export function MovimientoDetalle({ movimientoId, onCerrar }: {
                   </div>
                   {vista && vista.movimientoId === movimiento.id && (
                     <div className="space-y-2 rounded-lg border border-border p-2">
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className={CLASE_AYUDA}>
                         Vista previa temporal (el enlace vence en 5 minutos). Si vence, presiona “Ver comprobante” de nuevo.
                       </p>
                       {vista.mimeType === "application/pdf" ? (
@@ -219,21 +230,21 @@ export function MovimientoDetalle({ movimientoId, onCerrar }: {
                   )}
                 </>
               ) : (
-                <p className="text-[12px] text-muted-foreground">Este movimiento todavía no tiene comprobante. Se puede adjuntar sin modificar el importe del movimiento.</p>
+                <p className={CLASE_AYUDA}>Este movimiento todavía no tiene comprobante. Se puede adjuntar sin modificar el importe del movimiento.</p>
               )}
               <div className="space-y-2 border-t border-border pt-3">
-                <label htmlFor="hu6-detalle-archivo" className="flex items-center gap-2 text-[12px] font-medium">
+                <label htmlFor="hu6-detalle-archivo" className={`flex items-center gap-2 ${CLASE_LABEL}`}>
                   <Paperclip className="size-4" /> {movimiento.tieneComprobante ? "Reemplazar comprobante" : "Adjuntar comprobante"}
                 </label>
                 <Input id="hu6-detalle-archivo" ref={inputArchivo} type="file"
                   accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" onChange={alSeleccionar}
                   disabled={adjuntarMutation.isPending} aria-invalid={Boolean(errorArchivo)} />
-                <p className="text-[11px] text-muted-foreground">JPG, PNG o PDF · Máximo 5 MB · Opcional</p>
+                <p className={CLASE_AYUDA}>JPG, PNG o PDF · Máximo 5 MB · Opcional</p>
                 {archivo && <p className="break-all text-[12px] text-muted-foreground">{archivo.name} · <button className="underline" type="button" disabled={adjuntarMutation.isPending} onClick={limpiarArchivo}>Quitar</button></p>}
-                {errorArchivo && <p role="alert" className="text-[12px] text-destructive">{errorArchivo}</p>}
-                {adjuntarMutation.isError && <p role="alert" className="text-[12px] text-destructive">{mensajeError(adjuntarMutation.error)}</p>}
-                {mensajeExito && <p role="status" className="text-[12px] text-emerald-700 dark:text-emerald-400">{mensajeExito}</p>}
-                {errorEnlace && <p role="alert" className="text-[12px] text-destructive">{errorEnlace}</p>}
+                {errorArchivo && <p role="alert" className={CLASE_ERROR_CAMPO}>{errorArchivo}</p>}
+                {adjuntarMutation.isError && <p role="alert" className={CLASE_ERROR_CAMPO}>{mensajeError(adjuntarMutation.error)}</p>}
+                {mensajeExito && <p role="status" className="font-caption text-[12px] text-success">{mensajeExito}</p>}
+                {errorEnlace && <p role="alert" className={CLASE_ERROR_CAMPO}>{errorEnlace}</p>}
                 <Button type="button" onClick={() => archivo && adjuntarMutation.mutate(archivo)}
                   disabled={!archivo || Boolean(errorArchivo) || adjuntarMutation.isPending}
                   cargando={adjuntarMutation.isPending}>

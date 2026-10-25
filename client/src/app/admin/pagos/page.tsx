@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import Link from "next/link";
 import {
   Banknote,
+  CalendarRange,
   Download,
   History,
   Paperclip,
@@ -438,12 +440,20 @@ export default function PagosPage() {
           deuda más antigua; el excedente queda como saldo a favor para la siguiente expensa.
         </p>
 
-        {bolPuedeRegistrar && (
-          <Button className="w-full md:w-auto" onClick={() => abrirDialogoPago()}>
-            <Banknote className="mr-2 h-4 w-4" />
-            Registrar pago
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button variant="outline" className="w-full md:w-auto" asChild>
+            <Link href="/admin/pagos/planes">
+              <CalendarRange className="mr-2 h-4 w-4" />
+              Planes de pago en cuotas
+            </Link>
           </Button>
-        )}
+          {bolPuedeRegistrar && (
+            <Button className="w-full md:w-auto" onClick={() => abrirDialogoPago()}>
+              <Banknote className="mr-2 h-4 w-4" />
+              Registrar pago
+            </Button>
+          )}
+        </div>
       </div>
 
       {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}

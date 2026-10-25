@@ -33,6 +33,7 @@ import {
 } from "@/lib/permissions";
 import { AccesoDenegado } from "@/components/AccesoDenegado";
 import { BusquedaGlobal } from "@/components/BusquedaGlobal";
+import { CampanitaNotificaciones } from "@/components/CampanitaNotificaciones";
 import { LogoMark } from "@/components/LogoMark";
 
 const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
@@ -393,31 +394,8 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
               <BusquedaGlobal />
             </div>
 
-            {/* Notificaciones */}
-            <button
-              type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Notificaciones"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                className="h-4 w-4"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M13.73 21a2 2 0 0 1-3.46 0"
-                />
-              </svg>
-            </button>
+            {/* Notificaciones (campanita, HU3 CA-15) */}
+            <CampanitaNotificaciones />
 
             {/* Avatar */}
             <div className="h-9 w-9 shrink-0 rounded-full bg-muted" />

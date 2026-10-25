@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { DialogoRegistrarPersona } from "@/components/DialogoRegistrarPersona";
 import { InmueblesDeLaPersona } from "@/components/InmueblesDeLaPersona";
+import { CuentaResidente } from "@/components/CuentaResidente";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
@@ -574,6 +575,8 @@ export default function CopropietariosPage() {
                 rol={rol}
                 onCambio={() => listarInmuebles().then(setArrInmuebles).catch(() => undefined)}
               />
+
+              <CuentaResidente key={`cuenta-${objCopropietarioSeleccionado.id}`} strCopropietarioId={objCopropietarioSeleccionado.id} />
 
               <div className="flex justify-end">
                 <Button
