@@ -13,6 +13,26 @@ Contiene:
 
 Tambien usa `src/middlewares/auth.middleware.js`, `src/middlewares/rbac.middleware.js` y `src/middlewares/upload.middleware.js` (multer, para `documentos/`).
 
+## Rol CONSULTA: solo lo propio
+
+CONSULTA es el rol del copropietario. Solo ve y usa lo suyo; Administrador y Directorio no cambian.
+
+- **Que es "lo suyo":** el copropietario al que esta vinculado su usuario (`Usuario.copropietarioId`) y los
+  inmuebles que ocupa hoy (propietario o inquilino con ocupacion vigente). El Administrador vincula al crear
+  (`POST /api/usuarios`) o editar (`PUT /api/usuarios/{id}`) con `copropietarioId`; `null` quita el vinculo.
+  Un usuario CONSULTA sin vinculo recibe 403 `USUARIO_SIN_COPROPIETARIO`.
+- **Copropietarios:** la lista (`GET /api/copropietarios`) es 403 para CONSULTA. El detalle y
+  `/{id}/inmuebles` solo del propio copropietario (otro `id`: 403 `SOLO_INFORMACION_PROPIA`).
+- **Inmuebles:** la lista trae solo los que ocupa; `/{id}` y `/{id}/ocupantes` solo si son suyos. De las demas
+  personas del inmueble solo se ve nombre y apellido.
+- **Financiero:** lo mismo para la cuenta, pagos, saldo y estado de cuenta del inmueble, recibos, la cuenta del
+  residente, las expensas y los planes de pago. El saldo del edificio no es para CONSULTA (su historial muestra
+  los pagos de cada departamento).
+- La regla vive en `src/middlewares/acceso-propio.js` (`soloSuInmueble()`, `soloSuCopropietario()`,
+  `soloSuRecibo()`, `soloSuPlanDePago()` y, para listas, `inmueblesPropios(req)`); cualquier modulo nuevo la puede usar.
+- Ya estaban bloqueados para CONSULTA (403) y no cambian: asignar ocupantes, registrar personas, la lista de
+  usuarios, caja y bancos y registrar cobros.
+
 ## Clase y tipo de inmueble
 
 - Cada inmueble tiene una `clase`: `DEPARTAMENTO`, `BAULERA` o `PARQUEO`.
