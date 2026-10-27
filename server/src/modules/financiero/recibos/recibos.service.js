@@ -209,6 +209,9 @@ async function datosParaPdf(id) {
 module.exports = {
   MENSAJE_FORMATOS,
   MAX_COMPROBANTE_BYTES,
+  SEGUNDOS_ENLACE,
+  detectarFormato,
+  nombreSeguro,
   obtener,
   adjuntarComprobante,
   obtenerEnlaceComprobante,
