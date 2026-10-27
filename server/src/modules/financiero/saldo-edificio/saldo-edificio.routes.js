@@ -32,6 +32,7 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO')
  *       anticipo o exceso) y una expensa sin pagar es una deuda, no un ingreso. Todo se calcula en cada consulta,
  *       asi que al registrar o corregir un pago o un movimiento el saldo cambia solo. Los sueldos del personal
  *       todavia no se descuentan (ese modulo no tiene API). El saldo no se puede editar.
+ *       Solo Administrador y Directorio: el historial muestra los pagos de cada departamento.
  *     tags: [Saldo del edificio]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -55,6 +56,7 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO')
  *       200: { description: "{ rango, saldoActual, totalIngresos, totalGastos, saldoDelPeriodo, ingresos, gastos, pendienteDeCobro, movimientos, paginacion }" }
  *       400: { description: Fechas o tipo invalidos }
  *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
  */
 router.get('/', autenticar, CONSULTA, controller.obtener)
 
