@@ -272,7 +272,7 @@ export default function CopropietariosPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
-                Lista de copropietarios
+                {rol === "CONSULTA" ? "Mis datos de copropietario" : "Lista de copropietarios"}
               </CardTitle>
 
               {!bolLoading && !strError && (

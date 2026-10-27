@@ -1,3 +1,4 @@
+import axios from "axios";
 import { api } from "@/lib/api";
 
 export interface Copropietario {
@@ -73,9 +74,19 @@ export async function listarInmueblesDeCopropietario(id: string): Promise<Inmueb
   return response.data;
 }
 
+/**
+ * Lista general de copropietarios. El rol CONSULTA no tiene acceso (403, QA bug 9): se devuelve una
+ * lista vacía para que las pantallas que la usan como dato auxiliar (panel, ficha del inmueble,
+ * residentes, búsqueda global) sigan cargando sin mostrar a otras personas.
+ */
 export async function listarCopropietarios(): Promise<Copropietario[]> {
-  const response = await api.get<{ copropietarios: Copropietario[] }>("/copropietarios");
-  return response.data.copropietarios;
+  try {
+    const response = await api.get<{ copropietarios: Copropietario[] }>("/copropietarios");
+    return response.data.copropietarios;
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.status === 403) return [];
+    throw error;
+  }
 }
 
 export async function crearCopropietario(datos: DatosCopropietario): Promise<Copropietario> {
