@@ -1,4 +1,5 @@
 const service = require('./expensas.service')
+const { esConsulta, inmueblesPropios } = require('../../../middlewares/acceso-propio')
 
 async function generar(req, res, next) {
   try {
@@ -24,7 +25,9 @@ async function generar(req, res, next) {
 async function listar(req, res, next) {
   try {
     const { periodo, estado, inmuebleId, aguaCargada, pagina, porPagina } = req.query
-    const expensas = await service.listar({ periodo, estado, inmuebleId, aguaCargada, pagina, porPagina })
+    // CONSULTA solo recibe las expensas de sus inmuebles.
+    const inmuebleIds = esConsulta(req) ? await inmueblesPropios(req) : undefined
+    const expensas = await service.listar({ periodo, estado, inmuebleId, inmuebleIds, aguaCargada, pagina, porPagina })
     res.json(expensas)
   } catch (err) {
     next(err)

@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const { autenticar } = require('../../../middlewares/auth.middleware')
 const { autorizar } = require('../../../middlewares/rbac.middleware')
+const { soloSuPlanDePago } = require('../../../middlewares/acceso-propio')
 const controller = require('./planes-pago.controller')
 
 const router = Router()
@@ -91,7 +92,7 @@ router.post('/', autenticar, GESTION, controller.crear)
  *       200: { description: "{ plan }" }
  *       404: { description: Plan no encontrado }
  */
-router.get('/:id', autenticar, CONSULTA, controller.obtener)
+router.get('/:id', autenticar, CONSULTA, soloSuPlanDePago(), controller.obtener)
 
 /**
  * @openapi

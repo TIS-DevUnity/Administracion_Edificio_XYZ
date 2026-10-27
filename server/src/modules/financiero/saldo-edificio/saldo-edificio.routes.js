@@ -5,8 +5,9 @@ const controller = require('./saldo-edificio.controller')
 
 const router = Router()
 
-// Solo consulta: el saldo se calcula, no se edita. Lo ven los tres roles.
-const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
+// Solo consulta: el saldo se calcula, no se edita. Lo ven Administrador y Directorio: el historial
+// del saldo muestra los pagos de cada departamento, y CONSULTA solo puede ver los suyos.
+const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO')
 
 /**
  * @openapi
