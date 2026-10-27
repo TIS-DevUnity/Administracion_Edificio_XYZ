@@ -10,7 +10,7 @@ import { InmueblesDeLaPersona } from "@/components/InmueblesDeLaPersona";
 import { CuentaResidente } from "@/components/CuentaResidente";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
-import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
+import { Inmueble, listarInmuebles, listarOcupantes } from "@/lib/inmuebles";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,23 @@ interface CopropietariosResponse {
   copropietarios: Copropietario[];
 }
 
+/**
+ * Copropietario vinculado al usuario CONSULTA. El login no trae su id, pero el backend solo le
+ * devuelve sus inmuebles y, en sus ocupantes, solo el registro propio incluye `copropietarioId`.
+ */
+async function cargarCopropietarioPropio(): Promise<Copropietario[]> {
+  const inmuebles = await listarInmuebles();
+  for (const inmueble of inmuebles) {
+    const ocupantes = await listarOcupantes(inmueble.id);
+    const propio = ocupantes.find((ocupante) => ocupante.copropietarioId);
+    if (propio) {
+      const response = await api.get<{ copropietario: Copropietario }>(`/copropietarios/${propio.copropietarioId}`);
+      return [response.data.copropietario];
+    }
+  }
+  return [];
+}
+
 const CLASE_HEADER_TABLA =
   "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_LABEL_CAMPO =
@@ -101,6 +118,12 @@ export default function CopropietariosPage() {
     try {
       setBolLoading(true);
       setStrError("");
+
+      // CONSULTA solo puede ver su propio registro (QA bug 7): el backend responde 403 a la lista.
+      if (rol === "CONSULTA") {
+        setArrCopropietarios(await cargarCopropietarioPropio());
+        return;
+      }
 
       const response = await api.get<CopropietariosResponse>(
         "/copropietarios"
@@ -249,7 +272,7 @@ export default function CopropietariosPage() {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
-                Lista de copropietarios
+                {rol === "CONSULTA" ? "Mis datos de copropietario" : "Lista de copropietarios"}
               </CardTitle>
 
               {!bolLoading && !strError && (

@@ -98,6 +98,7 @@ export default function FichaInmueblePage() {
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
   const bolPuedeEditar = puedeEjecutar(rol, "inmuebles", "editar");
   const bolPuedeDarBaja = puedeEjecutar(rol, "residentes", "editar");
+  const bolPuedeAsignar = puedeEjecutar(rol, "residentes", "crear");
   const bolPuedeEmitir = puedeEmitirEstadoCuenta(rol);
 
   async function cargarInmueble() {
@@ -472,9 +473,12 @@ export default function FichaInmueblePage() {
                     <tr key={registro.id} className="border-b border-border last:border-0">
                       <td className="px-5 py-3 text-[13px] text-foreground">
                         {registro.copropietario.nombre} {registro.copropietario.apellido}
-                        <span className="font-caption block text-[11px] text-muted-foreground">
-                          CI {registro.copropietario.ci}
-                        </span>
+                        {/* CONSULTA no recibe el CI de las demás personas (QA bug 7). */}
+                        {registro.copropietario.ci && (
+                          <span className="font-caption block text-[11px] text-muted-foreground">
+                            CI {registro.copropietario.ci}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-[13px] tabular-nums text-muted-foreground">
                         {contacto?.telefono || "—"}
@@ -511,12 +515,15 @@ export default function FichaInmueblePage() {
             <p className="text-[13px] text-muted-foreground">
               Línea de tiempo de propietarios e inquilinos que han ocupado este inmueble.
             </p>
-            <Link
-              href={`/admin/residentes?inmuebleId=${inmueble.id}`}
-              className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
-            >
-              + Asignar nuevo ocupante
-            </Link>
+            {/* Solo roles que pueden asignar (QA bug 8); el backend también rechaza a CONSULTA. */}
+            {bolPuedeAsignar && inmueble.activo && (
+              <Link
+                href={`/admin/residentes?inmuebleId=${inmueble.id}`}
+                className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
+              >
+                + Asignar nuevo ocupante
+              </Link>
+            )}
           </div>
 
           {historial.length === 0 ? (
@@ -557,9 +564,11 @@ export default function FichaInmueblePage() {
                       {bolActivo ? "vigente" : formatearFecha(registro.fechaFin as string)}
                     </p>
 
-                    <p className="font-caption mt-1 text-[12px] leading-[1.4] tracking-[0.01em] text-muted-foreground">
-                      CI: {registro.copropietario.ci}
-                    </p>
+                    {registro.copropietario.ci && (
+                      <p className="font-caption mt-1 text-[12px] leading-[1.4] tracking-[0.01em] text-muted-foreground">
+                        CI: {registro.copropietario.ci}
+                      </p>
+                    )}
 
                     {bolActivo && bolPuedeDarBaja && (
                       <button
