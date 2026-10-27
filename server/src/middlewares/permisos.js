@@ -17,7 +17,10 @@ const PERMISOS = {
     ver: [ADMINISTRADOR, DIRECTORIO],
     gestionar: [ADMINISTRADOR],
   },
+  // `ver` incluye a CONSULTA, pero ese rol solo puede pedir su propio copropietario (acceso-propio.js).
+  // La lista general de personas no es para CONSULTA.
   copropietarios: {
+    listar: [ADMINISTRADOR, DIRECTORIO],
     ver: TODOS,
     gestionar: [ADMINISTRADOR, DIRECTORIO],
   },

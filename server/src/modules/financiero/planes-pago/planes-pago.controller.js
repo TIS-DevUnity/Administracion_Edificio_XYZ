@@ -1,4 +1,5 @@
 const service = require('./planes-pago.service')
+const { esConsulta, inmueblesPropios } = require('../../../middlewares/acceso-propio')
 
 async function crear(req, res, next) {
   try {
@@ -23,7 +24,9 @@ async function crear(req, res, next) {
 async function listar(req, res, next) {
   try {
     const { inmuebleId, estado } = req.query
-    res.json(await service.listar({ inmuebleId, estado }))
+    // CONSULTA solo recibe los planes de sus inmuebles.
+    const inmuebleIds = esConsulta(req) ? await inmueblesPropios(req) : undefined
+    res.json(await service.listar({ inmuebleId, estado, inmuebleIds }))
   } catch (err) {
     next(err)
   }

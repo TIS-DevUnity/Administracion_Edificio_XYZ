@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const { autenticar } = require('../../../middlewares/auth.middleware')
 const { autorizar } = require('../../../middlewares/rbac.middleware')
+const { soloSuInmueble } = require('../../../middlewares/acceso-propio')
 const controller = require('./cuenta-inmueble.controller')
 
 const router = Router()
@@ -111,7 +112,7 @@ router.post('/:id/pagos-anticipados', autenticar, GESTION, controller.registrarP
  *       404: { description: Inmueble no encontrado }
  */
 router.post('/:id/pagos', autenticar, GESTION, controller.registrarPagoInmueble)
-router.get('/:id/pagos', autenticar, CONSULTA, controller.listarPagos)
+router.get('/:id/pagos', autenticar, CONSULTA, soloSuInmueble(), controller.listarPagos)
 
 /**
  * @openapi
@@ -130,7 +131,7 @@ router.get('/:id/pagos', autenticar, CONSULTA, controller.listarPagos)
  *         description: "deudaPendiente, saldoFavor y saldoNeto (positivo = debe, negativo = a favor); situacion: DEBE | AL_DIA | A_FAVOR. Reglas de pago: alDia (sin deuda de meses anteriores), deudaAtrasada y proximoPago (el mes que hay que pagar primero y su montoMinimo; solo la expensa actual admite cuotas). Cada expensa pendiente trae tipo, atrasada, pendienteMora y pendienteExpensa."
  *       404: { description: Inmueble no encontrado }
  */
-router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
+router.get('/:id/saldo', autenticar, CONSULTA, soloSuInmueble(), controller.obtenerSaldo)
 
 /**
  * @openapi
@@ -183,7 +184,7 @@ router.get('/:id/saldo', autenticar, CONSULTA, controller.obtenerSaldo)
  *       404: { description: Inmueble no encontrado }
  *       500: { description: No se pudo generar el estado de cuenta (no se muestran datos incompletos) }
  */
-router.get('/:id/estado-cuenta', autenticar, CONSULTA, controller.obtenerEstadoCuenta)
+router.get('/:id/estado-cuenta', autenticar, CONSULTA, soloSuInmueble(), controller.obtenerEstadoCuenta)
 
 /**
  * @openapi
@@ -242,6 +243,6 @@ router.get('/:id/estado-cuenta/pdf', autenticar, GESTION, controller.descargarEs
  *       200: { description: Saldo vigente y movimientos, del mas reciente al mas antiguo }
  *       404: { description: Inmueble no encontrado }
  */
-router.get('/:id/saldo-favor/movimientos', autenticar, CONSULTA, controller.listarMovimientosSaldo)
+router.get('/:id/saldo-favor/movimientos', autenticar, CONSULTA, soloSuInmueble(), controller.listarMovimientosSaldo)
 
 module.exports = router

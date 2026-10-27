@@ -91,9 +91,11 @@ function validarClase(clase) {
   }
 }
 
-async function listar() {
+// `ids` (opcional) limita la lista a esos inmuebles.
+async function listar({ ids } = {}) {
   const [inmuebles, tarifas] = await Promise.all([
     prisma.inmueble.findMany({
+      where: ids ? { id: { in: ids } } : undefined,
       select: camposPublicos(),
       orderBy: { codigo: "asc" },
     }),

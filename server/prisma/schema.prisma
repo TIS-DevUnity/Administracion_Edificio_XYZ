@@ -47,6 +47,7 @@ model Usuario {
   saldosRealesRevisados       SaldoRealPeriodo[]   @relation("SaldoRealRevisadaPor")
   cierresCaja                 CierreCaja[]         @relation("CierreCajaPor")
   eventosConciliacion         ConciliacionEvento[] @relation("ConciliacionEventoPor")
+  pagosInformadosRevisados    PagoInformado[]      @relation("PagoInformadoRevisadoPor")
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -72,6 +73,7 @@ model Copropietario {
   ocupaciones OcupanteInmueble[]
   expensasComoResponsable Expensa[]
   notificaciones          Notificacion[]
+  pagosInformados         PagoInformado[]
 
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
@@ -126,6 +128,7 @@ model Inmueble {
   recibos        Recibo[]
   cargosOrigen   CargoExpensa[]
   planesPago     PlanPago[]
+  pagosInformados PagoInformado[]
 
   createdAt      DateTime     @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
@@ -506,6 +509,7 @@ model Recibo {
   movimientosSaldo  MovimientoSaldo[]
   pagosCuota        PagoCuota[]
   movimientoCaja    MovimientoCaja?
+  pagoInformado     PagoInformado?
 
   registradoPor     Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId   String?
@@ -987,5 +991,62 @@ model EnvioCorreo {
 
   @@map("envios_correo")
   @@index([expensaId])
+  @@index([estado, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Pagos informados por el residente (rol CONSULTA)
+// ---------------------------------------------------------------------------
+
+enum EstadoPagoInformado {
+  PENDIENTE  // el residente lo informo y el administrador todavia no lo revisa
+  CONFIRMADO // el administrador comprobo el dinero: se registro el pago y existe el recibo
+  RECHAZADO  // el administrador no lo acepto (queda el motivo)
+}
+
+// Aviso de un pago hecho fuera del sistema (efectivo, transferencia...) que el copropietario
+// informa para que el administrador lo compruebe. No cobra nada por si solo: solo al confirmarlo
+// el administrador se registra el pago de siempre (con su recibo) y se descuenta de la deuda.
+model PagoInformado {
+  id                String              @id @default(uuid())
+
+  inmueble          Inmueble            @relation(fields: [inmuebleId], references: [id])
+  inmuebleId        String
+
+  // Persona que informa el pago.
+  copropietario     Copropietario       @relation(fields: [copropietarioId], references: [id])
+  copropietarioId   String
+
+  monto             Decimal             @db.Decimal(10, 2)
+  metodoPago        MetodoPago
+  referencia        String?
+  fechaPago         DateTime            @db.Date
+
+  // Foto del comprobante (opcional), en el storage de Supabase.
+  comprobantePath   String?             @unique
+  comprobanteMime   String?
+  comprobanteNombre String?
+
+  estado            EstadoPagoInformado @default(PENDIENTE)
+  motivoRechazo     String?
+
+  // Recibo que se genero al confirmarlo.
+  recibo            Recibo?             @relation(fields: [reciboId], references: [id])
+  reciboId          String?             @unique
+
+  revisadoPor       Usuario?            @relation("PagoInformadoRevisadoPor", fields: [revisadoPorId], references: [id])
+  revisadoPorId     String?
+  revisadoEn        DateTime?           @db.Timestamptz(3)
+
+  // Clave que envia el cliente (cabecera Idempotency-Key) para que reenviar la misma solicitud
+  // no cree el aviso dos veces.
+  claveSolicitud    String?             @unique
+
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@map("pagos_informados")
+  @@index([inmuebleId])
+  @@index([copropietarioId])
   @@index([estado, createdAt])
 }

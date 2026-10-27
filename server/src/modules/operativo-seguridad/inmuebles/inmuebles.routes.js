@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
 const { permitir } = require("../../../middlewares/permisos");
+const { soloSuInmueble } = require("../../../middlewares/acceso-propio");
 const controller = require("./inmuebles.controller");
 
 const router = Router();
@@ -12,7 +13,7 @@ const LECTURA = permitir("inmuebles", "ver");
  * @openapi
  * /api/inmuebles:
  *   get:
- *     summary: Lista todos los inmuebles (departamentos, parqueos, bauleras)
+ *     summary: Lista todos los inmuebles (departamentos, parqueos, bauleras). CONSULTA recibe solo los que ocupa.
  *     description: |
  *       Cada inmueble trae `clase` (DEPARTAMENTO, BAULERA o PARQUEO) y `asignado` (tiene un
  *       ocupante vigente). Solo el departamento tiene tipo (A, B, C...). En baulera y parqueo
@@ -61,7 +62,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  * @openapi
  * /api/inmuebles/{id}:
  *   get:
- *     summary: Obtiene un inmueble por id
+ *     summary: Obtiene un inmueble por id (CONSULTA solo puede pedir uno que ocupa; si no, 403)
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -101,14 +102,14 @@ router.post("/", autenticar, GESTION, controller.crear);
  *       404: { description: Inmueble o tipo de inmueble no encontrado }
  *       409: { description: Codigo ya registrado }
  */
-router.get("/:id", autenticar, LECTURA, controller.obtener);
+router.get("/:id", autenticar, LECTURA, soloSuInmueble(), controller.obtener);
 router.put("/:id", autenticar, GESTION, controller.actualizar);
 
 /**
  * @openapi
  * /api/inmuebles/{id}/ocupantes:
  *   get:
- *     summary: Historial de ocupantes (propietarios/inquilinos) de un inmueble
+ *     summary: Historial de ocupantes (propietarios/inquilinos) de un inmueble. CONSULTA solo en un inmueble que ocupa, y de las demas personas ve solo nombre y apellido.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -143,7 +144,7 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *       404: { description: Inmueble o copropietario no encontrado }
  *       409: { description: "El inmueble esta inactivo (codigo INMUEBLE_INACTIVO) o la persona ya esta asociada con esa misma relacion (codigo ASOCIACION_DUPLICADA)" }
  */
-router.get("/:id/ocupantes", autenticar, LECTURA, controller.listarOcupantes);
+router.get("/:id/ocupantes", autenticar, LECTURA, soloSuInmueble(), controller.listarOcupantes);
 router.post("/:id/ocupantes", autenticar, GESTION, controller.asignarOcupante);
 
 /**

@@ -2,6 +2,7 @@ const { Router } = require('express')
 const multer = require('multer')
 const { autenticar } = require('../../../middlewares/auth.middleware')
 const { autorizar } = require('../../../middlewares/rbac.middleware')
+const { soloSuRecibo } = require('../../../middlewares/acceso-propio')
 const controller = require('./recibos.controller')
 const { MENSAJE_FORMATOS, MAX_COMPROBANTE_BYTES } = require('./recibos.service')
 
@@ -47,7 +48,7 @@ function recibirComprobante(req, res, next) {
  *       200: { description: Detalle del recibo }
  *       404: { description: Recibo no encontrado }
  */
-router.get('/:id', autenticar, CONSULTA, controller.obtener)
+router.get('/:id', autenticar, CONSULTA, soloSuRecibo(), controller.obtener)
 
 /**
  * @openapi
@@ -69,7 +70,7 @@ router.get('/:id', autenticar, CONSULTA, controller.obtener)
  *             schema: { type: string, format: binary }
  *       404: { description: Recibo no encontrado }
  */
-router.get('/:id/pdf', autenticar, CONSULTA, controller.descargarPdf)
+router.get('/:id/pdf', autenticar, CONSULTA, soloSuRecibo(), controller.descargarPdf)
 
 /**
  * @openapi
@@ -110,6 +111,6 @@ router.get('/:id/pdf', autenticar, CONSULTA, controller.descargarPdf)
  *       404: { description: Recibo no encontrado o sin comprobante adjunto }
  */
 router.post('/:id/comprobante', autenticar, GESTION, recibirComprobante, controller.adjuntarComprobante)
-router.get('/:id/comprobante', autenticar, CONSULTA, controller.obtenerComprobante)
+router.get('/:id/comprobante', autenticar, CONSULTA, soloSuRecibo(), controller.obtenerComprobante)
 
 module.exports = router
