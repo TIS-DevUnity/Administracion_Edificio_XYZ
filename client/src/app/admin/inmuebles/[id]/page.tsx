@@ -98,6 +98,7 @@ export default function FichaInmueblePage() {
   const bolPuedeCambiarEstado = puedeEjecutar(rol, "inmuebles", "eliminar");
   const bolPuedeEditar = puedeEjecutar(rol, "inmuebles", "editar");
   const bolPuedeDarBaja = puedeEjecutar(rol, "residentes", "editar");
+  const bolPuedeAsignar = puedeEjecutar(rol, "residentes", "crear");
   const bolPuedeEmitir = puedeEmitirEstadoCuenta(rol);
 
   async function cargarInmueble() {
@@ -514,12 +515,15 @@ export default function FichaInmueblePage() {
             <p className="text-[13px] text-muted-foreground">
               Línea de tiempo de propietarios e inquilinos que han ocupado este inmueble.
             </p>
-            <Link
-              href={`/admin/residentes?inmuebleId=${inmueble.id}`}
-              className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
-            >
-              + Asignar nuevo ocupante
-            </Link>
+            {/* Solo roles que pueden asignar (QA bug 8); el backend también rechaza a CONSULTA. */}
+            {bolPuedeAsignar && inmueble.activo && (
+              <Link
+                href={`/admin/residentes?inmuebleId=${inmueble.id}`}
+                className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
+              >
+                + Asignar nuevo ocupante
+              </Link>
+            )}
           </div>
 
           {historial.length === 0 ? (
