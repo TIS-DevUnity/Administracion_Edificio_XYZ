@@ -65,12 +65,26 @@ function SaldoRealEditor({ periodo, fila, cerrado }: { periodo: string; fila: Sa
 
   const guardar = useMutation({
     mutationFn: () => cajaBancosService.guardarSaldoReal(periodo, fila.cuenta.id, monto.replace(",", "."), observacion),
-    onSuccess: async () => { setEditando(false); setError(""); await qc.invalidateQueries({ queryKey: ["hu7"] }); },
+    onSuccess: async () => {
+      setEditando(false);
+      setError("");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["hu7", "saldos", periodo] }),
+        qc.invalidateQueries({ queryKey: ["hu7", "resumen", periodo] }),
+      ]);
+    },
     onError: (e) => setError(mensajeError(e)),
   });
   const revisar = useMutation({
     mutationFn: () => cajaBancosService.revisarDiferencia(periodo, fila.cuenta.id, observacion),
-    onSuccess: async () => { setObservacion(""); setError(""); await qc.invalidateQueries({ queryKey: ["hu7"] }); },
+    onSuccess: async () => {
+      setObservacion("");
+      setError("");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["hu7", "saldos", periodo] }),
+        qc.invalidateQueries({ queryKey: ["hu7", "resumen", periodo] }),
+      ]);
+    },
     onError: (e) => setError(mensajeError(e)),
   });
 
@@ -117,7 +131,7 @@ function SaldoRealEditor({ periodo, fila, cerrado }: { periodo: string; fila: Sa
           <div className="space-y-3 border-t pt-3">
             {!editando && (
               <Button size="sm" variant="outline" onClick={() => {
-                setMonto(fila.saldoReal ?? "0.00"); setObservacion(""); setEditando(true); setError("");
+                setMonto(fila.saldoReal ?? ""); setObservacion(""); setEditando(true); setError("");
               }}>
                 {faltaReal ? "Ingresar saldo real" : "Corregir saldo real"}
               </Button>
@@ -127,7 +141,7 @@ function SaldoRealEditor({ periodo, fila, cerrado }: { periodo: string; fila: Sa
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1 text-xs font-medium">
                     <span>Saldo real (Bs)</span>
-                    <Input value={monto} inputMode="decimal" onChange={(e) => setMonto(e.target.value)} />
+                    <Input value={monto} inputMode="decimal" placeholder="Ej. 500.00" onChange={(e) => setMonto(e.target.value)} />
                   </label>
                   <label className="space-y-1 text-xs font-medium">
                     <span>Observación (opcional)</span>
