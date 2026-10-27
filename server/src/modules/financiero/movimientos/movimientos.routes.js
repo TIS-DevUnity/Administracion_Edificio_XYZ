@@ -9,6 +9,8 @@ const router = Router()
 
 const GESTION = autorizar('ADMINISTRADOR')
 const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
+// Libro de movimientos extraordinarios del edificio: no es informacion de un inmueble, CONSULTA no lo ve.
+const SUPERVISION = autorizar('ADMINISTRADOR', 'DIRECTORIO')
 
 // Solo JPG, PNG o PDF de hasta 5 MB. El contenido real se vuelve a verificar en el servicio.
 const subirComprobante = multer({
@@ -111,7 +113,7 @@ router.patch('/categorias/:id', autenticar, GESTION, controller.actualizarCatego
  * @openapi
  * /api/financiero/movimientos/balance:
  *   get:
- *     summary: Balance del edificio = ingresos - gastos extraordinarios (opcionalmente por rango de fechas)
+ *     summary: Balance del edificio = ingresos - gastos extraordinarios (opcionalmente por rango de fechas) (solo ADMINISTRADOR y DIRECTORIO)
  *     description: |
  *       Se calcula siempre a partir de los movimientos guardados, asi coincide con el listado.
  *       Un gasto disminuye el balance y un ingreso lo aumenta. Incluye el detalle por categoria.
@@ -127,14 +129,15 @@ router.patch('/categorias/:id', autenticar, GESTION, controller.actualizarCatego
  *     responses:
  *       200: { description: "{ rango, ingresos, gastos, balance, cantidadIngresos, cantidadGastos, porCategoria }" }
  *       400: { description: Fechas invalidas }
+ *       403: { description: Solo Administrador o Directorio }
  */
-router.get('/balance', autenticar, CONSULTA, controller.obtenerBalance)
+router.get('/balance', autenticar, SUPERVISION, controller.obtenerBalance)
 
 /**
  * @openapi
  * /api/financiero/movimientos:
  *   get:
- *     summary: Lista los gastos e ingresos registrados (mas recientes primero) con sus totales
+ *     summary: Lista los gastos e ingresos registrados (mas recientes primero) con sus totales (solo ADMINISTRADOR y DIRECTORIO)
  *     description: |
  *       Cada movimiento trae tipo (`tipoEtiqueta`: Gasto o Ingreso), fecha, categoria, concepto y
  *       monto. `montoConSigno` es negativo en los gastos. `resumen` suma todo lo que cumple el
@@ -163,6 +166,7 @@ router.get('/balance', autenticar, CONSULTA, controller.obtenerBalance)
  *     responses:
  *       200: { description: "{ rango, movimientos, resumen, paginacion }" }
  *       400: { description: Filtros invalidos }
+ *       403: { description: Solo Administrador o Directorio }
  *   post:
  *     summary: Registra un gasto o un ingreso extraordinario (solo ADMINISTRADOR)
  *     description: |
@@ -212,14 +216,14 @@ router.get('/balance', autenticar, CONSULTA, controller.obtenerBalance)
  *       400: { description: "Campos faltantes o invalidos, categoria incompatible, comprobante con formato o tamano no permitido" }
  *       403: { description: Sin permisos }
  */
-router.get('/', autenticar, CONSULTA, controller.listar)
+router.get('/', autenticar, SUPERVISION, controller.listar)
 router.post('/', autenticar, GESTION, recibirComprobante, controller.crear)
 
 /**
  * @openapi
  * /api/financiero/movimientos/{id}:
  *   get:
- *     summary: Detalle de un movimiento con todos sus datos y la informacion de su comprobante
+ *     summary: Detalle de un movimiento con todos sus datos y la informacion de su comprobante (solo ADMINISTRADOR y DIRECTORIO)
  *     tags: [Movimientos financieros]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -229,6 +233,7 @@ router.post('/', autenticar, GESTION, recibirComprobante, controller.crear)
  *         schema: { type: string }
  *     responses:
  *       200: { description: "{ movimiento } (tieneComprobante y comprobante indican si hay archivo adjunto)" }
+ *       403: { description: Solo Administrador o Directorio }
  *       404: { description: Movimiento no encontrado }
  *   put:
  *     summary: Edita un movimiento (solo ADMINISTRADOR)
@@ -271,7 +276,7 @@ router.post('/', autenticar, GESTION, recibirComprobante, controller.crear)
  *       403: { description: Sin permisos }
  *       404: { description: Movimiento no encontrado }
  */
-router.get('/:id', autenticar, CONSULTA, controller.obtener)
+router.get('/:id', autenticar, SUPERVISION, controller.obtener)
 router.put('/:id', autenticar, GESTION, recibirComprobante, controller.actualizar)
 
 /**
@@ -300,7 +305,7 @@ router.put('/:id', autenticar, GESTION, recibirComprobante, controller.actualiza
  *       400: { description: "Falta el archivo, formato no permitido (acepta JPG, PNG o PDF) o supera 5 MB" }
  *       404: { description: Movimiento no encontrado }
  *   get:
- *     summary: Enlace temporal (5 minutos) para ver o descargar el comprobante de un movimiento
+ *     summary: Enlace temporal (5 minutos) para ver o descargar el comprobante de un movimiento (solo ADMINISTRADOR y DIRECTORIO)
  *     description: Con `descargar=true` el archivo se entrega tal cual como descarga, sin alterarlo.
  *     tags: [Movimientos financieros]
  *     security: [{ bearerAuth: [] }]
@@ -314,9 +319,10 @@ router.put('/:id', autenticar, GESTION, recibirComprobante, controller.actualiza
  *         schema: { type: string, enum: ["true", "false"] }
  *     responses:
  *       200: { description: Enlace firmado, nombre y tipo del archivo }
+ *       403: { description: Solo Administrador o Directorio }
  *       404: { description: Movimiento no encontrado o sin comprobante adjunto }
  */
 router.post('/:id/comprobante', autenticar, GESTION, recibirComprobante, controller.adjuntarComprobante)
-router.get('/:id/comprobante', autenticar, CONSULTA, controller.obtenerComprobante)
+router.get('/:id/comprobante', autenticar, SUPERVISION, controller.obtenerComprobante)
 
 module.exports = router
