@@ -1,18 +1,20 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
 const { permitir } = require("../../../middlewares/permisos");
+const { soloSuCopropietario } = require("../../../middlewares/acceso-propio");
 const controller = require("./copropietarios.controller");
 
 const router = Router();
 
 const GESTION = permitir("copropietarios", "gestionar");
 const LECTURA = permitir("copropietarios", "ver");
+const LISTAR = permitir("copropietarios", "listar");
 
 /**
  * @openapi
  * /api/copropietarios:
  *   get:
- *     summary: Lista todos los copropietarios
+ *     summary: Lista todos los copropietarios (Administrador y Directorio; CONSULTA recibe 403)
  *     tags: [Copropietarios]
  *     security: [{ bearerAuth: [] }]
  *     responses:
@@ -39,14 +41,14 @@ const LECTURA = permitir("copropietarios", "ver");
  *       400: { description: Datos invalidos }
  *       409: { description: CI ya registrado }
  */
-router.get("/", autenticar, LECTURA, controller.listar);
+router.get("/", autenticar, LISTAR, controller.listar);
 router.post("/", autenticar, GESTION, controller.crear);
 
 /**
  * @openapi
  * /api/copropietarios/{id}:
  *   get:
- *     summary: Obtiene un copropietario por id
+ *     summary: Obtiene un copropietario por id (CONSULTA solo puede pedir el suyo; si no, 403)
  *     tags: [Copropietarios]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -56,6 +58,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  *         schema: { type: string }
  *     responses:
  *       200: { description: OK }
+ *       403: { description: CONSULTA pidiendo informacion de otra persona }
  *       404: { description: Copropietario no encontrado }
  *   put:
  *     summary: Actualiza datos de un copropietario
@@ -83,7 +86,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  *       404: { description: Copropietario no encontrado }
  *       409: { description: CI ya registrado }
  */
-router.get("/:id", autenticar, LECTURA, controller.obtener);
+router.get("/:id", autenticar, LECTURA, soloSuCopropietario(), controller.obtener);
 router.put("/:id", autenticar, GESTION, controller.actualizar);
 
 /**
@@ -117,8 +120,9 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *         schema: { type: string }
  *     responses:
  *       200: { description: "{ copropietario, vigentes, departamentos, bauleras, parqueos, anteriores, programadas, resumen }" }
+ *       403: { description: CONSULTA pidiendo informacion de otra persona }
  *       404: { description: Copropietario no encontrado }
  */
-router.get("/:id/inmuebles", autenticar, LECTURA, controller.listarInmuebles);
+router.get("/:id/inmuebles", autenticar, LECTURA, soloSuCopropietario(), controller.listarInmuebles);
 
 module.exports = router;
