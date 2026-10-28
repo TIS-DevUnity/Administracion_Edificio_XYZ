@@ -78,7 +78,8 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
-    finanzas: ["ver"],
+    // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
+    // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
     // para Consulta (documentos: el backend no distingue privado/público, así que
     // hasta que exista ese campo se oculta el módulo entero en vez de fingir un

@@ -316,12 +316,18 @@ async function obtener(id) {
   return presentar(await buscar(id))
 }
 
-async function listar({ inmuebleId, estado } = {}) {
+// `inmuebleIds` (opcional) limita la lista a esos inmuebles; el rol CONSULTA solo ve los suyos.
+async function listar({ inmuebleId, estado, inmuebleIds } = {}) {
   if (estado !== undefined && estado !== '' && !ESTADOS_PLAN.includes(estado)) {
     throw errorHttp(`estado invalido. Valores permitidos: ${ESTADOS_PLAN.join(', ')}`, 400)
   }
+  const filtroInmueble = inmuebleIds
+    ? { inmuebleId: { in: inmuebleId ? inmuebleIds.filter((id) => id === inmuebleId) : inmuebleIds } }
+    : inmuebleId
+      ? { inmuebleId }
+      : {}
   const planes = await prisma.planPago.findMany({
-    where: { ...(inmuebleId ? { inmuebleId } : {}), ...(estado ? { estado } : {}) },
+    where: { ...filtroInmueble, ...(estado ? { estado } : {}) },
     include: INCLUIR_PLAN,
     orderBy: { createdAt: 'desc' }
   })

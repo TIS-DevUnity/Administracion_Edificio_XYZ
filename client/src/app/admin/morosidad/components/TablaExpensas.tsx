@@ -206,16 +206,17 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
     <>
       {/* Vista tabla (md en adelante) */}
       <div className="hidden w-full overflow-x-auto md:block">
-        <Table className="min-w-260">
+        <Table className="min-w-[1160px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className={`${CLASE_HEADER_TABLA} pl-5`}>Departamento</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Responsable</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
-              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Expensa</TableHead>
+              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Expensa base</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Agua</TableHead>
+              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total antes de mora</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
-              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total exigible</TableHead>
+              <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total final con mora</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Saldo pendiente</TableHead>
               <TableHead className={CLASE_HEADER_TABLA}>Estado</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} pr-5 text-right`}>Acciones</TableHead>
@@ -225,7 +226,8 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
           <TableBody>
             {filteredExpensas.map((exp) => {
               const intMora = Number(exp.montoMora || 0);
-              const totalExigible = Number(exp.montoTotal) + intMora;
+              const totalAntesMora = Number(exp.montoTotal);
+              const totalExigible = totalAntesMora + intMora;
 
               return (
                 <TableRow key={exp.id}>
@@ -254,14 +256,15 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   </TableCell>
 
                   <TableCell className="py-3 text-right">
-                    <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(Number(exp.montoTotal))}</p>
-                    <p className={`${CLASE_SECUNDARIA} tabular-nums`}>
-                      Tarifa fija {formatCurrency(Number(exp.montoBase))}
-                    </p>
+                    <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(Number(exp.montoBase))}</p>
                   </TableCell>
 
                   <TableCell className="py-3 text-right">
                     <AguaEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar} onGuardarAgua={onGuardarAgua} />
+                  </TableCell>
+
+                  <TableCell className="py-3 text-right text-[13px] font-medium tabular-nums text-foreground">
+                    {formatCurrency(totalAntesMora)}
                   </TableCell>
 
                   <TableCell className={`py-3 text-right text-[13px] tabular-nums ${intMora > 0 ? "text-destructive" : "text-muted-foreground"}`}>
@@ -302,7 +305,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
             })}
             {filteredExpensas.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={10} className="py-10 text-center text-[13px] text-muted-foreground">
+                <TableCell colSpan={11} className="py-10 text-center text-[13px] text-muted-foreground">
                   {strVacio}
                 </TableCell>
               </TableRow>
@@ -315,7 +318,8 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
       <div className="flex flex-col gap-3 p-4 md:hidden">
         {filteredExpensas.map((exp) => {
           const intMora = Number(exp.montoMora || 0);
-          const totalExigible = Number(exp.montoTotal) + intMora;
+          const totalAntesMora = Number(exp.montoTotal);
+          const totalExigible = totalAntesMora + intMora;
 
           return (
             <div key={exp.id} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
@@ -349,16 +353,17 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   <p className="text-[13px] text-foreground">{formatearFecha(exp.createdAt)}</p>
                 </div>
                 <div>
-                  <p className={CLASE_LABEL_CAMPO}>Expensa</p>
-                  <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(Number(exp.montoTotal))}</p>
-                  <p className={`${CLASE_SECUNDARIA} tabular-nums`}>
-                    Tarifa fija {formatCurrency(Number(exp.montoBase))}
-                  </p>
+                  <p className={CLASE_LABEL_CAMPO}>Expensa base</p>
+                  <p className="text-[13px] tabular-nums text-foreground">{formatCurrency(Number(exp.montoBase))}</p>
                 </div>
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Agua</p>
                   <AguaEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar}
                     onGuardarAgua={onGuardarAgua} compacto />
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Total antes de mora</p>
+                  <p className="text-[13px] font-medium tabular-nums text-foreground">{formatCurrency(totalAntesMora)}</p>
                 </div>
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Mora</p>
@@ -374,7 +379,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
 
               <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
                 <div>
-                  <p className={CLASE_LABEL_CAMPO}>Total exigible</p>
+                  <p className={CLASE_LABEL_CAMPO}>Total final con mora</p>
                   <p className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-foreground">
                     {formatCurrency(totalExigible)}
                   </p>

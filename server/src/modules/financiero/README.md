@@ -264,3 +264,34 @@ gastos   = gastos extraordinarios
   se corrige el pago o el movimiento que lo origina.
 - **Pendiente:** los sueldos del personal todavia no se descuentan; se suman cuando ese modulo tenga API.
 - No requiere migracion.
+
+## Rol CONSULTA: solo lo propio y pagos informados
+
+El rol CONSULTA es el del copropietario: ve unicamente lo de los inmuebles que ocupa hoy (ver
+`operativo-seguridad/README.md`). Aplica a la cuenta, pagos, saldo, estado de cuenta y saldo a favor del inmueble
+(`/inmuebles/{id}/...`), recibos (`/recibos/{id}`, pdf y comprobante), `/copropietarios/{id}/cuenta`, la lista de
+expensas y los planes de pago (lista y detalle). Un inmueble ajeno responde 403 `SOLO_INFORMACION_PROPIA`.
+`GET /saldo-edificio` queda solo para Administrador y Directorio.
+
+### Pagos informados (el residente avisa su pago)
+
+Base `/api/financiero/pagos-informados`. El copropietario no registra cobros: **avisa** que pago una expensa fuera del
+sistema y el Administrador lo comprueba. Hasta entonces no cambia ninguna deuda.
+
+| Endpoint | Rol | Que hace |
+|---|---|---|
+| `POST /` | CONSULTA | Informa un pago del departamento que ocupa: `inmuebleId`, `monto`, `metodoPago` (EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE), `fechaPago` (YYYY-MM-DD, no futura) y `referencia` opcional. `multipart`, comprobante opcional (campo `archivo`: JPG, PNG o WEBP, max 5MB; se revisa el contenido real). Queda `PENDIENTE`. |
+| `GET /`, `GET /{id}` | Todos (CONSULTA solo los de sus inmuebles) | Lista (`estado`, `inmuebleId`) y detalle, con el motivo si fue rechazado. |
+| `GET /{id}/comprobante` | Todos (CONSULTA solo el suyo) | Enlace temporal (5 min) a la foto. |
+| `POST /{id}/confirmar` | Administrador | Registra el pago normal del inmueble (recibo, meses de mas antiguo a mas nuevo, mora primero) con los datos del aviso; `cuentaId` opcional indica la caja o cuenta que recibio el dinero. Queda `CONFIRMADO` con su `reciboId`. |
+| `POST /{id}/rechazar` | Administrador | Exige `motivo` (hasta 500 caracteres). Queda `RECHAZADO` y no toca la deuda. |
+
+- Solo se informa el pago de un **departamento** (la baulera y el parqueo se cobran dentro de su expensa) y de un inmueble propio.
+- Si el pago normal no se puede registrar al confirmar (por ejemplo un mes atrasado que se debe pagar completo), responde el
+  mismo error del cobro (`DEUDA_ATRASADA_INCOMPLETA`...) y el aviso sigue `PENDIENTE`.
+- Confirmar dos veces, o confirmar un aviso ya rechazado, responde 409 `PAGO_YA_REVISADO`; el cobro usa la clave
+  `pago-informado-{id}`, asi un reintento no cobra dos veces.
+- Con la cabecera `Idempotency-Key`, reenviar el mismo aviso responde 200 con `duplicado: true`.
+- Todo queda en la auditoria (`PagoInformado`: CREATE, CONFIRMAR, RECHAZAR).
+- El comprobante queda en el aviso (carpeta `comprobantes-pagos-informados/`); no se copia al recibo.
+- Migracion: `20261027100000_pagos_informados` (tabla `pagos_informados`, solo agrega; no modifica nada existente).

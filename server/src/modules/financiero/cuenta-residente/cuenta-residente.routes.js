@@ -1,6 +1,7 @@
 const { Router } = require('express')
 const { autenticar } = require('../../../middlewares/auth.middleware')
 const { autorizar } = require('../../../middlewares/rbac.middleware')
+const { soloSuCopropietario } = require('../../../middlewares/acceso-propio')
 const controller = require('./cuenta-residente.controller')
 
 const router = Router()
@@ -37,6 +38,6 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *       403: { description: Sin permisos }
  *       404: { description: Copropietario no encontrado }
  */
-router.get('/:id/cuenta', autenticar, CONSULTA, controller.obtenerCuenta)
+router.get('/:id/cuenta', autenticar, CONSULTA, soloSuCopropietario(), controller.obtenerCuenta)
 
 module.exports = router

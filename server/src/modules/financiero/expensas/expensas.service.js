@@ -291,7 +291,8 @@ async function conSaldoFavor(expensas) {
  * devuelve el arreglo completo (compatibilidad con quien ya lo consume); con
  * `pagina` devuelve { expensas, paginacion }.
  */
-async function listar({ periodo, estado, inmuebleId, aguaCargada, pagina, porPagina } = {}) {
+// `inmuebleIds` (opcional) limita la lista a esos inmuebles; el rol CONSULTA solo ve los suyos.
+async function listar({ periodo, estado, inmuebleId, inmuebleIds, aguaCargada, pagina, porPagina } = {}) {
   if (periodo !== undefined && !PERIODO_VALIDO.test(periodo)) {
     throw errorHttp('periodo debe tener el formato YYYY-MM (ej. 2026-09)', 400)
   }
@@ -306,7 +307,11 @@ async function listar({ periodo, estado, inmuebleId, aguaCargada, pagina, porPag
   const where = {
     ...(periodo ? { periodo } : {}),
     ...(estado ? { estado } : {}),
-    ...(inmuebleId ? { inmuebleId } : {}),
+    ...(inmuebleIds
+      ? { inmuebleId: { in: inmuebleId ? inmuebleIds.filter((id) => id === inmuebleId) : inmuebleIds } }
+      : inmuebleId
+        ? { inmuebleId }
+        : {}),
     // true = ya se cargo el agua; false = todavia falta cargarla.
     ...(aguaCargada === undefined
       ? {}
