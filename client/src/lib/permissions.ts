@@ -4,7 +4,6 @@ export const ROLES_DISPONIBLES: RolNombre[] = ["ADMINISTRADOR", "DIRECTORIO", "C
 
 export type SeccionId =
   | "panel"
-  | "edificios"
   | "inmuebles"
   | "residentes"
   | "pagos"
@@ -13,7 +12,9 @@ export type SeccionId =
   | "usuarios"
   | "roles"
   | "morosidad"
-  | "documentos";
+  | "documentos"
+  | "finanzas"
+  | "auditoria";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -36,38 +37,49 @@ export function normalizarRol(strRol: string): RolNombre {
 const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> = {
   ADMINISTRADOR: {
     panel: ["ver"],
-    edificios: ["ver", "crear", "editar", "eliminar"],
     inmuebles: ["ver", "crear", "editar", "eliminar"],
     residentes: ["ver", "crear", "editar", "eliminar"],
-    pagos: ["ver", "crear", "editar", "eliminar"],
+    // El backend restringe las mutaciones de financiero/pagos a ADMINISTRADOR
+    // (ver server/src/modules/financiero/**: GESTION = autorizar('ADMINISTRADOR')).
+    pagos: ["ver", "crear", "editar"],
     mantenimiento: ["ver", "crear", "editar", "eliminar"],
-    copropietarios: ["ver"],
+    // POST /api/copropietarios: ADMINISTRADOR y DIRECTORIO (copropietarios.routes.js).
+    copropietarios: ["ver", "crear"],
     usuarios: ["ver", "crear", "editar", "eliminar"],
     roles: ["ver", "editar"],
     morosidad: ["ver", "crear", "editar", "eliminar"],
     documentos: ["ver", "crear", "eliminar"],
+    finanzas: ["ver", "crear", "editar", "eliminar"],
+    // "auditoria" no aparece a propósito: la HU la define como exclusiva de
+    // Directorio ("un usuario sin el rol de Directorio... debe impedir el
+    // acceso"), incluyendo a Administrador — es una bitácora de control
+    // independiente sobre lo que hace cualquiera, Administrador incluido.
+    // Nota: el backend (GET /api/auditoria) sí autoriza a ADMINISTRADOR además
+    // de DIRECTORIO, así que esta restricción hoy solo vive en el frontend.
   },
   DIRECTORIO: {
     panel: ["ver"],
-    edificios: ["ver", "crear", "editar"],
     inmuebles: ["ver", "crear", "editar"],
     residentes: ["ver", "crear", "editar"],
-    pagos: ["ver", "crear", "editar"],
+    pagos: ["ver"],
     mantenimiento: ["ver", "crear", "editar"],
-    copropietarios: ["ver"],
+    copropietarios: ["ver", "crear"],
     usuarios: ["ver"],
     morosidad: ["ver"],
     documentos: ["ver", "crear"],
+    auditoria: ["ver"],
+    finanzas: ["ver", "crear", "editar"],
   },
   CONSULTA: {
     panel: ["ver"],
-    edificios: ["ver"],
     inmuebles: ["ver"],
     residentes: ["ver"],
     pagos: ["ver"],
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
+    // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
+    // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
     // para Consulta (documentos: el backend no distingue privado/público, así que
     // hasta que exista ese campo se oculta el módulo entero en vez de fingir un
@@ -95,6 +107,14 @@ export function validarAccion(
   return { permitido: false, mensaje: MENSAJE_PERMISO_INSUFICIENTE };
 }
 
+export const MENSAJE_SOLO_ADMIN_ESTADO_CUENTA =
+  "Permiso insuficiente: solo el Administrador puede emitir, imprimir o descargar el estado de cuenta.";
+
+/** Emitir/imprimir/descargar el estado de cuenta (HU5 CA-26). El backend restringe el PDF a ADMINISTRADOR. */
+export function puedeEmitirEstadoCuenta(rol: RolNombre): boolean {
+  return rol === "ADMINISTRADOR";
+}
+
 export interface SeccionNav {
   id: SeccionId;
   label: string;
@@ -103,13 +123,14 @@ export interface SeccionNav {
 
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
-  { id: "edificios", label: "Edificios", href: "/admin/edificios" },
+  { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },
   { id: "residentes", label: "Residentes", href: "/admin/residentes" },
   { id: "copropietarios", label: "Copropietarios", href: "/admin/copropietarios" },
   { id: "pagos", label: "Pagos", href: "/admin/pagos" },
   { id: "morosidad", label: "Morosidad y Expensas", href: "/admin/morosidad" },
   { id: "documentos", label: "Gestión Documental", href: "/admin/documentos" },
+  { id: "auditoria", label: "Bitácora de Auditoría", href: "/admin/auditoria" },
   { id: "mantenimiento", label: "Mantenimiento", href: "/admin/mantenimiento" },
   { id: "usuarios", label: "Usuarios", href: "/admin/usuarios" },
   { id: "roles", label: "Configurar roles", href: "/admin/roles" },

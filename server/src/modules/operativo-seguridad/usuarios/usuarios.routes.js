@@ -1,12 +1,12 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
-const { autorizar } = require("../../../middlewares/rbac.middleware");
+const { permitir } = require("../../../middlewares/permisos");
 const controller = require("./usuarios.controller");
 
 const router = Router();
 
-const GESTION = autorizar("ADMINISTRADOR");
-const CONSULTA = autorizar("ADMINISTRADOR", "DIRECTORIO");
+const GESTION = permitir("usuarios", "gestionar");
+const CONSULTA = permitir("usuarios", "ver");
 
 /**
  * @openapi
@@ -34,6 +34,7 @@ const CONSULTA = autorizar("ADMINISTRADOR", "DIRECTORIO");
  *               email: { type: string }
  *               password: { type: string }
  *               rol: { type: string, enum: [ADMINISTRADOR, DIRECTORIO, CONSULTA] }
+ *               copropietarioId: { type: string, nullable: true, description: "Copropietario al que se vincula el usuario (lo que ve el rol CONSULTA)" }
  *     responses:
  *       201: { description: Usuario creado }
  *       400: { description: Datos invalidos }
@@ -77,6 +78,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  *               apellido: { type: string }
  *               email: { type: string }
  *               rol: { type: string, enum: [ADMINISTRADOR, DIRECTORIO, CONSULTA] }
+ *               copropietarioId: { type: string, nullable: true, description: "Vincula (id) o desvincula (null) al copropietario; si no se envia, no cambia" }
  *     responses:
  *       200: { description: Usuario actualizado }
  *       404: { description: Usuario no encontrado }

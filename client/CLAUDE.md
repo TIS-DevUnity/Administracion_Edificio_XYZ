@@ -97,7 +97,6 @@ ADMINISTRADOR y DIRECTORIO; `POST`/`PUT`/`PATCH` solo ADMINISTRADOR.
 | Sección | Ruta | Administrador | Directorio | Consulta |
 |---|---|---|---|---|
 | Panel principal | `/admin` | Ver | Ver | Ver |
-| Edificios | `/admin/edificios` | Ver, crear, editar, eliminar | Ver, crear, editar | Ver |
 | Residentes | `/admin/residentes` | Ver, crear, editar, eliminar | Ver, crear, editar | Ver |
 | Pagos | `/admin/pagos` | Ver, crear, editar, eliminar | Ver, crear, editar | Ver |
 | Mantenimiento | `/admin/mantenimiento` | Ver, crear, editar, eliminar | Ver, crear, editar | Ver |
@@ -105,7 +104,7 @@ ADMINISTRADOR y DIRECTORIO; `POST`/`PUT`/`PATCH` solo ADMINISTRADOR.
 | Configurar roles | `/admin/roles` | Ver, editar | Sin acceso | Sin acceso |
 
 Solo `/admin/usuarios` llama a una API real (`GET/POST/PUT/PATCH /api/usuarios`); el resto
-(edificios, residentes, pagos, mantenimiento) son pantallas de referencia con datos en memoria
+(residentes, pagos, mantenimiento) son pantallas de referencia con datos en memoria
 porque esos módulos del backend todavía son carpetas `.gitkeep` sin controlador. `/admin/roles`
 es de solo lectura por el mismo motivo: no hay dónde persistir cambios a la matriz.
 

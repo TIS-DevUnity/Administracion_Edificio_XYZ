@@ -1,6 +1,7 @@
 const {
   ejecutarGeneracionAutomatica,
-  ejecutarAplicacionMoraAutomatica
+  ejecutarAplicacionMoraAutomatica,
+  ejecutarNotificacionesDiarias
 } = require('./generacion-automatica.job')
 
 /**
@@ -12,7 +13,11 @@ const {
 async function ejecutarGeneracion(req, res, next) {
   try {
     const forzar = req.query.forzar === 'true'
-    const resultado = await ejecutarGeneracionAutomatica(new Date(), { forzar })
+    const resultado = await ejecutarGeneracionAutomatica(new Date(), {
+      forzar,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
     res.json(resultado)
   } catch (err) {
     next(err)
@@ -25,11 +30,26 @@ async function ejecutarGeneracion(req, res, next) {
  */
 async function ejecutarMora(req, res, next) {
   try {
-    const resultado = await ejecutarAplicacionMoraAutomatica()
+    const resultado = await ejecutarAplicacionMoraAutomatica({
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
     res.json(resultado)
   } catch (err) {
     next(err)
   }
 }
 
-module.exports = { ejecutarGeneracion, ejecutarMora }
+/**
+ * Dispara manualmente el proceso diario de avisos de la campanita. Se puede repetir en cualquier
+ * momento: un mismo hecho nunca se avisa dos veces.
+ */
+async function ejecutarNotificaciones(req, res, next) {
+  try {
+    res.json(await ejecutarNotificacionesDiarias())
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { ejecutarGeneracion, ejecutarMora, ejecutarNotificaciones }

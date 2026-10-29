@@ -26,7 +26,7 @@ model Usuario {
   passwordHash    String
   rol             RolNombre
   activo          Boolean   @default(true)
-  ultimoLogin     DateTime?
+  ultimoLogin     DateTime? @db.Timestamptz(3)
 
   copropietario   Copropietario? @relation(fields: [copropietarioId], references: [id])
   copropietarioId String?
@@ -34,12 +34,23 @@ model Usuario {
   auditorias      HistorialAuditoria[]
 
   pagosRegistrados       Pago[]
+  saldosRegistrados      MovimientoSaldo[]
+  recibosRegistrados     Recibo[]
   movimientosRegistrados MovimientoFinanciero[]
   nominasRegistradas     PagoPersonal[]
   documentosSubidos      Documento[]
+  cambiosVencimiento      CambioVencimiento[]
+  planesPagoRegistrados   PlanPago[]
+  movimientosCajaRegistrados  MovimientoCaja[]     @relation("CajaRegistradoPor")
+  movimientosCajaConciliados  MovimientoCaja[]     @relation("CajaConciliadoPor")
+  saldosRealesRegistrados     SaldoRealPeriodo[]   @relation("SaldoRealRegistradoPor")
+  saldosRealesRevisados       SaldoRealPeriodo[]   @relation("SaldoRealRevisadaPor")
+  cierresCaja                 CierreCaja[]         @relation("CierreCajaPor")
+  eventosConciliacion         ConciliacionEvento[] @relation("ConciliacionEventoPor")
+  pagosInformadosRevisados    PagoInformado[]      @relation("PagoInformadoRevisadoPor")
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
 
   @@map("usuarios")
 }
@@ -60,13 +71,26 @@ model Copropietario {
 
   usuarios    Usuario[]
   ocupaciones OcupanteInmueble[]
+  expensasComoResponsable Expensa[]
+  notificaciones          Notificacion[]
+  pagosInformados         PagoInformado[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("copropietarios")
 }
 
+// Clase de inmueble. Solo el DEPARTAMENTO paga expensa y tiene tipo (A, B, C...).
+// Baulera y parqueo se registran pero no tienen tipo ni generan expensa.
+enum ClaseInmueble {
+  DEPARTAMENTO
+  BAULERA
+  PARQUEO
+}
+
+// Tipo de departamento (A, B, C...). Define la expensa fija mensual (`montoBase`). El agua no
+// depende del tipo: el administrador la carga a mano en cada expensa.
 model TipoInmueble {
   id          String     @id @default(uuid())
   nombre      String     @unique
@@ -74,31 +98,56 @@ model TipoInmueble {
 
   inmuebles   Inmueble[]
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
 
   @@map("tipos_inmueble")
 }
 
 model Inmueble {
-  id             String       @id @default(uuid())
-  codigo         String       @unique
+  id             String        @id @default(uuid())
+  codigo         String        @unique
 
-  tipoInmueble   TipoInmueble @relation(fields: [tipoInmuebleId], references: [id])
-  tipoInmuebleId String
+  clase          ClaseInmueble @default(DEPARTAMENTO)
+
+  // Solo los departamentos tienen tipo; en baulera y parqueo es null.
+  tipoInmueble   TipoInmueble? @relation(fields: [tipoInmuebleId], references: [id])
+  tipoInmuebleId String?
 
   piso           String?
   areaM2         Decimal?     @db.Decimal(8, 2)
   activo         Boolean      @default(true)
 
+  // Solo baulera y parqueo: monto propio que reemplaza a la tarifa de su clase (TarifaClase).
+  // null = usa la tarifa de la clase; 0 = exento (no se cobra).
+  cuotaMensual   Decimal?     @db.Decimal(10, 2)
+
   ocupaciones    OcupanteInmueble[]
   expensas       Expensa[]
+  movimientosSaldo MovimientoSaldo[]
+  recibos        Recibo[]
+  cargosOrigen   CargoExpensa[]
+  planesPago     PlanPago[]
+  pagosInformados PagoInformado[]
 
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
 
   @@map("inmuebles")
   @@index([tipoInmuebleId])
+}
+
+// Tarifa mensual general de una clase de inmueble que no es departamento (BAULERA, PARQUEO).
+// Un inmueble puede reemplazarla con su propio `cuotaMensual`. Un cambio solo afecta a las
+// expensas que se generen despues: las ya generadas guardan sus cargos (CargoExpensa).
+model TarifaClase {
+  id         String        @id @default(uuid())
+  clase      ClaseInmueble @unique
+  monto      Decimal       @db.Decimal(10, 2)
+
+  updatedAt  DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@map("tarifas_clase")
 }
 
 enum TipoValorMora {
@@ -106,13 +155,27 @@ enum TipoValorMora {
   MONTO_FIJO
 }
 
+// UNICA: la mora se cobra una sola vez al vencer. MENSUAL: se repite por cada mes de atraso.
+enum ModoMora {
+  UNICA
+  MENSUAL
+}
+
 model ConfiguracionMora {
-  id            String        @id @default(uuid())
-  diaGeneracion Int           @default(1)
-  diasGracia    Int           @default(0)
-  tipoValor     TipoValorMora @default(PORCENTAJE)
-  valor         Decimal       @db.Decimal(10, 2)
-  vigenteDesde  DateTime      @default(now())
+  id             String        @id @default(uuid())
+  diaGeneracion  Int           @default(1)
+  // Dia del mes (1-28) en que vence la expensa. La mora corre desde el dia siguiente
+  // al vencimiento mas los dias de gracia.
+  diaVencimiento Int           @default(10)
+  diasGracia     Int           @default(0)
+  tipoValor      TipoValorMora @default(PORCENTAJE)
+  valor          Decimal       @db.Decimal(10, 2)
+  modoMora       ModoMora      @default(MENSUAL)
+  // Desde cuando rige. La vigente en una fecha es la mas reciente con vigenteDesde <= fecha;
+  // una con fecha futura queda programada y no cambia lo que ya esta generado.
+  vigenteDesde   DateTime      @default(now()) @db.Timestamptz(3)
+
+  expensas       Expensa[]
 
   @@map("configuracion_mora")
 }
@@ -128,8 +191,8 @@ model OcupanteInmueble {
   copropietarioId String
 
   esPropietario   Boolean  @default(true) // false = inquilino
-  fechaInicio     DateTime @default(now())
-  fechaFin        DateTime?
+  fechaInicio     DateTime @default(now()) @db.Timestamptz(3)
+  fechaFin        DateTime? @db.Timestamptz(3)
 
   @@map("ocupante_inmueble")
   @@index([inmuebleId])
@@ -155,6 +218,7 @@ model Documento {
   id             String             @id @default(uuid())
   nombre         String
   categoria      CategoriaDocumento
+  descripcion    String?
   mimeType       String
   tamanioBytes   Int
   storagePath    String             @unique
@@ -165,7 +229,7 @@ model Documento {
   subidoPor      Usuario?           @relation(fields: [subidoPorId], references: [id])
   subidoPorId    String?
 
-  createdAt      DateTime           @default(now())
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
 
   @@map("documentos")
   @@index([categoria])
@@ -182,6 +246,7 @@ model HistorialAuditoria {
 
   usuario   Usuario? @relation(fields: [usuarioId], references: [id])
   usuarioId String?
+  rol       RolNombre? // rol del usuario al momento del evento (null en eventos previos o del sistema)
 
   accion    String   // LOGIN, CREATE, UPDATE, DELETE, etc.
   entidad   String   // nombre de la entidad afectada (Usuario, Copropietario, Expensa...)
@@ -189,7 +254,7 @@ model HistorialAuditoria {
   detalle   Json?    // payload/diff relevante de la operacion
   ip        String?
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@map("historial_auditoria")
   @@index([entidad, entidadId])
@@ -215,11 +280,49 @@ enum MetodoPago {
   TRANSFERENCIA
   TARJETA
   CHEQUE
+  SALDO_A_FAVOR // pago cubierto con saldo a favor previo: no es dinero nuevo en caja
+}
+
+// Origen de un movimiento del saldo a favor de un inmueble
+enum TipoMovimientoSaldo {
+  PAGO_ANTICIPADO   // abono (+): el copropietario pago por adelantado
+  EXCESO_PAGO       // abono (+): pago por encima de lo adeudado en una expensa
+  APLICACION_EXPENSA // uso (-): el saldo cubrio total o parcialmente una expensa
 }
 
 enum TipoMovimiento {
   INGRESO
   EGRESO
+}
+
+enum TipoCuenta {
+  CAJA   // efectivo
+  BANCO  // transferencia, tarjeta, cheque
+}
+
+enum EstadoConciliacion {
+  PENDIENTE       // todavia no se comparo con el extracto o el arqueo
+  CONCILIADO      // coincide en fecha, monto, tipo y referencia; cuenta para el saldo conciliado
+  CON_DIFERENCIA  // algo no coincide: sigue sin conciliar, pendiente de revision, no cuenta
+}
+
+enum OrigenMovimientoCaja {
+  RECIBO                 // cobro de expensa / pago anticipado / cuota de plan
+  MOVIMIENTO_FINANCIERO  // ingreso o egreso extraordinario (incluye comisiones manuales)
+  TRASPASO               // deposito de caja al banco (dos patas unidas por traspasoId)
+}
+
+enum OperacionConciliacion {
+  CONCILIAR
+  REVISAR_DIFERENCIA
+  SALDO_REAL
+  CIERRE
+}
+
+enum ResultadoConciliacion {
+  EXITOSO         // la operacion se aplico (movimiento conciliado, saldo guardado, mes cerrado...)
+  CON_DIFERENCIA  // se intento conciliar y algo no coincide
+  RECHAZADO       // se intento y no se pudo (ej. cierre con pendientes)
 }
 
 // Cobro mensual de expensas por inmueble
@@ -230,20 +333,80 @@ model Expensa {
   inmuebleId       String
 
   periodo          String        // formato "YYYY-MM"
+
+  // montoTotal = montoBase (expensa fija del tipo + baulera y parqueo) + montoAgua (agua que el
+  // administrador carga a mano para este departamento). No incluye la mora, que se lleva aparte
+  // en `moras` y se resume en `montoMora`.
+  montoBase        Decimal       @default(0) @db.Decimal(10, 2)
+  montoAgua        Decimal       @default(0) @db.Decimal(10, 2)
+  // Cuando se cargo el agua. null = todavia no se carga (distinto de haber cargado 0).
+  aguaRegistradaEn DateTime?     @db.Timestamptz(3)
   montoTotal       Decimal       @db.Decimal(10, 2)
-  montoMora        Decimal       @default(0) @db.Decimal(10, 2)
+  montoMora        Decimal       @default(0) @db.Decimal(10, 2) // suma de las lineas de `moras`
+
+  // Foto del tipo al generar la expensa: cambiar el tipo despues no altera los meses ya generados.
+  tipoNombre       String?
+
   estado           EstadoExpensa @default(PENDIENTE)
   fechaVencimiento DateTime
 
-  pagos            Pago[]
+  // Regla de mora (y dias de gracia) que rige para esta expensa: la vigente al generarla.
+  // Un cambio posterior de configuracion no altera la mora de las expensas ya generadas.
+  configuracionMora   ConfiguracionMora? @relation(fields: [configuracionMoraId], references: [id])
+  configuracionMoraId String?
 
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  // Persona responsable al generarla (propietario vigente; si no hay, el inquilino).
+  // Se guarda el nombre tal como era en ese momento.
+  responsable         Copropietario? @relation(fields: [responsableId], references: [id])
+  responsableId       String?
+  responsableNombre   String?
+  responsableRol      String?        // PROPIETARIO | INQUILINO
+
+  pagos            Pago[]
+  moras            MoraExpensa[]
+  cargos           CargoExpensa[]
+  cambiosVencimiento CambioVencimiento[]
+  movimientosSaldo MovimientoSaldo[]
+  notificaciones   Notificacion[]
+  enviosCorreo     EnvioCorreo[]
+
+  // Plan de pagos en cuotas que cubre la deuda de esta expensa (null = pago normal). Mientras el
+  // plan esta activo la expensa no genera mora nueva y se cobra a traves de sus cuotas.
+  planPago         PlanPago?     @relation(fields: [planPagoId], references: [id])
+  planPagoId       String?
+
+  createdAt        DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(3)
 
   @@map("expensas")
   @@unique([inmuebleId, periodo])
   @@index([periodo])
   @@index([estado])
+  @@index([planPagoId])
+}
+
+// Una linea por concepto de una expensa: la cuota del departamento y, por cada baulera o
+// parqueo que paga la persona responsable, su propia cuota. Es una foto del momento en que se
+// genero la expensa; `Expensa.montoBase` es la suma de estas lineas. El agua va aparte
+// (`Expensa.montoAgua`) y solo la lleva el departamento: baulera y parqueo no tienen agua.
+model CargoExpensa {
+  id          String        @id @default(uuid())
+
+  expensa     Expensa       @relation(fields: [expensaId], references: [id])
+  expensaId   String
+
+  // Inmueble que origina el cargo (null si el inmueble se elimino).
+  inmueble    Inmueble?     @relation(fields: [inmuebleId], references: [id])
+  inmuebleId  String?
+
+  clase       ClaseInmueble // DEPARTAMENTO, BAULERA o PARQUEO
+  codigo      String        // codigo del inmueble al generar la expensa
+  monto       Decimal       @db.Decimal(10, 2)
+
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@map("cargos_expensa")
+  @@index([expensaId])
 }
 
 // Pagos aplicados a una expensa (permite pagos parciales)
@@ -254,9 +417,17 @@ model Pago {
   expensaId       String
 
   monto           Decimal    @db.Decimal(10, 2)
+  // monto = montoMora + montoExpensa: lo que el pago cubrio de la mora y del monto de la expensa.
+  montoMora       Decimal    @default(0) @db.Decimal(10, 2)
+  montoExpensa    Decimal    @default(0) @db.Decimal(10, 2)
   metodoPago      MetodoPago
   referencia      String?
-  fechaPago       DateTime   @default(now())
+  fechaPago       DateTime   @default(now()) @db.Timestamptz(3)
+
+  // Recibo (folio) de la operacion de cobro a la que pertenece. Null en pagos anteriores
+  // a los recibos y en los cubiertos con saldo a favor (no entra dinero nuevo).
+  recibo          Recibo?    @relation(fields: [reciboId], references: [id])
+  reciboId        String?
 
   registradoPor   Usuario?   @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
@@ -264,43 +435,207 @@ model Pago {
   @@map("pagos")
   @@index([expensaId])
   @@index([fechaPago])
+  @@index([reciboId])
 }
 
-// Ingresos extraordinarios y egresos generales (no ligados a una expensa puntual)
-model MovimientoFinanciero {
-  id              String         @id @default(uuid())
+// Historial de cambios manuales de la fecha de vencimiento de una expensa ya generada.
+model CambioVencimiento {
+  id               String   @id @default(uuid())
 
-  tipo            TipoMovimiento
-  categoria       String
-  monto           Decimal        @db.Decimal(10, 2)
-  descripcion     String?
-  fecha           DateTime       @default(now())
+  expensa          Expensa  @relation(fields: [expensaId], references: [id])
+  expensaId        String
 
-  registradoPor   Usuario?       @relation(fields: [registradoPorId], references: [id])
+  fechaAnterior    DateTime @db.Date
+  fechaNueva       DateTime @db.Date
+  motivo           String?
+
+  registradoPor    Usuario? @relation(fields: [registradoPorId], references: [id])
+  registradoPorId  String?
+
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("cambios_vencimiento")
+  @@index([expensaId])
+}
+
+// Una linea de mora por cada mes de atraso de una expensa. Se calcula sobre lo que faltaba
+// pagar de la expensa al dia de corte y nunca se edita: solo se agregan filas.
+model MoraExpensa {
+  id         String        @id @default(uuid())
+
+  expensa    Expensa       @relation(fields: [expensaId], references: [id])
+  expensaId  String
+
+  numero     Int           // 1 = primer mes de atraso, 2 = segundo, ...
+  mes        String        // "YYYY-MM" del mes en que empieza a correr este cargo
+  fechaCorte DateTime      @db.Date // dia desde el que se cobra este cargo
+  base       Decimal       @db.Decimal(10, 2) // lo que faltaba pagar de la expensa al cortar
+  tipoValor  TipoValorMora // regla vigente al generarla
+  valor      Decimal       @db.Decimal(10, 2)
+  monto      Decimal       @db.Decimal(10, 2) // mora de este mes
+
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@map("moras_expensa")
+  @@unique([expensaId, numero])
+  @@index([expensaId])
+}
+
+// Una operacion de cobro: lo que el administrador recibe en un momento. Puede repartirse
+// en varios `Pago` (uno por expensa cubierta, de la mas antigua a la mas nueva) y dejar un
+// sobrante como `MovimientoSaldo`. El folio es unico y es lo que se imprime en el recibo.
+model Recibo {
+  id                String     @id @default(uuid())
+  folioNumero       Int        @unique @default(autoincrement())
+
+  inmueble          Inmueble   @relation(fields: [inmuebleId], references: [id])
+  inmuebleId        String
+
+  montoTotal        Decimal    @db.Decimal(10, 2) // todo lo recibido (aplicado + saldo a favor)
+  metodoPago        MetodoPago
+  referencia        String?
+  fechaPago         DateTime   @db.Timestamptz(3)
+
+  // Foto del comprobante del pagador (opcional, en el storage de Supabase)
+  comprobantePath   String?    @unique
+  comprobanteMime   String?
+  comprobanteNombre String?
+
+  // Clave que envia el cliente (cabecera Idempotency-Key) para que reenviar la misma solicitud
+  // no registre el cobro dos veces.
+  claveSolicitud    String?    @unique
+
+  pagos             Pago[]
+  movimientosSaldo  MovimientoSaldo[]
+  pagosCuota        PagoCuota[]
+  movimientoCaja    MovimientoCaja?
+  pagoInformado     PagoInformado?
+
+  registradoPor     Usuario?   @relation(fields: [registradoPorId], references: [id])
+  registradoPorId   String?
+
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@map("recibos")
+  @@index([inmuebleId, fechaPago])
+}
+
+// Libro de movimientos del saldo a favor por inmueble. El saldo actual es la suma de
+// `monto` (abonos positivos, usos negativos); nunca se edita, solo se agregan filas.
+model MovimientoSaldo {
+  id              String              @id @default(uuid())
+
+  inmueble        Inmueble            @relation(fields: [inmuebleId], references: [id])
+  inmuebleId      String
+
+  tipo            TipoMovimientoSaldo
+  monto           Decimal             @db.Decimal(10, 2) // + abono, - uso
+
+  expensa         Expensa?            @relation(fields: [expensaId], references: [id])
+  expensaId       String?
+
+  recibo          Recibo?             @relation(fields: [reciboId], references: [id])
+  reciboId        String?
+
+  metodoPago      MetodoPago?         // solo en abonos (PAGO_ANTICIPADO / EXCESO_PAGO)
+  referencia      String?
+
+  registradoPor   Usuario?            @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
+
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+
+  @@map("movimientos_saldo")
+  @@index([inmuebleId, createdAt])
+  @@index([expensaId])
+  @@index([reciboId])
+}
+
+// Categorias para clasificar gastos e ingresos extraordinarios. Cada categoria es de un solo tipo:
+// las de EGRESO solo se pueden usar en gastos y las de INGRESO solo en ingresos.
+model CategoriaMovimiento {
+  id          String         @id @default(uuid())
+  nombre      String
+  tipo        TipoMovimiento
+  activa      Boolean        @default(true)
+
+  movimientos MovimientoFinanciero[]
+
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@unique([tipo, nombre])
+  @@map("categorias_movimiento")
+}
+
+// Ingresos extraordinarios y egresos (gastos) generales, no ligados a una expensa puntual.
+// El balance del edificio se calcula siempre a partir de estas filas (ingresos menos egresos).
+model MovimientoFinanciero {
+  id                String              @id @default(uuid())
+
+  tipo              TipoMovimiento
+  categoria         CategoriaMovimiento @relation(fields: [categoriaId], references: [id])
+  categoriaId       String
+  monto             Decimal             @db.Decimal(10, 2)
+  concepto          String
+  fecha             DateTime            @db.Date
+
+  // Comprobante o factura opcional (JPG, PNG o PDF) guardado en el storage de Supabase.
+  comprobantePath   String?             @unique
+  comprobanteMime   String?
+  comprobanteNombre String?
+
+  // Anti reenvio: `claveSolicitud` es la que envia el cliente; `huella` resume los datos del
+  // movimiento para detectar la misma solicitud repetida unos segundos despues.
+  claveSolicitud    String?             @unique
+  huella            String?
+
+  movimientoCaja    MovimientoCaja?
+
+  registradoPor     Usuario?            @relation(fields: [registradoPorId], references: [id])
+  registradoPorId   String?
+
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
 
   @@map("movimientos_financieros")
   @@index([tipo])
   @@index([fecha])
+  @@index([categoriaId])
+  @@index([huella, createdAt])
 }
 
-// Cuentas de banco/caja del edificio
+// Cuentas de banco / caja del edificio. Una cuenta CAJA y una BANCO son las "por defecto":
+// crearRecibo las usa cuando el endpoint no indica `cuentaId`. Que haya una sola por defecto por
+// tipo lo asegura la aplicacion dentro de una transaccion (no hay indice parcial en la base).
 model CuentaBancaria {
-  id           String   @id @default(uuid())
+  id           String     @id @default(uuid())
   nombre       String
-  banco        String
-  numeroCuenta String   @unique
-  saldoActual  Decimal  @default(0) @db.Decimal(12, 2)
+  tipo         TipoCuenta @default(BANCO)
+  banco        String?    // era obligatorio; la caja no tiene banco
+  numeroCuenta String?    @unique // era obligatorio; la caja no tiene numero
+  esPorDefecto Boolean    @default(false)
+  activa       Boolean    @default(true)
 
-  movimientos  MovimientoCaja[]
+  // Saldo con el que arranca la cuenta antes del primer asiento. Los saldos se calculan en cada
+  // consulta: saldoInicial + ingresos - egresos hasta la fecha de corte.
+  saldoInicial Decimal    @default(0) @db.Decimal(12, 2)
+  // EN DESUSO: nunca se escribe ni se lee. Se elimina en una migracion posterior.
+  saldoActual  Decimal    @default(0) @db.Decimal(12, 2)
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  movimientos        MovimientoCaja[]
+  saldosReales       SaldoRealPeriodo[]
+  cierres            CierreCajaCuenta[]
+  eventosConciliacion ConciliacionEvento[]
+
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @db.Timestamptz(3)
 
   @@map("cuentas_bancarias")
 }
 
-// Movimientos de caja/banco (para conciliacion)
+// Libro unico de caja y bancos. Se alimenta solo: crearRecibo y movimientos.service crean el asiento
+// en la misma transaccion que su origen. La FK unica al origen impide duplicados.
 model MovimientoCaja {
   id         String         @id @default(uuid())
 
@@ -310,12 +645,154 @@ model MovimientoCaja {
   tipo       TipoMovimiento
   monto      Decimal        @db.Decimal(12, 2)
   concepto   String
+  fecha      DateTime       @default(now()) @db.Timestamptz(3)
+  // "YYYY-MM" de `fecha` en hora de Bolivia (America/La_Paz). Base del cierre y del bloqueo.
+  periodo    String
+
+  // EN DESUSO: reemplazado por `estado`.
   conciliado Boolean        @default(false)
-  fecha      DateTime       @default(now())
+
+  // --- Origen (exactamente uno; lo asegura un CHECK en la migracion) ---
+  origen                 OrigenMovimientoCaja
+  recibo                 Recibo?               @relation(fields: [reciboId], references: [id])
+  reciboId               String?               @unique
+  movimientoFinanciero   MovimientoFinanciero? @relation(fields: [movimientoFinancieroId], references: [id])
+  movimientoFinancieroId String?               @unique
+  traspasoId             String?               // une las dos patas de un deposito caja -> banco
+
+  // Referencia de la operacion tal como la registramos (la del recibo; null en movimientos que no la tienen).
+  referencia String?
+
+  // --- Conciliacion ---
+  estado     EstadoConciliacion @default(PENDIENTE)
+  // Lo que informa el extracto / arqueo. Se comparan, de forma estricta, contra lo nuestro:
+  //   fecha (por dia, en America/La_Paz) vs fechaBanco, monto vs montoBanco,
+  //   tipo vs tipoBanco, referencia vs referenciaBanco.
+  // Si todo coincide -> CONCILIADO. Si algo difiere -> CON_DIFERENCIA con observacion obligatoria.
+  montoBanco      Decimal?        @db.Decimal(12, 2)
+  fechaBanco      DateTime?       @db.Date
+  tipoBanco       TipoMovimiento?
+  referenciaBanco String?
+  diferencia      Decimal?        @db.Decimal(12, 2) // monto - montoBanco
+  observacion     String?         // obligatoria cuando estado = CON_DIFERENCIA
+
+  conciliadoPor   Usuario?        @relation("CajaConciliadoPor", fields: [conciliadoPorId], references: [id])
+  conciliadoPorId String?
+  conciliadoEn    DateTime?       @db.Timestamptz(3)
+
+  registradoPor   Usuario?        @relation("CajaRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  eventosConciliacion ConciliacionEvento[]
+
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @db.Timestamptz(3)
 
   @@map("movimientos_caja")
   @@index([cuentaId])
   @@index([fecha])
+  @@index([periodo, estado])
+  @@index([cuentaId, periodo])
+  @@index([traspasoId])
+}
+
+// Saldo real (extracto bancario o arqueo de caja) que el Administrador introduce para una cuenta
+// y un periodo. Se puede guardar y consultar mientras el mes esta abierto (upsert); al cerrar, el
+// valor se copia a CierreCajaCuenta. La diferencia (real - registrado) se calcula, no se guarda.
+model SaldoRealPeriodo {
+  id        String         @id @default(uuid())
+
+  cuenta    CuentaBancaria @relation(fields: [cuentaId], references: [id])
+  cuentaId  String
+  periodo   String         // "YYYY-MM"
+
+  saldoReal   Decimal      @db.Decimal(12, 2) // puede ser negativo (sobregiro)
+  observacion String?
+
+  // Una diferencia no se considera resuelta hasta que el Administrador la revisa. Si cambia el
+  // saldo real o los asientos del periodo, la aplicacion vuelve `diferenciaRevisada` a false.
+  diferenciaRevisada Boolean   @default(false)
+  revisadaPor        Usuario?  @relation("SaldoRealRevisadaPor", fields: [revisadaPorId], references: [id])
+  revisadaPorId      String?
+  revisadaEn         DateTime? @db.Timestamptz(3)
+
+  registradoPor   Usuario?  @relation("SaldoRealRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("saldos_reales_periodo")
+  @@unique([cuentaId, periodo])
+}
+
+// Cierre mensual. Una fila por periodo cerrado; su existencia es la marca de bloqueo del periodo.
+// Los cierres son consecutivos, no se reabren y no se modifican (solo se consultan).
+model CierreCaja {
+  id           String   @id @default(uuid())
+  periodo      String   @unique // "YYYY-MM"
+  observacion  String?
+
+  cerradoPor   Usuario? @relation("CierreCajaPor", fields: [cerradoPorId], references: [id])
+  cerradoPorId String?
+  cerradoEn    DateTime @default(now()) @db.Timestamptz(3)
+
+  cuentas      CierreCajaCuenta[]
+
+  @@map("cierres_caja")
+}
+
+// Foto de los saldos de cada cuenta al momento del cierre (CA19: resultado mensual).
+model CierreCajaCuenta {
+  id        String         @id @default(uuid())
+
+  cierre    CierreCaja     @relation(fields: [cierreId], references: [id], onDelete: Cascade)
+  cierreId  String
+  cuenta    CuentaBancaria @relation(fields: [cuentaId], references: [id])
+  cuentaId  String
+
+  saldoRegistrado Decimal  @db.Decimal(12, 2)
+  saldoConciliado Decimal  @db.Decimal(12, 2) // solo asientos CONCILIADO
+  saldoReal       Decimal  @db.Decimal(12, 2)
+  diferencia      Decimal  @db.Decimal(12, 2) // real - registrado
+  observacion     String?
+  diferenciaConfirmada Boolean @default(false)
+
+  @@map("cierres_caja_cuenta")
+  @@unique([cierreId, cuentaId])
+  @@index([cuentaId])
+}
+
+// Historial de conciliaciones (CA20 y CA21): una fila por cada operacion de conciliacion, revision,
+// saldo real o cierre, con quien, cuando, sobre que movimiento y con que resultado. Solo se agregan
+// filas. `movimientoCajaId` es null en las operaciones de cuenta o periodo (SALDO_REAL, CIERRE...).
+model ConciliacionEvento {
+  id               String                @id @default(uuid())
+
+  movimientoCaja   MovimientoCaja?       @relation(fields: [movimientoCajaId], references: [id])
+  movimientoCajaId String?
+
+  cuenta           CuentaBancaria        @relation(fields: [cuentaId], references: [id])
+  cuentaId         String
+  periodo          String                // "YYYY-MM"
+
+  operacion        OperacionConciliacion
+  resultado        ResultadoConciliacion
+  estadoAnterior   EstadoConciliacion?   // solo en operaciones sobre un movimiento
+  estadoNuevo      EstadoConciliacion?
+
+  usuario          Usuario?              @relation("ConciliacionEventoPor", fields: [usuarioId], references: [id])
+  usuarioId        String?
+
+  // Que se comparo y que difirio, saldos del cierre, motivo del rechazo, etc.
+  detalle          Json?
+
+  createdAt        DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@map("conciliacion_eventos")
+  @@index([movimientoCajaId, createdAt])
+  @@index([cuentaId, periodo, createdAt])
+  @@index([operacion, createdAt])
 }
 
 // Personal del edificio (conserjes, seguridad, mantenimiento, etc.)
@@ -325,13 +802,13 @@ model Personal {
   apellido     String
   cargo        String
   salarioBase  Decimal  @db.Decimal(10, 2)
-  fechaIngreso DateTime @default(now())
+  fechaIngreso DateTime @default(now()) @db.Timestamptz(3)
   activo       Boolean  @default(true)
 
   pagos        PagoPersonal[]
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("personal")
 }
@@ -347,7 +824,7 @@ model PagoPersonal {
   bonificaciones Decimal  @default(0) @db.Decimal(10, 2)
   descuentos     Decimal  @default(0) @db.Decimal(10, 2)
   montoNeto      Decimal  @db.Decimal(10, 2)
-  fechaPago      DateTime @default(now())
+  fechaPago      DateTime @default(now()) @db.Timestamptz(3)
 
   registradoPor   Usuario? @relation(fields: [registradoPorId], references: [id])
   registradoPorId String?
@@ -355,4 +832,221 @@ model PagoPersonal {
   @@map("pagos_personal")
   @@unique([personalId, periodo])
   @@index([personalId])
+}
+
+// ---------------------------------------------------------------------------
+// Planes de pago en cuotas (HU3 - CA11)
+// ---------------------------------------------------------------------------
+
+enum EstadoPlanPago {
+  ACTIVO
+  COMPLETADO
+  CANCELADO // se deshizo antes de recibir pagos: sus expensas vuelven al cobro normal
+}
+
+enum EstadoCuota {
+  PENDIENTE
+  PARCIAL
+  PAGADA
+  VENCIDA
+}
+
+// Acuerdo para dividir la deuda de un departamento en varias cuotas. `montoTotal` es lo que se
+// debia (mora incluida) de las expensas que cubre; la suma de las cuotas es igual a ese total.
+model PlanPago {
+  id              String         @id @default(uuid())
+
+  inmueble        Inmueble       @relation(fields: [inmuebleId], references: [id])
+  inmuebleId      String
+
+  montoTotal      Decimal        @db.Decimal(10, 2)
+  cantidadCuotas  Int
+  observacion     String?
+  estado          EstadoPlanPago @default(ACTIVO)
+
+  expensas        Expensa[]
+  cuotas          CuotaPlan[]
+
+  registradoPor   Usuario?       @relation(fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt       DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@map("planes_pago")
+  @@index([inmuebleId])
+  @@index([estado])
+}
+
+// Una cuota del plan, con su propio importe, vencimiento, pagado y estado.
+model CuotaPlan {
+  id               String      @id @default(uuid())
+
+  plan             PlanPago    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId           String
+
+  numero           Int
+  monto            Decimal     @db.Decimal(10, 2)
+  montoPagado      Decimal     @default(0) @db.Decimal(10, 2)
+  fechaVencimiento DateTime    @db.Date
+  estado           EstadoCuota @default(PENDIENTE)
+
+  pagos            PagoCuota[]
+
+  createdAt        DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@map("cuotas_plan")
+  @@unique([planId, numero])
+  @@index([estado, fechaVencimiento])
+}
+
+// Lo que cada cobro (recibo) aplico a una cuota: deja rastro de que se cobro y a que cuota fue.
+model PagoCuota {
+  id        String    @id @default(uuid())
+
+  cuota     CuotaPlan @relation(fields: [cuotaId], references: [id], onDelete: Cascade)
+  cuotaId   String
+
+  recibo    Recibo    @relation(fields: [reciboId], references: [id])
+  reciboId  String
+
+  monto     Decimal   @db.Decimal(10, 2)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@map("pagos_cuota")
+  @@index([cuotaId])
+  @@index([reciboId])
+}
+
+// ---------------------------------------------------------------------------
+// Notificaciones de la campanita del residente y registro de correos (HU3 - CA15 y CA16)
+// ---------------------------------------------------------------------------
+
+enum TipoNotificacion {
+  PROXIMO_VENCIMIENTO // se acerca la fecha limite de pago
+  PROXIMA_MORA        // se acerca el fin del periodo de gracia: despues se aplica mora
+  OBLIGACION_VENCIDA  // la obligacion vencio sin pagarse
+  MORA_APLICADA       // se genero un recargo por mora
+  DEUDA_CON_MORA      // recordatorio: sigue pendiente una deuda con mora
+  PAGO_REGISTRADO     // se registro un pago
+}
+
+// Aviso para un residente. `clave` identifica el aviso para no repetirlo (por ejemplo
+// "OBLIGACION_VENCIDA:<expensa>"); `vigente` pasa a false cuando deja de aplicar (la deuda se pago).
+model Notificacion {
+  id              String           @id @default(uuid())
+
+  copropietario   Copropietario    @relation(fields: [copropietarioId], references: [id], onDelete: Cascade)
+  copropietarioId String
+
+  expensa         Expensa?         @relation(fields: [expensaId], references: [id], onDelete: SetNull)
+  expensaId       String?
+
+  tipo            TipoNotificacion
+  titulo          String
+  mensaje         String
+  monto           Decimal?         @db.Decimal(10, 2)
+
+  leida           Boolean          @default(false)
+  leidaEn         DateTime?        @db.Timestamptz(3)
+  vigente         Boolean          @default(true)
+  clave           String
+
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@map("notificaciones")
+  @@unique([copropietarioId, clave])
+  @@index([copropietarioId, leida, createdAt])
+  @@index([expensaId])
+}
+
+enum TipoCorreo {
+  EXPENSA_GENERADA
+  MORA_APLICADA
+}
+
+enum EstadoEnvioCorreo {
+  ENVIADO
+  FALLIDO // se intento y fallo (correo invalido, error del servidor de correo)
+  OMITIDO // no se intento (nadie con correo registrado, correo no configurado)
+}
+
+// Registro de cada aviso por correo: si no se pudo enviar queda el motivo, y la expensa se genera igual.
+model EnvioCorreo {
+  id           String            @id @default(uuid())
+
+  expensa      Expensa?          @relation(fields: [expensaId], references: [id], onDelete: SetNull)
+  expensaId    String?
+
+  tipo         TipoCorreo
+  destinatario String?
+  asunto       String
+  estado       EstadoEnvioCorreo
+  motivo       String?
+
+  createdAt    DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@map("envios_correo")
+  @@index([expensaId])
+  @@index([estado, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Pagos informados por el residente (rol CONSULTA)
+// ---------------------------------------------------------------------------
+
+enum EstadoPagoInformado {
+  PENDIENTE  // el residente lo informo y el administrador todavia no lo revisa
+  CONFIRMADO // el administrador comprobo el dinero: se registro el pago y existe el recibo
+  RECHAZADO  // el administrador no lo acepto (queda el motivo)
+}
+
+// Aviso de un pago hecho fuera del sistema (efectivo, transferencia...) que el copropietario
+// informa para que el administrador lo compruebe. No cobra nada por si solo: solo al confirmarlo
+// el administrador se registra el pago de siempre (con su recibo) y se descuenta de la deuda.
+model PagoInformado {
+  id                String              @id @default(uuid())
+
+  inmueble          Inmueble            @relation(fields: [inmuebleId], references: [id])
+  inmuebleId        String
+
+  // Persona que informa el pago.
+  copropietario     Copropietario       @relation(fields: [copropietarioId], references: [id])
+  copropietarioId   String
+
+  monto             Decimal             @db.Decimal(10, 2)
+  metodoPago        MetodoPago
+  referencia        String?
+  fechaPago         DateTime            @db.Date
+
+  // Foto del comprobante (opcional), en el storage de Supabase.
+  comprobantePath   String?             @unique
+  comprobanteMime   String?
+  comprobanteNombre String?
+
+  estado            EstadoPagoInformado @default(PENDIENTE)
+  motivoRechazo     String?
+
+  // Recibo que se genero al confirmarlo.
+  recibo            Recibo?             @relation(fields: [reciboId], references: [id])
+  reciboId          String?             @unique
+
+  revisadoPor       Usuario?            @relation("PagoInformadoRevisadoPor", fields: [revisadoPorId], references: [id])
+  revisadoPorId     String?
+  revisadoEn        DateTime?           @db.Timestamptz(3)
+
+  // Clave que envia el cliente (cabecera Idempotency-Key) para que reenviar la misma solicitud
+  // no cree el aviso dos veces.
+  claveSolicitud    String?             @unique
+
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@map("pagos_informados")
+  @@index([inmuebleId])
+  @@index([copropietarioId])
+  @@index([estado, createdAt])
 }

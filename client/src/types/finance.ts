@@ -8,27 +8,92 @@ export type TipoValorMora =
   | "PORCENTAJE"
   | "MONTO_FIJO";
 
+// Metodos que puede elegir el Administrador al registrar un pago manual.
 export type MetodoPago =
   | "EFECTIVO"
   | "TRANSFERENCIA"
   | "TARJETA"
   | "CHEQUE";
 
+// SALDO_A_FAVOR lo asigna el sistema solo (al cubrir una expensa con saldo previo);
+// aparece en el historial pero nunca es seleccionable en un formulario.
+export type MetodoPagoRegistro = MetodoPago | "SALDO_A_FAVOR";
+
 export interface PagoDTO {
   id: string;
-  monto: number;
-  metodoPago: MetodoPago;
+  expensaId?: string;
+  monto: number | string;
+  montoExpensa: number | string;
+  montoMora: number | string;
+  metodoPago: MetodoPagoRegistro;
   referencia?: string | null;
   fechaPago: string;
+}
+
+export interface RegistrarPagoResponse {
+  pago: PagoDTO | null;
+  expensa: ExpensaDTO;
+  montoRecibido: string;
+  montoAplicado: string;
+  saldoFavorGenerado: string;
+}
+
+export interface AplicarSaldoFavorResponse {
+  expensa: ExpensaDTO;
+  saldoFavorAplicado: string;
 }
 
 export interface ConfiguracionMoraDTO {
   id: string;
   diaGeneracion: number;
   diasGracia: number;
+  diaVencimiento: number;
+  modoMora: "UNICA" | "MENSUAL";
   tipoValor: TipoValorMora;
   valor: number;
   vigenteDesde: string;
+}
+
+export interface MoraExpensaDTO {
+  id: string;
+  numero: number;
+  mes: string;
+  fechaCorte: string;
+  base: number | string;
+  tipoValor: TipoValorMora;
+  valor: number | string;
+  monto: number | string;
+  createdAt: string;
+}
+
+export interface CambioVencimientoDTO {
+  id: string;
+  fechaAnterior: string;
+  fechaNueva: string;
+  motivo?: string | null;
+  registradoPorId?: string | null;
+  createdAt: string;
+}
+
+export interface ResultadoGeneracionDTO {
+  periodo?: string;
+  generadas: number;
+  omitidas: number;
+  motivo?: string;
+  yaGeneradas?: string[];
+  pendientes?: { inmuebleId: string; codigo: string; motivo: string }[];
+  excluidos?: { codigo: string; motivo: string }[];
+  /** Resultado de los avisos por correo de las expensas nuevas (HU3 CA-16). */
+  correos?: { enviados: number; fallidos: number; omitidos: number };
+}
+
+/** Una línea por concepto cobrado en la expensa: el departamento y cada baulera/parqueo con cobro (HU3 CA-4). */
+export interface CargoExpensaDTO {
+  id: string;
+  clase: "DEPARTAMENTO" | "BAULERA" | "PARQUEO";
+  inmuebleId: string;
+  codigo: string;
+  monto: number | string;
 }
 
 export interface InmuebleResumen {
@@ -43,11 +108,55 @@ export interface ExpensaDTO {
   id: string;
   inmuebleId: string;
   periodo: string;
-  montoTotal: number;
-  montoMora?: number;
+  tipoNombre?: string | null;
+  montoBase: number | string;
+  montoAgua: number | string;
+  /** Cuándo se cargó el agua a mano; null = todavía pendiente de cargar. */
+  aguaRegistradaEn?: string | null;
+  montoTotal: number | string;
+  montoMora?: number | string;
+  configuracionMoraId?: string | null;
+  responsableId?: string | null;
+  responsableNombre?: string | null;
+  responsableRol?: "PROPIETARIO" | "INQUILINO" | null;
   estado: EstadoExpensa;
   fechaVencimiento: string;
   createdAt: string;
   inmueble: InmuebleResumen;
   pagos: PagoDTO[];
+  moras?: MoraExpensaDTO[];
+  cambiosVencimiento?: CambioVencimientoDTO[];
+  cargos?: CargoExpensaDTO[];
+  /** Si no es null, la expensa se cobra por las cuotas de ese plan de pagos. */
+  planPagoId?: string | null;
+}
+/** Tipos de departamento; el backend devuelve estos campos dentro de {tiposInmueble}. */
+export interface TipoInmuebleDTO {
+  id: string;
+  nombre: string;
+  montoBase: number | string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
+/** Si se envía pagina, el endpoint devuelve la respuesta paginada. */
+export interface PaginacionExpensasDTO {
+  pagina: number;
+  porPagina: number;
+  total: number;
+  totalPaginas: number;
+}
+export interface PaginaExpensasDTO {
+  expensas: ExpensaDTO[];
+  paginacion: PaginacionExpensasDTO;
+}
+export interface FiltrosExpensasDTO {
+  pagina: number;
+  porPagina: number;
+  periodo?: string;
+  estado?: EstadoExpensa;
+  inmuebleId?: string;
+  /** "false" = solo las que todavía no tienen el agua cargada. */
+  aguaCargada?: "true" | "false";
 }

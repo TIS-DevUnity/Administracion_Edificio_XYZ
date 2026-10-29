@@ -55,4 +55,13 @@ async function actualizar(req, res, next) {
   }
 }
 
-module.exports = { listar, obtener, crear, actualizar };
+async function listarInmuebles(req, res, next) {
+  try {
+    const resultado = await copropietariosService.listarInmuebles(req.params.id);
+    res.json(resultado);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listar, obtener, crear, actualizar, listarInmuebles };

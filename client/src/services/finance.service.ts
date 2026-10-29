@@ -1,10 +1,33 @@
 import { api } from "@/lib/api";
-import { ConfiguracionMoraDTO, ExpensaDTO, MetodoPago, PagoDTO } from "@/types/finance";
+import {
+  AplicarSaldoFavorResponse,
+  ConfiguracionMoraDTO,
+  ExpensaDTO,
+  PaginaExpensasDTO,
+  FiltrosExpensasDTO,
+  MetodoPago,
+  RegistrarPagoResponse,
+  ResultadoGeneracionDTO,
+  TipoInmuebleDTO,
+} from "@/types/finance";
 
 export const financeService = {
   async getConfiguracionVigente(): Promise<ConfiguracionMoraDTO> {
     const response = await api.get<ConfiguracionMoraDTO>("/financiero/configuracion-mora");
     return response.data;
+  },
+
+  async getConfiguracionHistorial(): Promise<ConfiguracionMoraDTO[]> {
+    const response = await api.get<ConfiguracionMoraDTO[]>("/financiero/configuracion-mora/historial");
+    return response.data;
+  },
+
+  async getExpensasPaginadas(filtros: FiltrosExpensasDTO, signal?: AbortSignal): Promise<PaginaExpensasDTO> {
+    const { data } = await api.get<PaginaExpensasDTO>("/financiero/expensas", {
+      params: filtros,
+      signal,
+    });
+    return data;
   },
 
   async getExpensas(): Promise<ExpensaDTO[]> {
@@ -17,7 +40,15 @@ export const financeService = {
     return response.data;
   },
 
-  async actualizarConfiguracion(data: { diaGeneracion: number; diasGracia: number; tipoValor: string; valor: number }): Promise<ConfiguracionMoraDTO> {
+  async actualizarConfiguracion(data: {
+    diaGeneracion: number;
+    diaVencimiento: number;
+    diasGracia: number;
+    tipoValor: "PORCENTAJE" | "MONTO_FIJO";
+    modoMora: "UNICA" | "MENSUAL";
+    valor: number;
+    vigenteDesde?: string;
+  }): Promise<ConfiguracionMoraDTO> {
     const response = await api.post<ConfiguracionMoraDTO>("/financiero/configuracion-mora", data);
     return response.data;
   },
@@ -28,14 +59,62 @@ export const financeService = {
     return response.data;
   },
 
+  async cambiarVencimiento(
+    expensaId: string,
+    data: { fechaVencimiento: string; motivo?: string }
+  ): Promise<ExpensaDTO> {
+    const response = await api.patch<ExpensaDTO>(`/financiero/expensas/${expensaId}/vencimiento`, data);
+    return response.data;
+  },
+
   async registrarPago(
     expensaId: string,
     data: { monto: number; metodoPago: MetodoPago; referencia?: string }
-  ): Promise<{ pago: PagoDTO; expensa: ExpensaDTO }> {
-    const response = await api.post<{ pago: PagoDTO; expensa: ExpensaDTO }>(
-      `/financiero/expensas/${expensaId}/pagos`,
-      data
+  ): Promise<RegistrarPagoResponse> {
+    const response = await api.post<RegistrarPagoResponse>(`/financiero/expensas/${expensaId}/pagos`, data);
+    return response.data;
+  },
+
+  async aplicarSaldoFavor(expensaId: string): Promise<AplicarSaldoFavorResponse> {
+    const response = await api.post<AplicarSaldoFavorResponse>(
+      `/financiero/expensas/${expensaId}/aplicar-saldo`
     );
     return response.data;
-  }
+  },
+
+  async listarTiposInmueble(): Promise<TipoInmuebleDTO[]> {
+    const { data } = await api.get<{ tiposInmueble: TipoInmuebleDTO[] }>("/tipos-inmueble");
+    return data.tiposInmueble;
+  },
+
+  async guardarTipoInmueble(
+    datos: { nombre: string; montoBase: number },
+    id?: string
+  ): Promise<TipoInmuebleDTO> {
+    const { data } = id
+      ? await api.put<{ tipoInmueble: TipoInmuebleDTO }>(`/tipos-inmueble/${id}`, datos)
+      : await api.post<{ tipoInmueble: TipoInmuebleDTO }>("/tipos-inmueble", datos);
+    return data.tipoInmueble;
+  },
+
+  /** El agua se carga a mano en cada expensa (ya no hay factura del edificio ni reparto por pesos). */
+  async cargarAgua(expensaId: string, montoAgua: number): Promise<ExpensaDTO & { saldoFavorAplicado?: string }> {
+    const { data } = await api.patch<ExpensaDTO & { saldoFavorAplicado?: string }>(
+      `/financiero/expensas/${expensaId}/agua`,
+      { montoAgua }
+    );
+    return data;
+  },
+
+  async ejecutarGeneracionJob(forzar = true): Promise<ResultadoGeneracionDTO> {
+    const response = await api.post<ResultadoGeneracionDTO>(
+      `/financiero/jobs/ejecutar-generacion?forzar=${forzar}`
+    );
+    return response.data;
+  },
+
+  async ejecutarMoraJob(): Promise<{ aplicadas: number }> {
+    const response = await api.post<{ aplicadas: number }>("/financiero/jobs/ejecutar-mora");
+    return response.data;
+  },
 };

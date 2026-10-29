@@ -1,8 +1,11 @@
 const inmueblesService = require("./inmuebles.service");
+const { esConsulta, inmueblesPropios, copropietarioDe } = require("../../../middlewares/acceso-propio");
 
 async function listar(req, res, next) {
   try {
-    const inmuebles = await inmueblesService.listar();
+    // CONSULTA solo recibe los inmuebles que ocupa.
+    const ids = esConsulta(req) ? await inmueblesPropios(req) : undefined;
+    const inmuebles = await inmueblesService.listar({ ids });
     res.json({ inmuebles });
   } catch (err) {
     next(err);
@@ -20,16 +23,18 @@ async function obtener(req, res, next) {
 
 async function crear(req, res, next) {
   try {
-    const { codigo, tipoInmuebleId, piso, areaM2 } = req.body;
-    if (!codigo || !tipoInmuebleId) {
-      return res.status(400).json({ error: "codigo y tipoInmuebleId son requeridos" });
+    const { codigo, clase, tipoInmuebleId, piso, areaM2, cuotaMensual } = req.body;
+    if (!codigo) {
+      return res.status(400).json({ error: "codigo es requerido" });
     }
 
     const inmueble = await inmueblesService.crear({
       codigo,
+      clase: clase || undefined,
       tipoInmuebleId,
       piso,
       areaM2,
+      cuotaMensual,
       actorId: req.usuario.id,
       ip: req.ip,
     });
@@ -41,11 +46,11 @@ async function crear(req, res, next) {
 
 async function actualizar(req, res, next) {
   try {
-    const { codigo, tipoInmuebleId, piso, areaM2, activo } = req.body;
+    const { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual } = req.body;
 
     const inmueble = await inmueblesService.actualizar(
       req.params.id,
-      { codigo, tipoInmuebleId, piso, areaM2, activo },
+      { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual },
       { actorId: req.usuario.id, ip: req.ip }
     );
     res.json({ inmueble });
@@ -56,7 +61,23 @@ async function actualizar(req, res, next) {
 
 async function listarOcupantes(req, res, next) {
   try {
-    const ocupantes = await inmueblesService.listarOcupantes(req.params.id);
+    let ocupantes = await inmueblesService.listarOcupantes(req.params.id);
+    if (esConsulta(req)) {
+      // De las demas personas del inmueble solo se muestra el nombre; sus datos personales no.
+      const propio = await copropietarioDe(req);
+      ocupantes = ocupantes.map((o) =>
+        o.copropietarioId === propio
+          ? o
+          : {
+              id: o.id,
+              inmuebleId: o.inmuebleId,
+              esPropietario: o.esPropietario,
+              fechaInicio: o.fechaInicio,
+              fechaFin: o.fechaFin,
+              copropietario: { nombre: o.copropietario.nombre, apellido: o.copropietario.apellido },
+            }
+      );
+    }
     res.json({ ocupantes });
   } catch (err) {
     next(err);

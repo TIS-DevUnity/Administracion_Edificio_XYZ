@@ -1,5 +1,10 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
+const { diferencias } = require("../../../utils/diferencias");
+const { obtenerMapa, montoEfectivo } = require("../tarifas-inmueble/tarifas-inmueble.service");
+
+const Decimal = Prisma.Decimal;
 
 const CAMPOS_PUBLICOS = {
   id: true,
@@ -54,7 +59,7 @@ async function crear({ nombre, apellido, ci, email, telefono, actorId, ip }) {
 }
 
 async function actualizar(id, { nombre, apellido, ci, email, telefono }, { actorId, ip }) {
-  await obtenerPorId(id);
+  const antes = await obtenerPorId(id);
 
   if (ci) {
     const conflicto = await prisma.copropietario.findUnique({ where: { ci } });
@@ -74,11 +79,98 @@ async function actualizar(id, { nombre, apellido, ci, email, telefono }, { actor
     accion: "UPDATE",
     entidad: "Copropietario",
     entidadId: copropietario.id,
-    detalle: { nombre, apellido, ci, email, telefono },
+    detalle: diferencias(antes, copropietario, ["nombre", "apellido", "ci", "email", "telefono"]),
     ip,
   });
 
   return copropietario;
 }
 
-module.exports = { listar, obtenerPorId, crear, actualizar };
+/**
+ * Inmuebles de una persona: los que tiene asociados hoy (vigentes) y las asociaciones que ya
+ * terminaron (anteriores). Cada uno trae clase, tipo (A, B, C solo en departamentos), piso,
+ * rol (propietario o inquilino) y fechas. Los vigentes se resumen por clase.
+ *
+ * Cada inmueble trae `cargoMensual`: lo que suma por mes (expensa fija del tipo en un
+ * departamento; `cuotaMensual` propia o tarifa de la clase en baulera y parqueo; 0 si esta
+ * inactivo). `resumen.cargoMensualTotal` suma los vigentes y es referencial: lo que realmente
+ * se cobra lo decide la expensa (ver GET /api/financiero/copropietarios/{id}/cuenta).
+ */
+async function listarInmuebles(id) {
+  const copropietario = await obtenerPorId(id);
+
+  const [ocupaciones, tarifas] = await Promise.all([
+    prisma.ocupanteInmueble.findMany({
+      where: { copropietarioId: id },
+      include: { inmueble: { include: { tipoInmueble: true } } },
+      orderBy: [{ fechaInicio: "desc" }, { id: "asc" }],
+    }),
+    obtenerMapa(),
+  ]);
+
+  const ahora = new Date();
+  const items = ocupaciones.map((o) => {
+    const vigente = o.fechaInicio <= ahora && (o.fechaFin === null || o.fechaFin > ahora);
+    const { inmueble } = o;
+
+    let cargoMensual = new Decimal(0);
+    if (inmueble.activo) {
+      cargoMensual =
+        inmueble.clase === "DEPARTAMENTO"
+          ? new Decimal(inmueble.tipoInmueble?.montoBase ?? 0)
+          : montoEfectivo(inmueble, tarifas);
+    }
+
+    const programada = o.fechaInicio > ahora;
+
+    return {
+      ocupanteId: o.id,
+      inmuebleId: inmueble.id,
+      codigo: inmueble.codigo,
+      clase: inmueble.clase,
+      tipoInmueble: inmueble.tipoInmueble?.nombre ?? null,
+      piso: inmueble.piso,
+      areaM2: inmueble.areaM2,
+      activo: inmueble.activo,
+      cuotaMensual: inmueble.cuotaMensual === null ? null : new Decimal(inmueble.cuotaMensual).toFixed(2),
+      cargoMensual: cargoMensual.toFixed(2),
+      rol: o.esPropietario ? "PROPIETARIO" : "INQUILINO",
+      fechaInicio: o.fechaInicio,
+      fechaFin: o.fechaFin,
+      vigente,
+      // VIGENTE: ocupacion en curso. FINALIZADA: ya termino. PROGRAMADA: empieza mas adelante.
+      estadoOcupacion: vigente ? "VIGENTE" : programada ? "PROGRAMADA" : "FINALIZADA",
+    };
+  });
+
+  const vigentes = items.filter((i) => i.vigente);
+  // Historial de ocupacion: las que ya terminaron (con sus fechas de inicio y fin).
+  const anteriores = items.filter((i) => i.estadoOcupacion === "FINALIZADA");
+  const programadas = items.filter((i) => i.estadoOcupacion === "PROGRAMADA");
+
+  const contar = (clase) => vigentes.filter((i) => i.clase === clase).length;
+  const resumen = {
+    departamentos: contar("DEPARTAMENTO"),
+    bauleras: contar("BAULERA"),
+    parqueos: contar("PARQUEO"),
+    total: vigentes.length,
+    cargoMensualTotal: vigentes
+      .reduce((acc, i) => acc.plus(i.cargoMensual), new Decimal(0))
+      .toFixed(2),
+  };
+
+  // Apartado "Inmuebles y ocupacion": solo lo que la persona ocupa hoy, separado por clase. Un
+  // inmueble sin ocupacion vigente suya no aparece como si lo ocupara.
+  return {
+    copropietario,
+    vigentes,
+    departamentos: vigentes.filter((i) => i.clase === "DEPARTAMENTO"),
+    bauleras: vigentes.filter((i) => i.clase === "BAULERA"),
+    parqueos: vigentes.filter((i) => i.clase === "PARQUEO"),
+    anteriores,
+    programadas,
+    resumen,
+  };
+}
+
+module.exports = { listar, obtenerPorId, crear, actualizar, listarInmuebles };

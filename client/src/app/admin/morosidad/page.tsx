@@ -1,36 +1,43 @@
 "use client";
 
-import React, { FormEvent, useEffect, useState } from "react";
+import React, { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { QueryProvider } from "./QueryProvider";
+import { BadgeEstadoExpensa, ETIQUETA_ESTADO, TablaExpensas } from "./components/TablaExpensas";
+import { ResumenMorosidad } from "./components/ResumenMorosidad";
+import { DialogoCargaAgua } from "./components/DialogoCargaAgua";
+import { AvisoServicioCorreo, DialogoRegistroCorreos } from "./components/RegistroCorreos";
+import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
 import axios from "axios";
 import {
-  Building2,
   CalendarClock,
   CalendarPlus,
-  Info,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Droplets,
+  Mail,
+  UserRound,
+  X,
   RefreshCw,
   Search,
   SlidersHorizontal,
   Save,
-  Wallet,
 } from "lucide-react";
 
 import { AlertaPermiso } from "@/components/AlertaPermiso";
+import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
+import { SaldoFavorInmueble } from "@/components/SaldoFavorInmueble";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
-import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
+import { listarInmuebles } from "@/lib/inmuebles";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -50,19 +57,25 @@ import {
 
 import { financeService } from "@/services/finance.service";
 import {
-  ConfiguracionMoraDTO,
   EstadoExpensa,
   ExpensaDTO,
+  PaginaExpensasDTO,
   MetodoPago,
   TipoValorMora,
+  ResultadoGeneracionDTO,
+  TipoInmuebleDTO,
 } from "@/types/finance";
 
-const CLASE_HEADER_TABLA =
-  "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_LABEL_CAMPO =
   "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_TITULO_DIALOGO =
   "font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground";
+const CLASE_DESCRIPCION_DIALOGO = "text-[13px] leading-[1.45] text-muted-foreground";
+// Encabezados de tarjetas, widgets y agrupadores (font-subtitle, ver client/CLAUDE.md).
+const CLASE_TITULO_SECCION = "font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground";
+const CLASE_AYUDA = "font-caption text-[12px] leading-[1.3] tracking-[0.01em] text-muted-foreground";
+const CLASE_CIFRA = "font-title text-[22px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums";
+const CLASE_AVISO_ERROR = "rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive";
 
 const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
   EFECTIVO: "Efectivo",
@@ -71,102 +84,86 @@ const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
   CHEQUE: "Cheque",
 };
 
-const CLASE_BADGE_ESTADO: Record<EstadoExpensa, string> = {
-  PAGADA: "bg-success-subtle text-success",
-  VENCIDA: "bg-danger-subtle text-destructive",
-  PENDIENTE: "bg-muted text-muted-foreground",
-  PARCIAL: "bg-muted text-muted-foreground",
-};
+const EXPENSAS_VACIAS: ExpensaDTO[] = [];
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("es-BO", {
-    style: "currency",
-    currency: "BOB",
-  }).format(amount);
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+/** "2026-10" → "octubre 2026" */
+function etiquetaPeriodo(strPeriodo: string) {
+  const [strAnio, strMes] = strPeriodo.split("-");
+  const strNombre = MESES[Number(strMes) - 1];
+  return strNombre ? `${strNombre} ${strAnio}` : strPeriodo;
 }
 
-function formatearFecha(strFechaISO: string) {
-  return new Intl.DateTimeFormat("es-BO", { day: "2-digit", month: "2-digit", year: "numeric" }).format(
-    new Date(strFechaISO)
-  );
-}
-
-function estaEnPeriodoGracia(exp: ExpensaDTO, configMora: ConfiguracionMoraDTO | null): boolean {
-  if (!configMora) return false;
-  if (exp.estado !== "PENDIENTE" && exp.estado !== "PARCIAL") return false;
-
-  const fechaLimiteConGracia = new Date(exp.fechaVencimiento);
-  fechaLimiteConGracia.setDate(fechaLimiteConGracia.getDate() + configMora.diasGracia);
-
-  return new Date() <= fechaLimiteConGracia;
-}
-
-function periodoActual(): string {
-  const fecha = new Date();
-  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function ultimoDiaDelMesISO(): string {
-  const fecha = new Date();
-  const ultimoDia = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
-  return ultimoDia.toISOString().slice(0, 10);
-}
-
-function tieneMoraAplicada(exp: ExpensaDTO): boolean {
-  return exp.estado === "VENCIDA" && Number(exp.montoMora || 0) > 0;
-}
-
-function calcularSaldoPendiente(exp: ExpensaDTO): number {
-  const totalPagado = exp.pagos.reduce((acc, pago) => acc + Number(pago.monto), 0);
-  const totalAdeudado = Number(exp.montoTotal) + Number(exp.montoMora || 0);
-  return Math.max(totalAdeudado - totalPagado, 0);
-}
-
-function obtenerMensajeError(error: unknown, strFallback: string): string {
-  if (axios.isAxiosError(error)) {
-    const strMensaje = (error.response?.data as { error?: string } | undefined)?.error;
-    if (strMensaje) return strMensaje;
-  }
-  return strFallback;
-}
-
-export default function GeneracionExpensasAdminPage() {
+function ContenidoMorosidad() {
+  const searchParams = useSearchParams();
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
   const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
+  // GET /notificaciones/correos: ADMINISTRADOR y DIRECTORIO (notificaciones.routes.js).
+  const bolPuedeVerCorreos = rol !== "CONSULTA";
+  const [bolCargaAguaAbierta, setBolCargaAguaAbierta] = useState(false);
+  const [bolRegistroCorreosAbierto, setBolRegistroCorreosAbierto] = useState(false);
 
-  const [expensas, setExpensas] = useState<ExpensaDTO[]>([]);
-  const [configMora, setConfigMora] = useState<ConfiguracionMoraDTO | null>(null);
-  const [inmuebles, setInmuebles] = useState<Inmueble[]>([]);
+  // Carga manual del agua de la expensa abierta en el detalle.
+  const [bolEditandoAgua, setBolEditandoAgua] = useState(false);
+  const [montoAgua, setMontoAgua] = useState("");
+  const [errorAgua, setErrorAgua] = useState("");
+  const [guardandoAgua, setGuardandoAgua] = useState(false);
+  const [tipoEditando, setTipoEditando] = useState<TipoInmuebleDTO | null>(null);
+  const [dialogTipoAbierto, setDialogTipoAbierto] = useState(false);
+  const [nombreTipo, setNombreTipo] = useState("");
+  const [tarifaTipo, setTarifaTipo] = useState("");
+  const [errorTipo, setErrorTipo] = useState("");
+  const [guardandoTipo, setGuardandoTipo] = useState(false);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
+
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
   const [filtroInmuebleId, setFiltroInmuebleId] = useState("");
+  // Un solo selector de mes; inicialmente muestra el mes actual.
+  const [filtroPeriodo, setFiltroPeriodo] = useState(periodoActual());
+  const [filtroTipo, setFiltroTipo] = useState("TODOS");
+  const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [strMensajePermiso, setStrMensajePermiso] = useState("");
 
   // Revisión manual de mora / generación manual del mes
   const [bolRevisandoMora, setBolRevisandoMora] = useState(false);
   const [bolGenerandoMes, setBolGenerandoMes] = useState(false);
   const [strErrorAccion, setStrErrorAccion] = useState("");
+  const [resultadoGeneracion, setResultadoGeneracion] = useState<ResultadoGeneracionDTO | null>(null);
+  const [expensaVencimiento, setExpensaVencimiento] = useState<ExpensaDTO | null>(null);
+  const [nuevaFechaVencimiento, setNuevaFechaVencimiento] = useState("");
+  const [motivoVencimiento, setMotivoVencimiento] = useState("");
+  const [guardandoVencimiento, setGuardandoVencimiento] = useState(false);
+  const [errorVencimiento, setErrorVencimiento] = useState("");
 
   // Configuración de mora
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [strErrorConfig, setStrErrorConfig] = useState("");
   const [formData, setFormData] = useState<{
-    diaGeneracion: number;
-    diasGracia: number;
+    // "" mientras el campo está vacío (el usuario borrando para escribir de
+    // nuevo), para que el input no se rellene solo con un "0".
+    diaGeneracion: number | "";
+    diaVencimiento: number | "";
+    diasGracia: number | "";
     tipoValor: TipoValorMora;
-    valor: number;
+    modoMora: "UNICA" | "MENSUAL";
+    valor: number | "";
+    vigenteDesde: string;
   }>({
     diaGeneracion: 1,
+    diaVencimiento: 10,
     diasGracia: 5,
     tipoValor: "PORCENTAJE",
+    modoMora: "MENSUAL",
     valor: 2,
+    vigenteDesde: "",
   });
 
   // Detalle de expensa
   const [expensaDetalle, setExpensaDetalle] = useState<ExpensaDTO | null>(null);
+  const [strInmuebleCuentaId, setStrInmuebleCuentaId] = useState<string | null>(null);
 
   // Registro de pago
   const [expensaParaPago, setExpensaParaPago] = useState<ExpensaDTO | null>(null);
@@ -177,39 +174,196 @@ export default function GeneracionExpensasAdminPage() {
   const [bolGuardandoPago, setBolGuardandoPago] = useState(false);
   const [strExito, setStrExito] = useState("");
 
-  async function cargarDatos() {
+  // Consultas cacheadas y paralelas, independientes entre sí.
+  // pagina/porPagina activan el formato {expensas, paginacion} del backend.
+  const queryClient = useQueryClient();
+  const [pagina, setPagina] = useState(1);
+  const porPagina = 25;
+  const paramsExpensas = {
+    pagina, porPagina,
+    ...(filtroPeriodo !== "TODOS" ? { periodo: filtroPeriodo } : {}),
+    ...(filtroEstado !== "TODOS" ? { estado: filtroEstado as EstadoExpensa } : {}),
+    ...(filtroInmuebleId ? { inmuebleId: filtroInmuebleId } : {}),
+  };
+  const expensasQuery = useQuery({
+    queryKey: ["morosidad", "expensas", paramsExpensas],
+    queryFn: ({ signal }) => financeService.getExpensasPaginadas(paramsExpensas, signal),
+  });
+  const configQuery = useQuery({
+    queryKey: ["morosidad", "configuracion"],
+    queryFn: async () => financeService.getConfiguracionVigente().catch((error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+      throw error;
+    }),
+  });
+  const historialQuery = useQuery({
+    queryKey: ["morosidad", "configuracion-historial"],
+    queryFn: () => financeService.getConfiguracionHistorial(),
+  });
+  const inmueblesQuery = useQuery({
+    queryKey: ["morosidad", "inmuebles"], queryFn: listarInmuebles,
+    staleTime: 120_000,
+  });
+  const tiposQuery = useQuery({
+    queryKey: ["morosidad", "tipos"], queryFn: () => financeService.listarTiposInmueble(),
+    staleTime: 120_000,
+  });
+  const expensas = expensasQuery.data?.expensas ?? EXPENSAS_VACIAS;
+  const paginacion = expensasQuery.data?.paginacion;
+  const configMora = configQuery.data ?? null;
+  const historialConfiguracion = historialQuery.data ?? [];
+  const inmuebles = inmueblesQuery.data ?? [];
+  const tiposInmueble = tiposQuery.data ?? [];
+  const isLoading = expensasQuery.isPending;
+  const errorCarga = expensasQuery.isError
+    ? obtenerMensajeError(expensasQuery.error, "No se pudieron cargar las expensas.") : "";
+
+  async function actualizarExpensas() {
+    await queryClient.invalidateQueries({ queryKey: ["morosidad", "expensas"] });
+  }
+  async function reintentarConsultas() {
+    await Promise.all([
+      expensasQuery.refetch(), configQuery.refetch(), historialQuery.refetch(),
+      inmueblesQuery.refetch(), tiposQuery.refetch(),
+    ]);
+  }
+
+
+  useEffect(() => {
+    if (!configMora) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFormData({
+      diaGeneracion: Number(configMora.diaGeneracion),
+      diaVencimiento: Number(configMora.diaVencimiento),
+      diasGracia: Number(configMora.diasGracia),
+      tipoValor: configMora.tipoValor, modoMora: configMora.modoMora,
+      valor: Number(configMora.valor), vigenteDesde: "",
+    });
+  }, [configMora]);
+
+  function abrirFormularioTipo(tipo: TipoInmuebleDTO) {
+    setTipoEditando(tipo);
+    setNombreTipo(tipo.nombre);
+    setTarifaTipo(String(tipo.montoBase));
+    setErrorTipo("");
+    setDialogTipoAbierto(true);
+  }
+
+  async function handleGuardarTipo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!validarAccion(rol, "morosidad", "editar").permitido) return;
+    if (!tipoEditando?.id) {
+      setErrorTipo("Solo es posible editar tipos de departamento existentes.");
+      return;
+    }
+    const montoBase = Number(tarifaTipo);
+    if (!nombreTipo.trim() || !tarifaTipo || !Number.isFinite(montoBase) || montoBase < 0 ||
+        !/^\d+(\.\d{1,2})?$/.test(tarifaTipo)) {
+      setErrorTipo("Revisa el nombre y la tarifa (0 o más, hasta 2 decimales).");
+      return;
+    }
+    setGuardandoTipo(true);
+    setErrorTipo("");
     try {
-      setIsLoading(true);
-      const [configData, expensasData, inmueblesData] = await Promise.all([
-        financeService.getConfiguracionVigente(),
-        financeService.getExpensas(),
-        listarInmuebles(),
-      ]);
-
-      setConfigMora(configData);
-      setExpensas(expensasData);
-      setInmuebles(inmueblesData);
-
-      setFormData({
-        diaGeneracion: configData.diaGeneracion,
-        diasGracia: configData.diasGracia,
-        tipoValor: configData.tipoValor,
-        valor: configData.valor,
-      });
+      await financeService.guardarTipoInmueble({ nombre: nombreTipo.trim(), montoBase }, tipoEditando.id);
+      setDialogTipoAbierto(false);
+      setStrExito("Tarifa del tipo actualizada para próximas generaciones.");
+      await queryClient.invalidateQueries({ queryKey: ["morosidad", "tipos"] });
     } catch (error) {
-      console.error("Error al cargar datos:", error);
+      setErrorTipo(obtenerMensajeError(error, "No se pudo guardar el tipo de departamento."));
     } finally {
-      setIsLoading(false);
+      setGuardandoTipo(false);
     }
   }
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    cargarDatos();
+  async function handleCargarAgua(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!expensaDetalle) return;
+    const objValidacion = validarAccion(rol, "morosidad", "editar");
+    if (!objValidacion.permitido) {
+      setErrorAgua(objValidacion.mensaje);
+      return;
+    }
+    const monto = Number(montoAgua);
+    if (montoAgua.trim() === "" || !Number.isFinite(monto) || monto < 0 || !/^\d+(\.\d{1,2})?$/.test(montoAgua.trim())) {
+      setErrorAgua("Introduce un importe de agua de 0 o más, con máximo 2 decimales.");
+      return;
+    }
+    setGuardandoAgua(true);
+    setErrorAgua("");
+    try {
+      const actualizada = await financeService.cargarAgua(expensaDetalle.id, monto);
+      // El PATCH no devuelve las relaciones: se conservan las del detalle abierto.
+      setExpensaDetalle({
+        ...expensaDetalle,
+        ...actualizada,
+        inmueble: expensaDetalle.inmueble,
+        pagos: actualizada.pagos ?? expensaDetalle.pagos,
+        moras: actualizada.moras ?? expensaDetalle.moras,
+        cambiosVencimiento: actualizada.cambiosVencimiento ?? expensaDetalle.cambiosVencimiento,
+      });
+      const intSaldoAplicado = Number(actualizada.saldoFavorAplicado ?? 0);
+      setStrExito(
+        `Agua de ${expensaDetalle.inmueble.codigo} (${expensaDetalle.periodo}) registrada: ${formatCurrency(monto)}.` +
+          (intSaldoAplicado > 0 ? ` Se cubrieron ${formatCurrency(intSaldoAplicado)} con el saldo a favor.` : "")
+      );
+      setBolEditandoAgua(false);
+      await actualizarExpensas();
+    } catch (error) {
+      setErrorAgua(obtenerMensajeError(error, "No se pudo registrar el agua de esta expensa."));
+    } finally {
+      setGuardandoAgua(false);
+    }
+  }
 
-    const strQuery = new URLSearchParams(window.location.search).get("q");
-    if (strQuery) setSearchTerm(strQuery);
-  }, []);
+  // Guardado desde la celda Agua (sin abrir el detalle). Reutiliza el endpoint existente.
+  async function guardarAguaEnTabla(exp: ExpensaDTO, monto: number): Promise<void> {
+    const permiso = validarAccion(rol, "morosidad", "editar");
+    if (!permiso.permitido) throw new Error(permiso.mensaje);
+    if (exp.estado === "PAGADA") throw new Error("No se puede editar agua de una expensa pagada.");
+    if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar agua con mora generada.");
+
+    // Confirmamos primero la operación en el servidor. Evita presentar un importe
+    // como guardado si el backend lo rechaza (por pagos, mora o plan de cuotas).
+    const resultado = await financeService.cargarAgua(exp.id, monto);
+
+    // El PATCH devuelve la expensa actualizada: reutilizamos esos valores para
+    // refrescar inmediatamente la fila sin esperar otro GET de 25 expensas.
+    // Cancelamos cualquier consulta anterior que pudiera sobrescribirlos.
+    await queryClient.cancelQueries({ queryKey: ["morosidad", "expensas"] });
+    queryClient.setQueriesData<PaginaExpensasDTO>(
+      { queryKey: ["morosidad", "expensas"] },
+      (paginaAnterior) => {
+        if (!paginaAnterior?.expensas.some((item) => item.id === exp.id)) {
+          return paginaAnterior;
+        }
+        return {
+          ...paginaAnterior,
+          expensas: paginaAnterior.expensas.map((item) =>
+            item.id === exp.id
+              ? {
+                  ...item,
+                  ...resultado,
+                  inmueble: item.inmueble,
+                  pagos: resultado.pagos ?? item.pagos,
+                  moras: resultado.moras ?? item.moras,
+                  cambiosVencimiento:
+                    resultado.cambiosVencimiento ?? item.cambiosVencimiento,
+                }
+              : item
+          ),
+        };
+      }
+    );
+
+    // Reconciliación en segundo plano: no bloquea el formulario ni otra edición.
+    void queryClient.invalidateQueries({ queryKey: ["morosidad", "expensas"] });
+    const aplicado = Number(resultado.saldoFavorAplicado ?? 0);
+    setStrExito(
+      `Agua de ${exp.inmueble.codigo} (${exp.periodo}) guardada: ${formatCurrency(monto)}.` +
+        (aplicado > 0 ? ` Se aplicaron ${formatCurrency(aplicado)} de crédito disponible.` : "")
+    );
+  }
 
   async function handleSaveConfig() {
     const objValidacion = validarAccion(rol, "morosidad", "editar");
@@ -219,16 +373,30 @@ export default function GeneracionExpensasAdminPage() {
     }
     setStrMensajePermiso("");
 
-    if (formData.diaGeneracion < 1 || formData.diaGeneracion > 28) {
+    if (formData.diaGeneracion === "" || formData.diaGeneracion < 1 || formData.diaGeneracion > 28) {
       setStrErrorConfig("El día de generación debe estar entre 1 y 28.");
       return;
     }
-    if (formData.diasGracia < 0) {
+    if (formData.diaVencimiento === "" || !Number.isInteger(formData.diaVencimiento) ||
+        formData.diaVencimiento < 1 || formData.diaVencimiento > 28 ||
+        formData.diaVencimiento < Number(formData.diaGeneracion)) {
+      setStrErrorConfig("El vencimiento debe estar entre 1 y 28 y no puede preceder a la generación.");
+      return;
+    }
+    if (formData.diasGracia === "" || !Number.isInteger(formData.diasGracia) || formData.diasGracia < 0) {
       setStrErrorConfig("Los días de gracia no pueden ser negativos.");
       return;
     }
-    if (formData.valor < 0) {
+    if (formData.valor === "" || !Number.isFinite(Number(formData.valor)) || formData.valor < 0) {
       setStrErrorConfig("El valor de la mora no puede ser negativo.");
+      return;
+    }
+    if (formData.tipoValor === "PORCENTAJE" && Number(formData.valor) > 100) {
+      setStrErrorConfig("El porcentaje de mora no puede superar el 100%.");
+      return;
+    }
+    if (formData.vigenteDesde && formData.vigenteDesde < fechaHoyBolivia()) {
+      setStrErrorConfig("La fecha de vigencia no puede ser anterior a hoy.");
       return;
     }
 
@@ -236,14 +404,72 @@ export default function GeneracionExpensasAdminPage() {
     setStrErrorConfig("");
 
     try {
-      await financeService.actualizarConfiguracion(formData);
-      await cargarDatos();
+      await financeService.actualizarConfiguracion({
+        diaGeneracion: Number(formData.diaGeneracion),
+        diaVencimiento: Number(formData.diaVencimiento),
+        diasGracia: Number(formData.diasGracia),
+        tipoValor: formData.tipoValor,
+        modoMora: formData.modoMora,
+        valor: Number(formData.valor),
+        ...(formData.vigenteDesde ? { vigenteDesde: formData.vigenteDesde } : {}),
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["morosidad", "configuracion"] }),
+        queryClient.invalidateQueries({ queryKey: ["morosidad", "configuracion-historial"] }),
+      ]);
       setIsConfigOpen(false);
       setStrExito("Configuración de mora actualizada correctamente.");
     } catch (error) {
       setStrErrorConfig(obtenerMensajeError(error, "Ocurrió un error al guardar la configuración."));
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  function abrirDialogoVencimiento(exp: ExpensaDTO) {
+    const permiso = validarAccion(rol, "morosidad", "editar");
+    if (!permiso.permitido) {
+      setStrMensajePermiso(permiso.mensaje);
+      return;
+    }
+    setStrMensajePermiso("");
+    setExpensaDetalle(null);
+    setExpensaVencimiento(exp);
+    setNuevaFechaVencimiento(exp.fechaVencimiento.slice(0, 10));
+    setMotivoVencimiento("");
+    setErrorVencimiento("");
+  }
+
+  async function handleCambiarVencimiento(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!expensaVencimiento) return;
+    const fechaMinima = fechaEnBolivia(expensaVencimiento.createdAt);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nuevaFechaVencimiento) || nuevaFechaVencimiento < fechaMinima) {
+      setErrorVencimiento(`La fecha debe ser válida y no anterior a ${formatearFecha(fechaMinima + "T12:00:00-04:00")}.`);
+      return;
+    }
+    if (nuevaFechaVencimiento === expensaVencimiento.fechaVencimiento.slice(0, 10)) {
+      setErrorVencimiento("Selecciona una fecha distinta a la actual.");
+      return;
+    }
+    if (motivoVencimiento.length > 300) {
+      setErrorVencimiento("El motivo no puede superar 300 caracteres.");
+      return;
+    }
+    setGuardandoVencimiento(true);
+    setErrorVencimiento("");
+    try {
+      await financeService.cambiarVencimiento(expensaVencimiento.id, {
+        fechaVencimiento: nuevaFechaVencimiento,
+        motivo: motivoVencimiento.trim() || undefined,
+      });
+      setExpensaVencimiento(null);
+      setStrExito("Fecha de vencimiento actualizada; el cambio quedó registrado en el historial.");
+      await actualizarExpensas();
+    } catch (error) {
+      setErrorVencimiento(obtenerMensajeError(error, "No se pudo cambiar el vencimiento."));
+    } finally {
+      setGuardandoVencimiento(false);
     }
   }
 
@@ -272,7 +498,8 @@ export default function GeneracionExpensasAdminPage() {
     if (!expensaParaPago) return;
 
     const monto = Number(strMontoPago);
-    if (!strMontoPago || Number.isNaN(monto) || monto <= 0) {
+    if (!strMontoPago || !Number.isFinite(monto) || monto <= 0 ||
+        !/^\d+(\.\d{1,2})?$/.test(strMontoPago)) {
       setStrErrorPago("Ingresa un monto válido, mayor a cero.");
       return;
     }
@@ -281,15 +508,25 @@ export default function GeneracionExpensasAdminPage() {
     setStrErrorPago("");
 
     try {
-      await financeService.registrarPago(expensaParaPago.id, {
+      const intPendienteAntes = calcularSaldoPendiente(expensaParaPago);
+      const respuesta = await financeService.registrarPago(expensaParaPago.id, {
         monto,
         metodoPago,
         referencia: strReferenciaPago.trim() || undefined,
       });
 
+      const intAplicado = Number(respuesta.montoAplicado ?? Math.min(monto, intPendienteAntes));
+      const intRestante = Math.max(intPendienteAntes - intAplicado, 0);
+      const intSaldoFavor = Number(respuesta.saldoFavorGenerado ?? 0);
       setExpensaParaPago(null);
-      setStrExito("Pago registrado correctamente.");
-      await cargarDatos();
+      setStrExito(
+        `Pago de ${formatCurrency(monto)} registrado en ${expensaParaPago.inmueble.codigo} (${expensaParaPago.periodo}). ` +
+          (intRestante > 0
+            ? `Saldo pendiente de esta expensa: ${formatCurrency(intRestante)}.`
+            : "La expensa quedó pagada.") +
+          (intSaldoFavor > 0 ? ` ${formatCurrency(intSaldoFavor)} quedaron como saldo a favor.` : "")
+      );
+      await actualizarExpensas();
     } catch (error) {
       setStrErrorPago(obtenerMensajeError(error, "Ocurrió un error al registrar el pago."));
     } finally {
@@ -309,25 +546,18 @@ export default function GeneracionExpensasAdminPage() {
     setBolRevisandoMora(true);
 
     try {
-      const candidatas = expensas.filter((exp) => exp.estado === "PENDIENTE" || exp.estado === "PARCIAL");
+      // Se usa el endpoint del job (no el aplicar-mora por expensa) porque es el
+      // único camino que también notifica por correo a los ocupantes afectados.
+      const resultado = await financeService.ejecutarMoraJob();
 
-      const resultados = await Promise.all(
-        candidatas.map((exp) =>
-          financeService.aplicarMoraManual(exp.id).catch((error) => {
-            console.error(`No se pudo revisar la expensa ${exp.id}:`, error);
-            return null;
-          })
-        )
-      );
-
-      const intAplicadas = resultados.filter((resultado) => resultado?.estado === "VENCIDA").length;
-
-      setStrExito(
-        intAplicadas > 0
-          ? `Revisión completa: se aplicó mora a ${intAplicadas} expensa${intAplicadas === 1 ? "" : "s"}.`
-          : "Revisión completa: ninguna expensa superó el período de gracia todavía."
-      );
-      await cargarDatos();
+      if (resultado.aplicadas > 0) {
+        setStrExito(
+          `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.`
+        );
+      } else {
+        setStrExito("Revisión completa: el backend no aplicó recargos nuevos. Puede ser por fechas, reglas históricas o pagos registrados.");
+      }
+      await actualizarExpensas();
     } catch (error) {
       setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al revisar las deudas pendientes."));
     } finally {
@@ -344,36 +574,16 @@ export default function GeneracionExpensasAdminPage() {
     setStrMensajePermiso("");
     setStrErrorAccion("");
     setStrExito("");
+    setResultadoGeneracion(null);
     setBolGenerandoMes(true);
 
     try {
-      const inmueblesActivos = inmuebles.filter((inmueble) => inmueble.activo);
-      const strPeriodo = periodoActual();
-      const strFechaVencimiento = ultimoDiaDelMesISO();
-
-      let intGeneradas = 0;
-      let intOmitidas = 0;
-
-      for (const inmueble of inmueblesActivos) {
-        try {
-          await financeService.generarExpensaManual({
-            inmuebleId: inmueble.id,
-            periodo: strPeriodo,
-            fechaVencimiento: strFechaVencimiento,
-          });
-          intGeneradas += 1;
-        } catch (error) {
-          intOmitidas += 1;
-          console.warn(`Inmueble ${inmueble.codigo}: no se generó la expensa de ${strPeriodo}.`, error);
-        }
-      }
-
-      setStrExito(
-        `Generación del período ${strPeriodo}: ${intGeneradas} expensa${intGeneradas === 1 ? "" : "s"} nueva${
-          intGeneradas === 1 ? "" : "s"
-        }, ${intOmitidas} ya existía${intOmitidas === 1 ? "" : "n"} o no se pudo${intOmitidas === 1 ? "" : "ieron"} generar.`
-      );
-      await cargarDatos();
+      // Se usa el endpoint del job (forzar=true) en vez de crear expensas una por una
+      // porque es el único camino que también notifica por correo a los ocupantes.
+      const resultado = await financeService.ejecutarGeneracionJob(true);
+      setResultadoGeneracion(resultado);
+      setStrExito(`Generación del período ${resultado.periodo ?? periodoActual()}: ${resultado.generadas} nuevas, ${resultado.yaGeneradas?.length ?? 0} ya existentes y ${resultado.pendientes?.length ?? 0} pendientes por error.`);
+      await actualizarExpensas();
     } catch (error) {
       setStrErrorAccion(obtenerMensajeError(error, "Ocurrió un error al generar las expensas del mes."));
     } finally {
@@ -381,16 +591,50 @@ export default function GeneracionExpensasAdminPage() {
     }
   }
 
-  const filteredExpensas = expensas.filter(
-    (exp) =>
-      (!filtroInmuebleId || exp.inmuebleId === filtroInmuebleId) &&
-      (exp.inmueble.codigo.toLowerCase().includes(searchTerm.toLowerCase()) || exp.periodo.includes(searchTerm))
+  // El backend NO soporta filtros por tipo ni búsquedas de texto.
+  // Se aplican a la página cargada, y la interfaz lo informa expresamente.
+  const filteredExpensas = useMemo(() => {
+    const texto = searchTerm.trim().toLocaleLowerCase("es");
+    return expensas.filter((exp) =>
+      (filtroTipo === "TODOS" || exp.tipoNombre === filtroTipo) &&
+      (!texto || [exp.inmueble.codigo, exp.periodo, exp.responsableNombre ?? "", exp.tipoNombre ?? ""]
+        .some((valor) => valor.toLocaleLowerCase("es").includes(texto)))
+    );
+  }, [expensas, filtroTipo, searchTerm]);
+
+  // `aguaRegistradaEn` null = el administrador todavía no cargó el agua de esa expensa.
+  const expensasSinAgua = useMemo(
+    () => expensas.filter((exp) => !exp.aguaRegistradaEn && exp.estado !== "PAGADA"),
+    [expensas]
   );
 
-  const expensasVencidas = expensas.filter((e) => e.estado === "VENCIDA");
+  function abrirDetalleExpensa(exp: ExpensaDTO, bolCargarAgua = false) {
+    setExpensaDetalle(exp);
+    setErrorAgua("");
+    setMontoAgua(Number(exp.montoAgua) > 0 ? String(Number(exp.montoAgua)) : "");
+    setBolEditandoAgua(bolCargarAgua && bolPuedeGestionar && (exp.moras?.length ?? 0) === 0);
+  }
 
-  const totalMoraAcumulada = expensasVencidas.reduce((acc, curr) => acc + Number(curr.montoMora || 0), 0);
-  const totalCapitalVencido = expensasVencidas.reduce((acc, curr) => acc + Number(curr.montoTotal), 0);
+  // Si el detalle está abierto cuando se recargan las expensas (tras un pago), se muestra la versión nueva.
+  useEffect(() => {
+    if (!expensaDetalle) return;
+    const actualizada = expensas.find((exp) => exp.id === expensaDetalle.id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (actualizada && actualizada !== expensaDetalle) setExpensaDetalle(actualizada);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expensas]);
+
+  const hayFiltrosActivos =
+    filtroPeriodo !== periodoActual() || filtroTipo !== "TODOS" || filtroEstado !== "TODOS" || Boolean(filtroInmuebleId) || Boolean(searchTerm.trim());
+
+  function limpiarFiltros() {
+    setPagina(1);
+    setFiltroPeriodo(periodoActual());
+    setFiltroTipo("TODOS");
+    setFiltroEstado("TODOS");
+    setFiltroInmuebleId("");
+    setSearchTerm("");
+  }
 
   return (
     <div className="px-4 py-6 sm:px-6">
@@ -405,7 +649,8 @@ export default function GeneracionExpensasAdminPage() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleGenerarMes}
-              disabled={bolGenerandoMes}
+              cargando={bolGenerandoMes}
+              disabled={bolRevisandoMora}
             >
               <CalendarPlus className="mr-2 h-4 w-4" />
               {bolGenerandoMes ? "Generando..." : "Generar expensas del mes"}
@@ -415,11 +660,13 @@ export default function GeneracionExpensasAdminPage() {
               variant="outline"
               className="w-full md:w-auto"
               onClick={handleRevisarMora}
-              disabled={bolRevisandoMora}
+              cargando={bolRevisandoMora}
+              disabled={bolGenerandoMes}
             >
-              <RefreshCw className={`mr-2 h-4 w-4 ${bolRevisandoMora ? "animate-spin" : ""}`} />
-              {bolRevisandoMora ? "Revisando..." : "Revisar deudas ahora"}
+              <RefreshCw className="mr-2 h-4 w-4" />
+              {bolRevisandoMora ? "Revisando..." : "Revisar mora"}
             </Button>
+
 
           <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
             <DialogTrigger asChild>
@@ -429,9 +676,9 @@ export default function GeneracionExpensasAdminPage() {
               </Button>
             </DialogTrigger>
 
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[600px]">
               <DialogHeader>
-                <DialogTitle className={CLASE_TITULO_DIALOGO}>Configuración de mora</DialogTitle>
+                <DialogTitle className={CLASE_TITULO_DIALOGO}>Configuración de mora y generación</DialogTitle>
                 <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
                   Ajusta los parámetros para la generación automática de expensas y recargos.
                 </DialogDescription>
@@ -446,18 +693,34 @@ export default function GeneracionExpensasAdminPage() {
                     max="28"
                     value={formData.diaGeneracion}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, diaGeneracion: Number(e.target.value) }))
+                      setFormData((prev) => ({
+                        ...prev,
+                        diaGeneracion: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
                     }
                   />
                 </div>
 
+                <div className="grid gap-1">
+                  <label htmlFor="diaVencimiento" className={CLASE_LABEL_CAMPO}>Día de vencimiento (1-28)</label>
+                  <Input
+                    id="diaVencimiento" type="number" min="1" max="28"
+                    value={formData.diaVencimiento}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, diaVencimiento: e.target.value === "" ? "" : Number(e.target.value) }))}
+                  />
+                </div>
                 <div className="grid gap-1">
                   <label className={CLASE_LABEL_CAMPO}>Días de gracia</label>
                   <Input
                     type="number"
                     min="0"
                     value={formData.diasGracia}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, diasGracia: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        diasGracia: e.target.value === "" ? "" : Number(e.target.value),
+                      }))
+                    }
                   />
                 </div>
 
@@ -485,20 +748,59 @@ export default function GeneracionExpensasAdminPage() {
                       min="0"
                       step="0.1"
                       value={formData.valor}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, valor: Number(e.target.value) }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          valor: e.target.value === "" ? "" : Number(e.target.value),
+                        }))
+                      }
                     />
                   </div>
                 </div>
               </div>
 
-              {strErrorConfig && (
-                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-                  {strErrorConfig}
-                </p>
-              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-1">
+                  <label className={CLASE_LABEL_CAMPO}>Frecuencia del recargo</label>
+                  <Select value={formData.modoMora} onValueChange={(value: "UNICA" | "MENSUAL") => setFormData((prev) => ({ ...prev, modoMora: value }))}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UNICA">Una sola vez</SelectItem>
+                      <SelectItem value="MENSUAL">Mensualmente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1">
+                  <label htmlFor="vigenteDesde" className={CLASE_LABEL_CAMPO}>Vigente desde (opcional)</label>
+                  <Input id="vigenteDesde" type="date" min={fechaHoyBolivia()}
+                    value={formData.vigenteDesde}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, vigenteDesde: e.target.value }))} />
+                </div>
+              </div>
+              <p className={CLASE_AYUDA}>
+                Sin fecha se aplica desde ahora. Una fecha futura programa la nueva regla.
+                Las expensas antiguas conservan su configuración histórica.
+              </p>
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <h4 className={CLASE_TITULO_SECCION}>Historial de configuraciones</h4>
+                {historialConfiguracion.length === 0 ? (
+                  <p className={CLASE_AYUDA}>No hay historial disponible.</p>
+                ) : (
+                  <div className="max-h-36 space-y-2 overflow-y-auto">
+                    {historialConfiguracion.map((regla) => (
+                      <div key={regla.id} className="border-b border-border pb-2 text-[12px] leading-[1.45] text-foreground last:border-0">
+                        <span className="font-medium">{formatearFecha(regla.vigenteDesde)}</span> · {regla.modoMora === "UNICA" ? "Única" : "Mensual"} · {Number(regla.valor)}{regla.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
+                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {strErrorConfig && <p className={CLASE_AVISO_ERROR}>{strErrorConfig}</p>}
 
               <DialogFooter>
-                <Button onClick={handleSaveConfig} disabled={isSaving} className="w-full">
+                <Button onClick={handleSaveConfig} cargando={isSaving} className="w-full">
                   <Save className="mr-2 h-4 w-4" />
                   {isSaving ? "Guardando..." : "Guardar configuración"}
                 </Button>
@@ -510,6 +812,16 @@ export default function GeneracionExpensasAdminPage() {
       </div>
 
       {strMensajePermiso && <AlertaPermiso mensaje={strMensajePermiso} />}
+      {bolPuedeVerCorreos && <AvisoServicioCorreo onVerRegistro={() => setBolRegistroCorreosAbierto(true)} />}
+      {errorCarga && (
+        <div role="alert" className={`${CLASE_AVISO_ERROR} mb-4 flex flex-wrap items-center justify-between gap-3`}>
+          <span>{errorCarga}</span>
+          <Button type="button" variant="outline" size="sm" onClick={reintentarConsultas}>Reintentar carga</Button>
+        </div>
+      )}
+      {configQuery.isError && <p role="alert" className={`${CLASE_AVISO_ERROR} mb-4`}>
+        No se pudo consultar la configuración de mora. Verifica los permisos o la conexión.
+      </p>}
       {strExito && (
         <div className="animate-in fade-in slide-in-from-top-1 duration-300 mb-4 rounded-lg border border-success/20 bg-success-subtle px-3.5 py-2.5 text-[13px] text-success">
           {strExito}
@@ -521,296 +833,337 @@ export default function GeneracionExpensasAdminPage() {
         </div>
       )}
 
+      {resultadoGeneracion && (
+        <Card className="mb-6 border-primary/20 shadow-sm">
+          <CardHeader>
+            <CardTitle className={CLASE_TITULO_SECCION}>Resultado de generación — {resultadoGeneracion.periodo ?? periodoActual()}</CardTitle>
+            <p className={CLASE_AYUDA}>Es el resultado de la última ejecución desde esta pantalla. Repetir la generación no duplica los registros existentes.</p>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Generadas</p><p className={`${CLASE_CIFRA} mt-1 text-success`}>{resultadoGeneracion.generadas}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Ya existentes</p><p className={`${CLASE_CIFRA} mt-1 text-foreground`}>{resultadoGeneracion.yaGeneradas?.length ?? 0}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Pendientes por error</p><p className={`${CLASE_CIFRA} mt-1 text-destructive`}>{resultadoGeneracion.pendientes?.length ?? 0}</p></div>
+            <div className="rounded-lg border border-border p-3"><p className={CLASE_LABEL_CAMPO}>Excluidas</p><p className={`${CLASE_CIFRA} mt-1 text-muted-foreground`}>{resultadoGeneracion.excluidos?.length ?? 0}</p></div>
+            {(resultadoGeneracion.yaGeneradas?.length ?? 0) > 0 && (
+              <details className="rounded-lg border border-border p-3 sm:col-span-2 xl:col-span-4">
+                <summary className="cursor-pointer text-[13px] font-medium text-foreground">Ver departamentos con expensa existente</summary>
+                <p className={`${CLASE_AYUDA} mt-2`}>{resultadoGeneracion.yaGeneradas?.join(", ")}</p>
+              </details>
+            )}
+            {(resultadoGeneracion.pendientes?.length ?? 0) > 0 && (
+              <div className="rounded-lg border border-destructive/20 bg-danger-subtle p-3 sm:col-span-2 xl:col-span-4">
+                <p className="text-[13px] font-medium text-destructive">Pendientes para reintentar</p>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-[12px] text-foreground">
+                  {resultadoGeneracion.pendientes?.map((item) => <li key={item.inmuebleId}>{item.codigo}: {item.motivo}</li>)}
+                </ul>
+                <Button variant="outline" className="mt-3" onClick={handleGenerarMes} cargando={bolGenerandoMes}>Reintentar generación del mes</Button>
+              </div>
+            )}
+            {(resultadoGeneracion.excluidos?.length ?? 0) > 0 && (
+              <details className="rounded-lg border border-border p-3 sm:col-span-2 xl:col-span-4">
+                <summary className="cursor-pointer text-[13px] font-medium text-foreground">Ver departamentos excluidos</summary>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-[12px] text-muted-foreground">
+                  {resultadoGeneracion.excluidos?.map((item) => <li key={item.codigo}>{item.codigo}: {item.motivo}</li>)}
+                </ul>
+              </details>
+            )}
+            {resultadoGeneracion.motivo && <p className={`${CLASE_AYUDA} sm:col-span-2 xl:col-span-4`}>Motivo: {resultadoGeneracion.motivo}</p>}
+            {resultadoGeneracion.correos && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border p-3 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between xl:col-span-4">
+                <p className="text-[13px] text-foreground">
+                  <Mail className="mr-1.5 inline h-4 w-4 text-muted-foreground" />
+                  Avisos por correo: <span className="font-medium text-success">{resultadoGeneracion.correos.enviados} enviados</span>
+                  {" · "}<span className="font-medium text-destructive">{resultadoGeneracion.correos.fallidos} fallidos</span>
+                  {" · "}<span className="font-medium text-muted-foreground">{resultadoGeneracion.correos.omitidos} omitidos</span>
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setBolRegistroCorreosAbierto(true)}>Ver registro de correos</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Reglas actuales de mora */}
       {!isLoading && configMora && (
         <div className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-primary">
-            <CalendarClock className="h-5 w-5" />
-            <h4 className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em]">
-              Configuración vigente del cron job
-            </h4>
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-primary" />
+            <h4 className={CLASE_TITULO_SECCION}>Configuración vigente del cron job</h4>
           </div>
 
-          <p className="mt-1 text-[13px] leading-[1.45] text-primary/80">
+          <p className="mt-2 text-[13px] leading-[1.45] text-muted-foreground">
             Las expensas se generan automáticamente el día{" "}
-            <strong className="font-bold text-primary">{configMora.diaGeneracion}</strong> de cada mes. El
-            recargo por mora es del{" "}
-            <strong className="font-bold text-primary">
-              {configMora.valor}
+            <span className="font-medium text-foreground">{configMora.diaGeneracion}</span> de cada mes. El
+            vencimiento está configurado para el día{" "}
+            <span className="font-medium text-foreground">{configMora.diaVencimiento}</span> y el recargo por mora es
+            de{" "}
+            <span className="font-medium text-foreground">
+              {Number(configMora.valor)}
               {configMora.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
-            </strong>{" "}
-            aplicable tras <strong className="font-bold text-primary">{configMora.diasGracia} días</strong> de
-            gracia desde el vencimiento.
+            </span>{" "}
+            aplicable tras <span className="font-medium text-foreground">{configMora.diasGracia} días</span> de
+            gracia desde el vencimiento. Modalidad:{" "}
+            <span className="font-medium text-foreground">
+              {configMora.modoMora === "UNICA" ? "recargo único" : "recargo mensual"}
+            </span>
+            .
           </p>
+          {bolPuedeVerCorreos && (
+            <button
+              type="button"
+              onClick={() => setBolRegistroCorreosAbierto(true)}
+              className="font-caption mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:text-primary/80"
+            >
+              <Mail className="h-3.5 w-3.5" /> Ver registro de avisos por correo
+            </button>
+          )}
         </div>
       )}
 
-      {/* KPIs */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <Card className="shadow-sm">
-          <CardContent className="p-5">
-            <p className={CLASE_LABEL_CAMPO}>Total expensas vencidas</p>
-            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
-              {expensasVencidas.length} {expensasVencidas.length === 1 ? "unidad" : "unidades"}
-            </h3>
-          </CardContent>
-        </Card>
+      {/* Tarifas y agua. Los importes oficiales siempre los calcula el backend. */}
+      <Card className="mb-6 shadow-sm">
+        <CardHeader>
+          <CardTitle className={CLASE_TITULO_SECCION}>Tarifas y agua</CardTitle>
+          <p className={CLASE_AYUDA}>
+            Las tarifas de cada tipo se aplican a las nuevas expensas. El agua se carga a mano en la expensa de cada
+            departamento.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-5 lg:grid-cols-2">
+          <section className="space-y-3">
+            <h3 className={CLASE_LABEL_CAMPO}>Tipos y tarifas fijas</h3>
+            {tiposInmueble.length === 0 ? (
+              <p className={CLASE_AYUDA}>No se cargaron tipos de departamento.</p>
+            ) : (
+              <div className="space-y-2">
+                {tiposInmueble.map((tipo) => (
+                  <div key={tipo.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-title flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-[16px] font-bold text-primary">
+                        {tipo.nombre}
+                      </span>
+                      <p className="text-[13px] font-medium tabular-nums text-foreground">
+                        {formatCurrency(Number(tipo.montoBase))}
+                        <span className="font-normal text-muted-foreground"> / mes</span>
+                      </p>
+                    </div>
+                    {bolPuedeGestionar && <Button size="sm" variant="outline" onClick={() => abrirFormularioTipo(tipo)}>Editar</Button>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
-        <Card className="shadow-sm">
-          <CardContent className="p-5">
-            <p className={CLASE_LABEL_CAMPO}>Capital vencido</p>
-            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-primary">
-              {formatCurrency(totalCapitalVencido)}
-            </h3>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-sm">
-          <CardContent className="p-5">
-            <p className={CLASE_LABEL_CAMPO}>Mora aplicada (recargos)</p>
-            <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] text-destructive">
-              {formatCurrency(totalMoraAcumulada)}
-            </h3>
-            <p className="font-caption mt-1 text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
-              Calculado por el scheduler automático
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className={CLASE_LABEL_CAMPO}>Agua de {etiquetaPeriodo(filtroPeriodo)}</h3>
+              {bolPuedeGestionar && (
+                <Button size="sm" onClick={() => setBolCargaAguaAbierta(true)}>
+                  <Droplets className="h-4 w-4" />
+                  Cargar agua del mes
+                </Button>
+              )}
+            </div>
+            {expensasSinAgua.length === 0 ? (
+              <p className="rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">
+                {expensas.length === 0
+                  ? "No hay expensas generadas en este mes."
+                  : "Todas las expensas de esta página tienen el agua cargada."}
+              </p>
+            ) : (
+              <>
+                <p className="text-[13px] leading-[1.45] text-muted-foreground">
+                  <span className="font-medium text-destructive">{expensasSinAgua.length}</span>{" "}
+                  expensa{expensasSinAgua.length === 1 ? "" : "s"} de esta página todavía no tiene{expensasSinAgua.length === 1 ? "" : "n"} el agua
+                  cargada.{bolPuedeGestionar && " Ábrela para registrar su importe."}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {expensasSinAgua.slice(0, 12).map((exp) => (
+                    <Button key={exp.id} size="sm" variant="outline" onClick={() => abrirDetalleExpensa(exp, true)}>
+                      {exp.inmueble.codigo}
+                    </Button>
+                  ))}
+                  {expensasSinAgua.length > 12 && (
+                    <span className={`${CLASE_AYUDA} self-center`}>y {expensasSinAgua.length - 12} más</span>
+                  )}
+                </div>
+              </>
+            )}
+            <p className={CLASE_AYUDA}>
+              El agua puede corregirse mientras la expensa no tenga mora y el nuevo total no quede por debajo de lo ya pagado.
             </p>
-          </CardContent>
-        </Card>
-      </div>
+          </section>
+        </CardContent>
+      </Card>
+
+      {!configQuery.isPending && !configQuery.isError && !configMora && (
+        <div role="alert" className={`${CLASE_AVISO_ERROR} mb-6`}>
+          No existe una configuración de mora vigente. Antes de ejecutar el proceso mensual,
+          un Administrador debe guardar las reglas de generación, vencimiento y mora.
+        </div>
+      )}
+
+      <ResumenMorosidad expensas={expensas} />
 
       {/* Registro general */}
-      <Card className="shadow-sm">
-        <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
-            Registro general de expensas
-          </CardTitle>
+      <Card className="gap-0 overflow-hidden py-0 shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className={CLASE_TITULO_SECCION}>Registro general de expensas</h2>
+            <p className={`${CLASE_AYUDA} mt-1`}>
+              {paginacion ? `${paginacion.total} expensa${paginacion.total === 1 ? "" : "s"}` : `${expensas.length} expensas`}{" "}
+              en {etiquetaPeriodo(filtroPeriodo)}
+              {filteredExpensas.length !== expensas.length && ` · ${filteredExpensas.length} visibles con los filtros de esta página`}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {hayFiltrosActivos && (
+              <Button variant="ghost" size="sm" onClick={limpiarFiltros}>
+                <X className="h-4 w-4" />
+                Limpiar filtros
+              </Button>
+            )}
+            <Button variant="outline" size="sm" cargando={expensasQuery.isFetching} onClick={() => { void expensasQuery.refetch(); }}>
+              <RefreshCw className="h-4 w-4" />
+              Actualizar
+            </Button>
+          </div>
+        </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Select value={filtroInmuebleId || "TODOS"} onValueChange={(val) => setFiltroInmuebleId(val === "TODOS" ? "" : val)}>
-              <SelectTrigger className="w-full sm:w-[220px]">
-                <SelectValue placeholder="Consultar por departamento" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TODOS">Todos los departamentos</SelectItem>
-                {inmuebles.map((inmueble) => (
-                  <SelectItem key={inmueble.id} value={inmueble.id}>
-                    {inmueble.codigo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="relative w-full sm:w-[260px]">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-5 py-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[170px_150px_170px_minmax(0,1fr)_minmax(0,1.4fr)]">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="filtro-mes" className={CLASE_LABEL_CAMPO}>Mes</label>
               <Input
-                placeholder="Buscar por departamento o periodo..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
+                id="filtro-mes"
+                type="month"
+                className="h-9 cursor-pointer"
+                value={filtroPeriodo}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setPagina(1);
+                  setFiltroPeriodo(e.target.value);
+                }}
               />
             </div>
+            <div className="flex flex-col gap-1">
+              <span className={CLASE_LABEL_CAMPO}>Tipo</span>
+              <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+                <SelectTrigger aria-label="Filtrar por tipo" className="h-9 w-full"><SelectValue placeholder="Tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos los tipos</SelectItem>
+                  {tiposInmueble.map((tipo) => <SelectItem key={tipo.id} value={tipo.nombre}>Tipo {tipo.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className={CLASE_LABEL_CAMPO}>Estado</span>
+              <Select value={filtroEstado} onValueChange={(valor) => { setPagina(1); setFiltroEstado(valor); }}>
+                <SelectTrigger aria-label="Filtrar por estado" className="h-9 w-full"><SelectValue placeholder="Estado" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos los estados</SelectItem>
+                  {(["PENDIENTE", "PARCIAL", "PAGADA", "VENCIDA"] as EstadoExpensa[]).map((estado) => (
+                    <SelectItem key={estado} value={estado}>{ETIQUETA_ESTADO[estado]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className={CLASE_LABEL_CAMPO}>Departamento</span>
+              <Select value={filtroInmuebleId || "TODOS"} onValueChange={(val) => { setPagina(1); setFiltroInmuebleId(val === "TODOS" ? "" : val); }}>
+                <SelectTrigger aria-label="Filtrar por departamento" className="h-9 w-full">
+                  <SelectValue placeholder="Todos los departamentos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TODOS">Todos los departamentos</SelectItem>
+                  {inmuebles.map((inmueble) => (
+                    <SelectItem key={inmueble.id} value={inmueble.id}>
+                      {inmueble.codigo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
+              <label htmlFor="buscar-expensa" className={CLASE_LABEL_CAMPO}>Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="buscar-expensa"
+                  placeholder="Código, responsable o tipo..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-9 pl-9"
+                />
+              </div>
+            </div>
           </div>
-        </CardHeader>
+          <p className={CLASE_AYUDA}>
+            Mes, estado y departamento se consultan en el servidor. Tipo y búsqueda filtran solo las {porPagina} expensas de esta página.
+          </p>
+        </div>
 
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="space-y-4 p-5">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+            <div className="space-y-3 p-5">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
             </div>
           ) : (
-            <>
-              {/* Vista tabla (md en adelante) */}
-              <div className="hidden md:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className={CLASE_HEADER_TABLA}>Periodo</TableHead>
-                      <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
-                      <TableHead className={CLASE_HEADER_TABLA}>Generada</TableHead>
-                      <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Monto base</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-center`}>Estado</TableHead>
-                      <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>
-                        {bolPuedeGestionar ? "Acción" : ""}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-
-                  <TableBody>
-                    {filteredExpensas.map((exp) => {
-                      const montoTotal = Number(exp.montoTotal) + Number(exp.montoMora || 0);
-
-                      return (
-                        <TableRow key={exp.id}>
-                          <TableCell className="text-[13px] text-foreground">{exp.periodo}</TableCell>
-
-                          <TableCell className="text-[13px] text-foreground">
-                            <div className="flex items-center gap-2">
-                              <Building2 className="h-4 w-4 text-muted-foreground" />
-                              {exp.inmueble.codigo}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-[13px] text-muted-foreground">
-                            {formatearFecha(exp.createdAt)}
-                          </TableCell>
-
-                          <TableCell className="text-[13px] text-muted-foreground">
-                            {formatearFecha(exp.fechaVencimiento)}
-                          </TableCell>
-
-                          <TableCell className="text-right text-[13px] text-foreground">
-                            {formatCurrency(Number(exp.montoTotal))}
-                          </TableCell>
-
-                          <TableCell className="text-right text-[13px] text-destructive">
-                            {exp.montoMora ? formatCurrency(Number(exp.montoMora)) : "Bs 0,00"}
-                          </TableCell>
-
-                          <TableCell className="text-right text-[13px] font-semibold text-foreground">
-                            {formatCurrency(montoTotal)}
-                          </TableCell>
-
-                          <TableCell className="text-center">
-                            <div className="flex flex-col items-center gap-1">
-                              <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
-                                {exp.estado}
-                              </Badge>
-                              {estaEnPeriodoGracia(exp, configMora) && (
-                                <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
-                                  En período de gracia
-                                </Badge>
-                              )}
-                              {tieneMoraAplicada(exp) && (
-                                <Badge className="font-caption bg-danger-subtle text-[10px] text-destructive">
-                                  Mora aplicada
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="sm" onClick={() => setExpensaDetalle(exp)}>
-                                <Info className="mr-2 h-4 w-4" />
-                                Detalle
-                              </Button>
-                              {bolPuedeGestionar && exp.estado !== "PAGADA" && (
-                                <Button variant="ghost" size="sm" onClick={() => abrirDialogoPago(exp)}>
-                                  <Wallet className="mr-2 h-4 w-4" />
-                                  Registrar pago
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {filteredExpensas.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={9} className="py-8 text-center text-[13px] text-muted-foreground">
-                          No hay expensas registradas.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Vista tarjetas (mobile) */}
-              <div className="flex flex-col gap-3 p-4 md:hidden">
-                {filteredExpensas.map((exp) => {
-                  const montoTotal = Number(exp.montoTotal) + Number(exp.montoMora || 0);
-
-                  return (
-                    <div
-                      key={exp.id}
-                      className="rounded-2xl border border-border bg-card p-4 shadow-sm"
-                    >
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-subtitle text-[14px] font-semibold leading-[1.4] text-foreground">
-                            {exp.periodo}
-                          </p>
-                          <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                            <Building2 className="h-3.5 w-3.5" />
-                            {exp.inmueble.codigo}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[exp.estado]}`}>
-                            {exp.estado}
-                          </Badge>
-                          {estaEnPeriodoGracia(exp, configMora) && (
-                            <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
-                              En gracia
-                            </Badge>
-                          )}
-                          {tieneMoraAplicada(exp) && (
-                            <Badge className="font-caption bg-danger-subtle text-[10px] text-destructive">
-                              Mora aplicada
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                        <div>
-                          <p className={CLASE_LABEL_CAMPO}>Generada</p>
-                          <p className="text-[13px] text-foreground">{formatearFecha(exp.createdAt)}</p>
-                        </div>
-                        <div>
-                          <p className={CLASE_LABEL_CAMPO}>Vencimiento</p>
-                          <p className="text-[13px] text-foreground">{formatearFecha(exp.fechaVencimiento)}</p>
-                        </div>
-                        <div>
-                          <p className={CLASE_LABEL_CAMPO}>Monto base</p>
-                          <p className="text-[13px] text-foreground">{formatCurrency(Number(exp.montoTotal))}</p>
-                        </div>
-                        <div>
-                          <p className={CLASE_LABEL_CAMPO}>Mora</p>
-                          <p className="text-[13px] text-destructive">
-                            {exp.montoMora ? formatCurrency(Number(exp.montoMora)) : "Bs 0,00"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                        <div>
-                          <p className={CLASE_LABEL_CAMPO}>Total</p>
-                          <p className="text-[15px] font-semibold text-foreground">{formatCurrency(montoTotal)}</p>
-                        </div>
-
-                        <div className="flex gap-1">
-                          <Button variant="outline" size="sm" onClick={() => setExpensaDetalle(exp)}>
-                            <Info className="mr-2 h-4 w-4" />
-                            Detalle
-                          </Button>
-                          {bolPuedeGestionar && exp.estado !== "PAGADA" && (
-                            <Button variant="outline" size="sm" onClick={() => abrirDialogoPago(exp)}>
-                              <Wallet className="mr-2 h-4 w-4" />
-                              Registrar pago
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {filteredExpensas.length === 0 && (
-                  <p className="py-8 text-center text-[13px] text-muted-foreground">
-                    No hay expensas registradas.
-                  </p>
-                )}
-              </div>
-            </>
+            <TablaExpensas
+              filteredExpensas={filteredExpensas}
+              totalCargadas={expensas.length}
+              historialConfiguracion={historialConfiguracion}
+              bolPuedeGestionar={bolPuedeGestionar}
+              errorCarga={errorCarga}
+              onDetalle={(exp) => abrirDetalleExpensa(exp)}
+              onGuardarAgua={guardarAguaEnTabla}
+              onPago={abrirDialogoPago}
+            />
           )}
         </CardContent>
+
+        <div className="flex flex-col gap-3 border-t border-border px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <span className={CLASE_AYUDA}>
+            Página <span className="font-medium text-foreground">{paginacion?.pagina ?? pagina}</span> de{" "}
+            <span className="font-medium text-foreground">{Math.max(paginacion?.totalPaginas ?? 1, 1)}</span>
+            {expensasQuery.isFetching ? " · Actualizando…" : ""}
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="outline" disabled={pagina <= 1 || expensasQuery.isFetching}
+              onClick={() => setPagina((p) => Math.max(1, p - 1))}>
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={pagina >= (paginacion?.totalPaginas ?? 1) || expensasQuery.isFetching}
+              onClick={() => setPagina((p) => p + 1)}>
+              Siguiente
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </Card>
+
+      <Dialog open={dialogTipoAbierto} onOpenChange={(abierto) => !guardandoTipo && setDialogTipoAbierto(abierto)}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Editar tipo de departamento</DialogTitle>
+            <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>La tarifa se usa para las próximas expensas; no cambia las ya generadas.</DialogDescription>
+          </DialogHeader>
+          <form className="space-y-3" onSubmit={handleGuardarTipo}>
+            <div className="space-y-1"><label htmlFor="nombreTipo" className={CLASE_LABEL_CAMPO}>Nombre del tipo</label>
+              <Input id="nombreTipo" maxLength={50} required value={nombreTipo} onChange={(e) => setNombreTipo(e.target.value)} placeholder="A, B, C" /></div>
+            <div className="space-y-1"><label htmlFor="tarifaTipo" className={CLASE_LABEL_CAMPO}>Tarifa mensual fija (Bs)</label>
+              <Input id="tarifaTipo" type="number" min="0" step="0.01" required value={tarifaTipo} onChange={(e) => setTarifaTipo(e.target.value)} /></div>
+            {errorTipo && <p role="alert" className={CLASE_AVISO_ERROR}>{errorTipo}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogTipoAbierto(false)} disabled={guardandoTipo}>Cancelar</Button>
+              <Button type="submit" cargando={guardandoTipo}>{guardandoTipo ? "Guardando..." : "Guardar tipo"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Diálogo de registro de pago */}
       <Dialog open={expensaParaPago !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoPago()}>
@@ -827,7 +1180,7 @@ export default function GeneracionExpensasAdminPage() {
             <form onSubmit={handleConfirmarPago} className="flex flex-col gap-3">
               <div className="rounded-lg bg-muted/30 p-3">
                 <p className={CLASE_LABEL_CAMPO}>Saldo pendiente</p>
-                <p className="mt-1 text-[16px] font-semibold text-foreground">
+                <p className="font-title mt-1 text-[20px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-foreground">
                   {formatCurrency(calcularSaldoPendiente(expensaParaPago))}
                 </p>
               </div>
@@ -876,17 +1229,13 @@ export default function GeneracionExpensasAdminPage() {
                 />
               </div>
 
-              {strErrorPago && (
-                <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-                  {strErrorPago}
-                </p>
-              )}
+              {strErrorPago && <p className={CLASE_AVISO_ERROR}>{strErrorPago}</p>}
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={cerrarDialogoPago} disabled={bolGuardandoPago}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={bolGuardandoPago}>
+                <Button type="submit" cargando={bolGuardandoPago}>
                   {bolGuardandoPago ? "Guardando..." : "Confirmar pago"}
                 </Button>
               </DialogFooter>
@@ -897,7 +1246,7 @@ export default function GeneracionExpensasAdminPage() {
 
       {/* Diálogo de detalle de la expensa */}
       <Dialog open={expensaDetalle !== null} onOpenChange={(bolOpen) => !bolOpen && setExpensaDetalle(null)}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[560px]">
           <DialogHeader>
             <DialogTitle className={CLASE_TITULO_DIALOGO}>Detalle de la expensa</DialogTitle>
             <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
@@ -907,11 +1256,9 @@ export default function GeneracionExpensasAdminPage() {
 
           {expensaDetalle && (
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-2">
-                <Badge className={`font-caption text-[11px] ${CLASE_BADGE_ESTADO[expensaDetalle.estado]}`}>
-                  {expensaDetalle.estado}
-                </Badge>
-                {estaEnPeriodoGracia(expensaDetalle, configMora) && (
+              <div className="flex flex-wrap items-center gap-2">
+                <BadgeEstadoExpensa estado={expensaDetalle.estado} />
+                {estaEnPeriodoGracia(expensaDetalle, historialConfiguracion) && (
                   <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
                     En período de gracia
                   </Badge>
@@ -921,9 +1268,35 @@ export default function GeneracionExpensasAdminPage() {
                     Mora aplicada
                   </Badge>
                 )}
+                {expensaDetalle.planPagoId && (
+                  <Badge className="font-caption bg-accent-secondary/10 text-[10px] text-accent-secondary">
+                    En plan de pagos
+                  </Badge>
+                )}
+              </div>
+              {expensaDetalle.planPagoId && (
+                <p className="rounded-lg border border-accent-secondary/30 bg-accent-secondary/10 px-3 py-2 text-[13px] text-foreground">
+                  Esta expensa se cobra por las cuotas de un plan de pagos.{" "}
+                  <Link href="/admin/pagos/planes" className="font-medium text-primary hover:text-primary/80">Ver planes de pago</Link>
+                </p>
+              )}
+
+              <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+                <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Responsable de la expensa</p>
+                  <p className="mt-1 text-[13px] font-medium text-foreground">{expensaDetalle.responsableNombre || "No registrado"}</p>
+                  <p className={CLASE_AYUDA}>{expensaDetalle.responsableRol === "PROPIETARIO" ? "Propietario" : expensaDetalle.responsableRol === "INQUILINO" ? "Inquilino" : "Sin rol registrado"}</p>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Tipo de departamento</p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {expensaDetalle.tipoNombre ? `Tipo ${expensaDetalle.tipoNombre}` : "No registrado"}
+                  </p>
+                </div>
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Fecha de generación</p>
                   <p className="mt-1 text-[13px] text-foreground">{formatearFecha(expensaDetalle.createdAt)}</p>
@@ -931,34 +1304,172 @@ export default function GeneracionExpensasAdminPage() {
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Fecha de vencimiento</p>
                   <p className="mt-1 text-[13px] text-foreground">
-                    {formatearFecha(expensaDetalle.fechaVencimiento)}
+                    {formatearFechaCalendario(expensaDetalle.fechaVencimiento)}
                   </p>
+                  {bolPuedeGestionar && expensaDetalle.estado !== "PAGADA" && (expensaDetalle.moras?.length ?? 0) === 0 && (
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => abrirDialogoVencimiento(expensaDetalle)}>
+                      <CalendarDays className="mr-1 h-4 w-4" /> Cambiar vencimiento
+                    </Button>
+                  )}
                 </div>
-                <div>
-                  <p className={CLASE_LABEL_CAMPO}>Monto base</p>
-                  <p className="mt-1 text-[13px] text-foreground">
-                    {formatCurrency(Number(expensaDetalle.montoTotal))}
-                  </p>
-                </div>
-                <div>
-                  <p className={CLASE_LABEL_CAMPO}>Mora aplicada</p>
-                  <p className="mt-1 text-[13px] text-destructive">
-                    {expensaDetalle.montoMora ? formatCurrency(Number(expensaDetalle.montoMora)) : "Bs 0,00"}
-                  </p>
+              </div>
+
+              <div className="rounded-lg border border-border p-3">
+                <p className={`${CLASE_LABEL_CAMPO} mb-3`}>Desglose de la expensa</p>
+                <div className="flex flex-col gap-2 text-[13px] tabular-nums">
+                  {/* Un cargo por concepto: el departamento y cada baulera/parqueo con cobro (HU3 CA-4). */}
+                  {(expensaDetalle.cargos?.length ?? 0) > 0 ? (
+                    expensaDetalle.cargos!.map((cargo) => (
+                      <div key={cargo.id} className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">
+                          {cargo.clase === "DEPARTAMENTO"
+                            ? `Tarifa fija · Departamento ${cargo.codigo}${expensaDetalle.tipoNombre ? ` (tipo ${expensaDetalle.tipoNombre})` : ""}`
+                            : `${cargo.clase === "BAULERA" ? "Baulera" : "Parqueo"} ${cargo.codigo}`}
+                        </span>
+                        <span className="text-foreground">{formatCurrency(Number(cargo.monto))}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Tarifa fija</span>
+                      <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoBase))}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">
+                      Agua del período
+                      {!expensaDetalle.aguaRegistradaEn && (
+                        <span className="font-caption ml-2 rounded-full bg-danger-subtle px-2 py-0.5 text-[10px] text-destructive">
+                          Sin cargar
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex items-center gap-2 text-foreground">
+                      {formatCurrency(Number(expensaDetalle.montoAgua))}
+                      {bolPuedeGestionar && !bolEditandoAgua && expensaDetalle.estado !== "PAGADA" && (expensaDetalle.moras?.length ?? 0) === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMontoAgua(Number(expensaDetalle.montoAgua) > 0 ? String(Number(expensaDetalle.montoAgua)) : "");
+                            setErrorAgua("");
+                            setBolEditandoAgua(true);
+                          }}
+                          className="font-caption text-[12px] font-medium text-primary hover:text-primary/80"
+                        >
+                          {expensaDetalle.aguaRegistradaEn ? "Corregir" : "Cargar agua"}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  {bolEditandoAgua && (
+                    <form onSubmit={handleCargarAgua} noValidate className="flex flex-col gap-2 rounded-lg bg-muted/30 p-3">
+                      <label htmlFor="montoAgua" className={CLASE_LABEL_CAMPO}>
+                        Importe de agua de {expensaDetalle.inmueble.codigo} (Bs)
+                      </label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="montoAgua"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          autoFocus
+                          placeholder="0.00"
+                          value={montoAgua}
+                          onChange={(e) => {
+                            setMontoAgua(e.target.value);
+                            setErrorAgua("");
+                          }}
+                        />
+                        <Button type="button" variant="outline" disabled={guardandoAgua} onClick={() => setBolEditandoAgua(false)}>
+                          Cancelar
+                        </Button>
+                        <Button type="submit" cargando={guardandoAgua}>
+                          {guardandoAgua ? "Guardando..." : "Guardar"}
+                        </Button>
+                      </div>
+                      {errorAgua && <p role="alert" className={CLASE_AVISO_ERROR}>{errorAgua}</p>}
+                      <p className={CLASE_AYUDA}>
+                        Se suma a la tarifa fija y recalcula el total. Si el inmueble tiene saldo a favor, cubre el aumento.
+                      </p>
+                    </form>
+                  )}
+                  <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                    <span className="font-medium text-foreground">Total expensa (sin mora)</span>
+                    <span className="font-medium text-foreground">{formatCurrency(Number(expensaDetalle.montoTotal))}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Mora acumulada</span>
+                    <span className="text-destructive">{formatCurrency(Number(expensaDetalle.montoMora || 0))}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
+                    <span className="font-medium text-foreground">Total exigible</span>
+                    <span className="font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground">
+                      {formatCurrency(Number(expensaDetalle.montoTotal) + Number(expensaDetalle.montoMora || 0))}
+                    </span>
+                  </div>
                 </div>
               </div>
 
               <div className="rounded-lg bg-muted/30 p-3">
-                <p className={CLASE_LABEL_CAMPO}>Saldo pendiente</p>
-                <p className="mt-1 text-[16px] font-semibold text-foreground">
-                  {formatCurrency(calcularSaldoPendiente(expensaDetalle))}
-                </p>
+                <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Estado de cuenta de esta expensa</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { etiqueta: "Pagado", valor: resumenSaldo(expensaDetalle).pagado, clase: "text-success" },
+                    { etiqueta: "Capital pendiente", valor: resumenSaldo(expensaDetalle).capitalPendiente, clase: "text-foreground" },
+                    { etiqueta: "Mora pendiente", valor: resumenSaldo(expensaDetalle).moraPendiente, clase: "text-destructive" },
+                    { etiqueta: "Saldo total pendiente", valor: resumenSaldo(expensaDetalle).total, clase: "text-foreground" },
+                  ].map((item) => (
+                    <div key={item.etiqueta}>
+                      <p className={CLASE_AYUDA}>{item.etiqueta}</p>
+                      <p className={`text-[13px] font-medium tabular-nums ${item.valor > 0 ? item.clase : "text-muted-foreground"}`}>
+                        {formatCurrency(item.valor)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <SaldoFavorInmueble
+                strInmuebleId={expensaDetalle.inmuebleId}
+                strCodigo={expensaDetalle.inmueble.codigo}
+                onVerEstadoCuenta={() => setStrInmuebleCuentaId(expensaDetalle.inmuebleId)}
+              />
+
+              <div>
+                <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Recargos de mora individuales</p>
+                {expensaDetalle.moras?.length ? (
+                  <div className="space-y-2">
+                    {expensaDetalle.moras.map((mora) => (
+                      <div key={mora.id} className="rounded-lg border border-border p-3">
+                        <div className="flex justify-between gap-2 text-[13px]">
+                          <span className="font-medium text-foreground">Recargo {mora.numero} — {mora.mes}</span>
+                          <span className="font-medium tabular-nums text-destructive">{formatCurrency(Number(mora.monto))}</span>
+                        </div>
+                        <p className={`${CLASE_AYUDA} mt-1`}>Corte: {formatearFechaCalendario(mora.fechaCorte)} · Base: {formatCurrency(Number(mora.base))} · {mora.tipoValor === "PORCENTAJE" ? `${Number(mora.valor)}%` : `Bs ${mora.valor} fijo`}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className={CLASE_AYUDA}>No se registraron recargos para esta expensa.</p>}
+              </div>
+
+              <div>
+                <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Historial de modificaciones al vencimiento</p>
+                {expensaDetalle.cambiosVencimiento?.length ? (
+                  <div className="space-y-2">
+                    {expensaDetalle.cambiosVencimiento.map((cambio) => (
+                      <div key={cambio.id} className="rounded-lg border border-border p-3">
+                        <p className="text-[13px] font-medium text-foreground">{formatearFechaCalendario(cambio.fechaAnterior)} → {formatearFechaCalendario(cambio.fechaNueva)}</p>
+                        <p className={`${CLASE_AYUDA} mt-1`}>{formatearFecha(cambio.createdAt)}{cambio.motivo ? ` · ${cambio.motivo}` : ""}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className={CLASE_AYUDA}>Sin cambios registrados.</p>}
               </div>
 
               <div>
                 <p className={`${CLASE_LABEL_CAMPO} mb-2`}>Historial de pagos</p>
                 {expensaDetalle.pagos.length === 0 ? (
-                  <p className="text-[13px] text-muted-foreground">Todavía no se registraron pagos.</p>
+                  <p className={CLASE_AYUDA}>Todavía no se registraron pagos.</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {expensaDetalle.pagos.map((pago) => (
@@ -967,13 +1478,18 @@ export default function GeneracionExpensasAdminPage() {
                         className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
                       >
                         <div>
-                          <p className="text-[13px] text-foreground">{ETIQUETA_METODO_PAGO[pago.metodoPago]}</p>
-                          <p className="font-caption text-[11px] text-muted-foreground">
+                          <p className="text-[13px] text-foreground">
+                            {pago.metodoPago === "SALDO_A_FAVOR"
+                              ? "Saldo a favor"
+                              : ETIQUETA_METODO_PAGO[pago.metodoPago]}
+                          </p>
+                          <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">
                             {formatearFecha(pago.fechaPago)}
                             {pago.referencia ? ` · ${pago.referencia}` : ""}
                           </p>
+                          <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">A capital: {formatCurrency(Number(pago.montoExpensa))} · A mora: {formatCurrency(Number(pago.montoMora))}</p>
                         </div>
-                        <p className="text-[13px] font-semibold text-foreground">
+                        <p className="text-[13px] font-medium tabular-nums text-success">
                           {formatCurrency(Number(pago.monto))}
                         </p>
                       </div>
@@ -991,6 +1507,60 @@ export default function GeneracionExpensasAdminPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <DialogoEstadoCuenta strInmuebleId={strInmuebleCuentaId} onCerrar={() => setStrInmuebleCuentaId(null)} />
+
+      {bolPuedeGestionar && (
+        <DialogoCargaAgua
+          bolAbierto={bolCargaAguaAbierta}
+          onCerrar={() => setBolCargaAguaAbierta(false)}
+          strPeriodoInicial={filtroPeriodo}
+          tiposInmueble={tiposInmueble}
+          onGuardado={() => void actualizarExpensas()}
+        />
+      )}
+      {bolPuedeVerCorreos && (
+        <DialogoRegistroCorreos bolAbierto={bolRegistroCorreosAbierto} onCerrar={() => setBolRegistroCorreosAbierto(false)} />
+      )}
+
+      <Dialog open={expensaVencimiento !== null} onOpenChange={(abierto) => !abierto && !guardandoVencimiento && setExpensaVencimiento(null)}>
+        <DialogContent className="sm:max-w-[430px]">
+          <DialogHeader>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Modificar fecha de vencimiento</DialogTitle>
+            <DialogDescription className={CLASE_DESCRIPCION_DIALOGO}>
+              {expensaVencimiento ?`${expensaVencimiento.inmueble.codigo} · ${expensaVencimiento.periodo}` : ""}. Solo se permite si la expensa no está pagada ni tiene recargos de mora.
+            </DialogDescription>
+          </DialogHeader>
+          {expensaVencimiento && (
+            <form className="space-y-4" onSubmit={handleCambiarVencimiento}>
+              <div className="space-y-1">
+                <label htmlFor="nuevaFechaVencimiento" className={CLASE_LABEL_CAMPO}>Nuevo vencimiento</label>
+                <Input id="nuevaFechaVencimiento" type="date" value={nuevaFechaVencimiento}
+                  min={fechaEnBolivia(expensaVencimiento.createdAt)} onChange={(event) => setNuevaFechaVencimiento(event.target.value)} required />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="motivoVencimiento" className={CLASE_LABEL_CAMPO}>Motivo (opcional)</label>
+                <Input id="motivoVencimiento" value={motivoVencimiento} maxLength={300} onChange={(event) => setMotivoVencimiento(event.target.value)} placeholder="Ej. acuerdo de pago, feriado" />
+              </div>
+              {errorVencimiento && <p className={CLASE_AVISO_ERROR}>{errorVencimiento}</p>}
+              <DialogFooter>
+                <Button variant="outline" type="button" disabled={guardandoVencimiento} onClick={() => setExpensaVencimiento(null)}>Cancelar</Button>
+                <Button type="submit" cargando={guardandoVencimiento}>{guardandoVencimiento ? "Guardando..." : "Guardar cambio"}</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+// Provider aislado: no altera otras pantallas ni deja datos financieros cacheados entre sesiones.
+export default function GeneracionExpensasAdminPage() {
+  return (
+    <QueryProvider>
+      <Suspense fallback={<div className="px-4 py-6 text-[13px] text-muted-foreground">Cargando morosidad...</div>}>
+        <ContenidoMorosidad />
+      </Suspense>
+    </QueryProvider>
   );
 }

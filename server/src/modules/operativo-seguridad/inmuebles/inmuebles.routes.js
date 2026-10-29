@@ -1,24 +1,38 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
-const { autorizar } = require("../../../middlewares/rbac.middleware");
+const { permitir } = require("../../../middlewares/permisos");
+const { soloSuInmueble } = require("../../../middlewares/acceso-propio");
 const controller = require("./inmuebles.controller");
 
 const router = Router();
 
-const GESTION = autorizar("ADMINISTRADOR", "DIRECTORIO");
-const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
+const GESTION = permitir("inmuebles", "gestionar");
+const LECTURA = permitir("inmuebles", "ver");
 
 /**
  * @openapi
  * /api/inmuebles:
  *   get:
- *     summary: Lista todos los inmuebles (departamentos, parqueos, bauleras)
+ *     summary: Lista todos los inmuebles (departamentos, parqueos, bauleras). CONSULTA recibe solo los que ocupa.
+ *     description: |
+ *       Cada inmueble trae `clase` (DEPARTAMENTO, BAULERA o PARQUEO) y `asignado` (tiene un
+ *       ocupante vigente). Solo el departamento tiene tipo (A, B, C...). En baulera y parqueo
+ *       `tipoInmuebleId` es null y `tipoInmueble` es un objeto de compatibilidad con la clase
+ *       como nombre y monto 0.
+ *
+ *       `cargoMensual` es lo que el inmueble suma cada mes a la cuenta de quien lo ocupa: la
+ *       expensa fija del tipo en un departamento; en baulera y parqueo su `cuotaMensual`
+ *       propia o, si no tiene (null), la tarifa de su clase (`/api/tarifas-inmueble`).
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     responses:
  *       200: { description: OK }
  *   post:
  *     summary: Registra un nuevo inmueble
+ *     description: |
+ *       Un departamento (clase por defecto) requiere `tipoInmuebleId`. Una baulera o un parqueo
+ *       no tienen tipo: no se debe enviar `tipoInmuebleId`. Opcionalmente una baulera o un
+ *       parqueo puede llevar `cuotaMensual` propia, que reemplaza a la tarifa de su clase.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -27,14 +41,17 @@ const LECTURA = autorizar("ADMINISTRADOR", "DIRECTORIO", "CONSULTA");
  *         application/json:
  *           schema:
  *             type: object
+ *             required: [codigo]
  *             properties:
  *               codigo: { type: string }
- *               tipoInmuebleId: { type: string, description: "id de un registro en /api/tipos-inmueble" }
+ *               clase: { type: string, enum: [DEPARTAMENTO, BAULERA, PARQUEO], default: DEPARTAMENTO }
+ *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble" }
  *               piso: { type: string }
  *               areaM2: { type: number }
+ *               cuotaMensual: { type: number, nullable: true, description: "Solo baulera y parqueo. Monto propio mensual (0 = exento). Sin valor usa la tarifa de la clase." }
  *     responses:
  *       201: { description: Inmueble creado }
- *       400: { description: Datos invalidos }
+ *       400: { description: Datos invalidos (falta el tipo de un departamento, se envio tipo a una baulera o parqueo, o cuotaMensual en un departamento o invalida) }
  *       404: { description: Tipo de inmueble no encontrado }
  *       409: { description: Codigo ya registrado }
  */
@@ -45,7 +62,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  * @openapi
  * /api/inmuebles/{id}:
  *   get:
- *     summary: Obtiene un inmueble por id
+ *     summary: Obtiene un inmueble por id (CONSULTA solo puede pedir uno que ocupa; si no, 403)
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -73,23 +90,26 @@ router.post("/", autenticar, GESTION, controller.crear);
  *             type: object
  *             properties:
  *               codigo: { type: string }
- *               tipoInmuebleId: { type: string, description: "id de un registro en /api/tipos-inmueble" }
+ *               clase: { type: string, enum: [DEPARTAMENTO, BAULERA, PARQUEO] }
+ *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble. Al pasar a baulera o parqueo el tipo se quita." }
  *               piso: { type: string }
  *               areaM2: { type: number }
  *               activo: { type: boolean }
+ *               cuotaMensual: { type: number, nullable: true, description: "Solo baulera y parqueo. Monto propio mensual (0 = exento); null lo quita y vuelve a la tarifa de la clase. Rige desde la proxima expensa." }
  *     responses:
  *       200: { description: Inmueble actualizado }
+ *       400: { description: Datos invalidos (un departamento necesita tipo; baulera y parqueo no lo tienen) }
  *       404: { description: Inmueble o tipo de inmueble no encontrado }
  *       409: { description: Codigo ya registrado }
  */
-router.get("/:id", autenticar, LECTURA, controller.obtener);
+router.get("/:id", autenticar, LECTURA, soloSuInmueble(), controller.obtener);
 router.put("/:id", autenticar, GESTION, controller.actualizar);
 
 /**
  * @openapi
  * /api/inmuebles/{id}/ocupantes:
  *   get:
- *     summary: Historial de ocupantes (propietarios/inquilinos) de un inmueble
+ *     summary: Historial de ocupantes (propietarios/inquilinos) de un inmueble. CONSULTA solo en un inmueble que ocupa, y de las demas personas ve solo nombre y apellido.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -122,8 +142,9 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *     responses:
  *       201: { description: Ocupante asignado }
  *       404: { description: Inmueble o copropietario no encontrado }
+ *       409: { description: "El inmueble esta inactivo (codigo INMUEBLE_INACTIVO) o la persona ya esta asociada con esa misma relacion (codigo ASOCIACION_DUPLICADA)" }
  */
-router.get("/:id/ocupantes", autenticar, LECTURA, controller.listarOcupantes);
+router.get("/:id/ocupantes", autenticar, LECTURA, soloSuInmueble(), controller.listarOcupantes);
 router.post("/:id/ocupantes", autenticar, GESTION, controller.asignarOcupante);
 
 /**

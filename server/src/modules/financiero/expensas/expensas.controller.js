@@ -1,4 +1,5 @@
 const service = require('./expensas.service')
+const { esConsulta, inmueblesPropios } = require('../../../middlewares/acceso-propio')
 
 async function generar(req, res, next) {
   try {
@@ -8,7 +9,13 @@ async function generar(req, res, next) {
         error: 'inmuebleId, periodo y fechaVencimiento son requeridos'
       })
     }
-    const expensa = await service.generar({ inmuebleId, periodo, fechaVencimiento })
+    const expensa = await service.generar({
+      inmuebleId,
+      periodo,
+      fechaVencimiento,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
     res.status(201).json(expensa)
   } catch (err) {
     next(err)
@@ -17,7 +24,10 @@ async function generar(req, res, next) {
 
 async function listar(req, res, next) {
   try {
-    const expensas = await service.listar()
+    const { periodo, estado, inmuebleId, aguaCargada, pagina, porPagina } = req.query
+    // CONSULTA solo recibe las expensas de sus inmuebles.
+    const inmuebleIds = esConsulta(req) ? await inmueblesPropios(req) : undefined
+    const expensas = await service.listar({ periodo, estado, inmuebleId, inmuebleIds, aguaCargada, pagina, porPagina })
     res.json(expensas)
   } catch (err) {
     next(err)
@@ -27,7 +37,7 @@ async function listar(req, res, next) {
 async function aplicarMora(req, res, next) {
   try {
     const { id } = req.params
-    const resultado = await service.aplicarMora(id)
+    const resultado = await service.aplicarMora(id, { usuarioId: req.usuario.id, ip: req.ip })
     res.json(resultado)
   } catch (err) {
     next(err)
@@ -37,8 +47,8 @@ async function aplicarMora(req, res, next) {
 async function registrarPago(req, res, next) {
   try {
     const { id } = req.params
-    const { monto, metodoPago, referencia } = req.body
-    if (!monto || !metodoPago) {
+    const { monto, metodoPago, referencia, fechaPago, cuentaId } = req.body
+    if (monto === undefined || !metodoPago) {
       return res.status(400).json({
         error: 'monto y metodoPago son requeridos'
       })
@@ -48,12 +58,71 @@ async function registrarPago(req, res, next) {
       monto,
       metodoPago,
       referencia,
-      usuarioId: req.usuario.id
+      fechaPago,
+      cuentaId,
+      claveSolicitud: req.get('Idempotency-Key'),
+      usuarioId: req.usuario.id,
+      ip: req.ip
     })
-    res.status(201).json(resultado)
+    res.status(resultado.duplicado ? 200 : 201).json(resultado)
   } catch (err) {
     next(err)
   }
 }
 
-module.exports = { generar, listar, aplicarMora, registrarPago }
+async function aplicarSaldoFavor(req, res, next) {
+  try {
+    const resultado = await service.aplicarSaldoFavor(req.params.id, {
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(resultado)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function cargarAgua(req, res, next) {
+  try {
+    const { montoAgua } = req.body
+    if (montoAgua === undefined) {
+      return res.status(400).json({ error: 'montoAgua es requerido' })
+    }
+    const expensa = await service.cargarAgua(req.params.id, {
+      montoAgua,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(expensa)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function cambiarVencimiento(req, res, next) {
+  try {
+    const { fechaVencimiento, motivo } = req.body
+    if (!fechaVencimiento) {
+      return res.status(400).json({ error: 'fechaVencimiento es requerida (YYYY-MM-DD)' })
+    }
+    const expensa = await service.cambiarVencimiento(req.params.id, {
+      fechaVencimiento,
+      motivo,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(expensa)
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = {
+  generar,
+  listar,
+  aplicarMora,
+  registrarPago,
+  aplicarSaldoFavor,
+  cargarAgua,
+  cambiarVencimiento
+}

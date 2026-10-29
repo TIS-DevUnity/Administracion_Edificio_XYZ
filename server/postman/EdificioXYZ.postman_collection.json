@@ -55,6 +55,451 @@
         "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
         "url": "{{baseUrl}}/api/auth/solo-admin"
       }
+    },
+    {
+      "name": "Tipos de departamento - listar",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/tipos-inmueble"
+      }
+    },
+    {
+      "name": "Tipos de departamento - crear (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/tipos-inmueble",
+        "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"D\",\n  \"montoBase\": 450\n}" }
+      }
+    },
+    {
+      "name": "Inmueble - crear baulera (sin tipo)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/inmuebles",
+        "body": { "mode": "raw", "raw": "{\n  \"codigo\": \"BAU-10\",\n  \"clase\": \"BAULERA\"\n}" }
+      }
+    },
+    {
+      "name": "Configuracion de mora - crear (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/configuracion-mora",
+        "body": { "mode": "raw", "raw": "{\n  \"diaGeneracion\": 1,\n  \"diaVencimiento\": 10,\n  \"diasGracia\": 0,\n  \"tipoValor\": \"PORCENTAJE\",\n  \"valor\": 10,\n  \"modoMora\": \"MENSUAL\"\n}" }
+      }
+    },
+    {
+      "name": "Expensa - generar (solo departamentos asignados)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/expensas",
+        "body": { "mode": "raw", "raw": "{\n  \"inmuebleId\": \"<id del departamento>\",\n  \"periodo\": \"2026-10\"\n}" }
+      }
+    },
+    {
+      "name": "Agua - cargar agua de una expensa (solo Admin)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/expensas/<id de la expensa>/agua",
+        "body": { "mode": "raw", "raw": "{\n  \"montoAgua\": 45\n}" }
+      }
+    },
+    {
+      "name": "Expensas - las que todavia no tienen agua cargada",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/expensas?periodo=2026-10&aguaCargada=false"
+      }
+    },
+    {
+      "name": "Pago por inmueble (cuota, mes atrasado o anticipado)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/pagos",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 100,\n  \"metodoPago\": \"EFECTIVO\",\n  \"fechaPago\": \"2026-10-10\"\n}" }
+      }
+    },
+    {
+      "name": "Expensa - cambiar vencimiento (solo Admin)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/expensas/<id de la expensa>/vencimiento",
+        "body": { "mode": "raw", "raw": "{\n  \"fechaVencimiento\": \"2026-10-15\",\n  \"motivo\": \"Feriado\"\n}" }
+      }
+    },
+    {
+      "name": "Generacion de expensas (informe de pendientes y excluidos)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/jobs/ejecutar-generacion?forzar=true"
+      }
+    },
+    {
+      "name": "Inmuebles de una persona (vigentes e historial)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/copropietarios/<id del copropietario>/inmuebles"
+      }
+    },
+    {
+      "name": "Saldo del inmueble (al dia, proximo pago)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/saldo"
+      }
+    },
+    {
+      "name": "Estado de cuenta (con detalle de mora por mes)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/estado-cuenta"
+      }
+    },
+    {
+      "name": "Tarifas de baulera y parqueo - listar",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/tarifas-inmueble"
+      }
+    },
+    {
+      "name": "Tarifa de parqueo - editar (solo Admin)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/tarifas-inmueble/PARQUEO",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 50\n}" }
+      }
+    },
+    {
+      "name": "Inmueble - crear parqueo con monto propio",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/inmuebles",
+        "body": { "mode": "raw", "raw": "{\n  \"codigo\": \"PAR-02\",\n  \"clase\": \"PARQUEO\",\n  \"cuotaMensual\": 80\n}" }
+      }
+    },
+    {
+      "name": "Cuenta del residente (cargo por concepto, deuda y saldo a favor)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/copropietarios/<id del copropietario>/cuenta"
+      }
+    },
+    {
+      "name": "Estado de cuenta de un mes (movimientos cronologicos, saldo anterior y final)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/estado-cuenta?mes=2026-10"
+      }
+    },
+    {
+      "name": "Estado de cuenta por rango de fechas",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/estado-cuenta?desde=2026-08-01&hasta=2026-10-31"
+      }
+    },
+    {
+      "name": "Estado de cuenta en PDF (solo Admin; inline=true para vista previa)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/estado-cuenta/pdf?mes=2026-10"
+      }
+    },
+    {
+      "name": "Pago por inmueble con Idempotency-Key (reenviarlo no cobra dos veces)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "pago-0001" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/inmuebles/<id del departamento>/pagos",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 300,\n  \"metodoPago\": \"EFECTIVO\",\n  \"fechaPago\": \"2026-10-17\",\n  \"referencia\": \"Pago de octubre\"\n}" }
+      }
+    },
+    {
+      "name": "Movimientos - categorias de gastos",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos/categorias?tipo=GASTO"
+      }
+    },
+    {
+      "name": "Movimientos - crear categoria (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/movimientos/categorias",
+        "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Jardineria\",\n  \"tipo\": \"GASTO\"\n}" }
+      }
+    },
+    {
+      "name": "Movimientos - registrar un gasto (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "gasto-0001" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/movimientos",
+        "body": { "mode": "raw", "raw": "{\n  \"tipo\": \"GASTO\",\n  \"monto\": 250.5,\n  \"fecha\": \"2026-10-17\",\n  \"categoriaId\": \"<id de una categoria de gasto>\",\n  \"concepto\": \"Reparacion de la bomba de agua\"\n}" }
+      }
+    },
+    {
+      "name": "Movimientos - registrar un ingreso con comprobante (multipart)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos",
+        "body": { "mode": "formdata", "formdata": [ { "key": "tipo", "value": "INGRESO", "type": "text" }, { "key": "monto", "value": "100", "type": "text" }, { "key": "fecha", "value": "2026-10-18", "type": "text" }, { "key": "categoriaId", "value": "<id de una categoria de ingreso>", "type": "text" }, { "key": "concepto", "value": "Alquiler del salon de eventos", "type": "text" }, { "key": "comprobante", "type": "file", "src": [] } ] }
+      }
+    },
+    {
+      "name": "Movimientos - listar (filtros: tipo, categoriaId, desde, hasta)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos?desde=2026-10-01&hasta=2026-10-31"
+      }
+    },
+    {
+      "name": "Movimientos - balance del edificio (ingresos - gastos)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos/balance?desde=2026-10-01&hasta=2026-10-31"
+      }
+    },
+    {
+      "name": "Movimientos - detalle",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos/<id del movimiento>"
+      }
+    },
+    {
+      "name": "Movimientos - editar (solo Admin)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/movimientos/<id del movimiento>",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 300,\n  \"concepto\": \"Reparacion de la bomba de agua (corregido)\"\n}" }
+      }
+    },
+    {
+      "name": "Movimientos - adjuntar o reemplazar comprobante (JPG, PNG o PDF, max 5 MB)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos/<id del movimiento>/comprobante",
+        "body": { "mode": "formdata", "formdata": [ { "key": "comprobante", "type": "file", "src": [] } ] }
+      }
+    },
+    {
+      "name": "Movimientos - ver o descargar comprobante (descargar=true)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/movimientos/<id del movimiento>/comprobante?descargar=true"
+      }
+    },
+    {
+      "name": "Plan de pagos - crear con cuotas de distinto importe (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/planes-pago",
+        "body": { "mode": "raw", "raw": "{\n  \"inmuebleId\": \"<id del departamento>\",\n  \"observacion\": \"Acuerdo con el propietario\",\n  \"cuotas\": [\n    {\n      \"monto\": 400,\n      \"fechaVencimiento\": \"2026-11-15\"\n    },\n    {\n      \"monto\": 300,\n      \"fechaVencimiento\": \"2026-12-15\"\n    },\n    {\n      \"monto\": 200,\n      \"fechaVencimiento\": \"2027-01-15\"\n    }\n  ]\n}" }
+      }
+    },
+    {
+      "name": "Plan de pagos - crear con cuotas iguales (cantidadCuotas + primerVencimiento)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/planes-pago",
+        "body": { "mode": "raw", "raw": "{\n  \"inmuebleId\": \"<id del departamento>\",\n  \"cantidadCuotas\": 3,\n  \"primerVencimiento\": \"2026-11-15\"\n}" }
+      }
+    },
+    {
+      "name": "Plan de pagos - listar",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/planes-pago?inmuebleId=<id del departamento>"
+      }
+    },
+    {
+      "name": "Plan de pagos - detalle (cuotas, saldos y estados)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/planes-pago/<id del plan>"
+      }
+    },
+    {
+      "name": "Plan de pagos - registrar pago (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "plan-pago-0001" }
+        ],
+        "url": "{{baseUrl}}/api/financiero/planes-pago/<id del plan>/pagos",
+        "body": { "mode": "raw", "raw": "{\n  \"monto\": 200,\n  \"metodoPago\": \"EFECTIVO\",\n  \"fechaPago\": \"2026-11-15\"\n}" }
+      }
+    },
+    {
+      "name": "Plan de pagos - cancelar si no tiene pagos (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/planes-pago/<id del plan>/cancelar"
+      }
+    },
+    {
+      "name": "Campanita - mis notificaciones (soloNoLeidas=true, historial=true)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/notificaciones"
+      }
+    },
+    {
+      "name": "Campanita - detalle de una notificacion (la marca como leida)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/notificaciones/<id de la notificacion>"
+      }
+    },
+    {
+      "name": "Campanita - marcar una como leida",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/notificaciones/<id de la notificacion>/leida"
+      }
+    },
+    {
+      "name": "Campanita - marcar todas como leidas",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/notificaciones/marcar-leidas"
+      }
+    },
+    {
+      "name": "Correos - registro de avisos (estado=FALLIDO u OMITIDO para ver los que no salieron)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/notificaciones/correos?estado=FALLIDO"
+      }
+    },
+    {
+      "name": "Job - generar los avisos de hoy (solo Admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/jobs/ejecutar-notificaciones"
+      }
+    },
+    {
+      "name": "Inmuebles de una persona - apartado Inmuebles y ocupacion (departamentos, bauleras, parqueos, historial)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/copropietarios/<id del copropietario>/inmuebles"
+      }
+    },
+    {
+      "name": "Saldo del edificio (saldo actual, ingresos, gastos e historial)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/saldo-edificio"
+      }
+    },
+    {
+      "name": "Saldo del edificio - por rango de fechas",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/saldo-edificio?desde=2026-10-01&hasta=2026-10-31"
+      }
+    },
+    {
+      "name": "Saldo del edificio - solo gastos del historial (tipo=GASTO o INGRESO, pagina, porPagina)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/financiero/saldo-edificio?tipo=GASTO&pagina=1&porPagina=20"
+      }
     }
   ]
 }

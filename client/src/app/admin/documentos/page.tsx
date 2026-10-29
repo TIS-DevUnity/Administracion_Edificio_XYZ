@@ -1,14 +1,14 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ClipboardList, Download, Eye, FileText, Info, Replace, Search, Trash2, Upload } from "lucide-react";
+import { ClipboardList, Download, Eye, FileText, Info, Pencil, Search, Trash2, Upload } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import {
-  ETIQUETA_ACCION_AUDITORIA,
+  etiquetaAccion,
   PaginacionAuditoria,
   RegistroAuditoria,
   listarAuditoria,
@@ -48,9 +48,11 @@ import {
   Documento,
   ETIQUETA_CATEGORIA,
   FORMATOS_PERMITIDOS,
+  MAX_DESCRIPCION_DOCUMENTO,
   TAMANIO_MAXIMO_BYTES,
   actualizarDocumento,
   eliminarDocumento,
+  establecerDescripcion,
   formatearFecha,
   formatearTamanio,
   listarDocumentos,
@@ -72,6 +74,7 @@ interface DatosPendientesSubida {
   titulo: string;
   categoria: CategoriaDocumento;
   archivo: File;
+  descripcion: string;
 }
 
 const CLASE_HEADER_TABLA =
@@ -144,17 +147,22 @@ export default function DocumentosPage() {
 
   // Diálogo de detalles
   const [documentoDetalle, setDocumentoDetalle] = useState<Documento | null>(null);
+  const [strDescripcionEditada, setStrDescripcionEditada] = useState("");
+  const [bolGuardandoDescripcion, setBolGuardandoDescripcion] = useState(false);
+  const [strErrorDescripcion, setStrErrorDescripcion] = useState("");
 
   // Diálogo de eliminar
   const [documentoEliminar, setDocumentoEliminar] = useState<Documento | null>(null);
   const [bolEliminando, setBolEliminando] = useState(false);
   const [strErrorEliminar, setStrErrorEliminar] = useState("");
 
-  // Diálogo de reemplazar archivo
-  const [documentoReemplazar, setDocumentoReemplazar] = useState<Documento | null>(null);
+  // Diálogo de editar documento (nombre, categoría y, opcionalmente, el archivo)
+  const [documentoEditar, setDocumentoEditar] = useState<Documento | null>(null);
+  const [strNombreEditado, setStrNombreEditado] = useState("");
+  const [categoriaEditada, setCategoriaEditada] = useState<CategoriaDocumento | "">("");
   const [archivoReemplazo, setArchivoReemplazo] = useState<File | null>(null);
-  const [bolReemplazando, setBolReemplazando] = useState(false);
-  const [strErrorReemplazo, setStrErrorReemplazo] = useState("");
+  const [bolGuardandoEdicion, setBolGuardandoEdicion] = useState(false);
+  const [strErrorEdicion, setStrErrorEdicion] = useState("");
 
   // Diálogo de auditoría
   const [bolDialogoAuditoria, setBolDialogoAuditoria] = useState(false);
@@ -258,7 +266,10 @@ export default function DocumentosPage() {
       formData.append("archivo", archivoRenombrado);
       formData.append("categoria", datos.categoria);
 
-      await subirDocumento(formData);
+      const documento = await subirDocumento(formData);
+      if (datos.descripcion.trim()) {
+        await establecerDescripcion(documento.id, datos.descripcion.trim());
+      }
 
       setStrExito("Documento cargado correctamente.");
       cerrarDialogoSubir();
@@ -303,6 +314,7 @@ export default function DocumentosPage() {
     const objFormulario = new FormData(event.currentTarget);
     const strTitulo = String(objFormulario.get("titulo") ?? "").trim();
     const strCategoria = String(objFormulario.get("categoria") ?? "") as CategoriaDocumento;
+    const strDescripcion = String(objFormulario.get("descripcion") ?? "");
     const archivo = objFormulario.get("archivo") as File | null;
 
     const camposFaltantes = new Set<string>();
@@ -339,7 +351,12 @@ export default function DocumentosPage() {
           doc.nombre.trim().toLowerCase() === strTitulo.toLowerCase() && doc.categoria === strCategoria
       ) ?? null;
 
-    const datos: DatosPendientesSubida = { titulo: strTitulo, categoria: strCategoria, archivo: archivo! };
+    const datos: DatosPendientesSubida = {
+      titulo: strTitulo,
+      categoria: strCategoria,
+      archivo: archivo!,
+      descripcion: strDescripcion,
+    };
 
     if (documentoExistente) {
       setObjPendienteDuplicado(datos);
@@ -413,59 +430,99 @@ export default function DocumentosPage() {
     }
   }
 
-  function abrirDialogoReemplazar(doc: Documento) {
+  function abrirDialogoEditar(doc: Documento) {
     const objValidacion = validarAccion(rol, "documentos", "crear");
     if (!objValidacion.permitido) {
       setStrMensajePermiso(objValidacion.mensaje);
       return;
     }
     setStrMensajePermiso("");
-    setStrErrorReemplazo("");
+    setStrErrorEdicion("");
+    setStrNombreEditado(doc.nombre);
+    setCategoriaEditada(doc.categoria);
     setArchivoReemplazo(null);
-    setDocumentoReemplazar(doc);
+    setDocumentoEditar(doc);
   }
 
-  function cerrarDialogoReemplazar() {
-    setDocumentoReemplazar(null);
+  function cerrarDialogoEditar() {
+    setDocumentoEditar(null);
+    setStrNombreEditado("");
+    setCategoriaEditada("");
     setArchivoReemplazo(null);
-    setStrErrorReemplazo("");
+    setStrErrorEdicion("");
   }
 
-  async function handleConfirmarReemplazo(event: FormEvent<HTMLFormElement>) {
+  async function handleGuardarEdicion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!documentoReemplazar) return;
+    if (!documentoEditar) return;
 
-    if (!archivoReemplazo) {
-      setStrErrorReemplazo("Selecciona un archivo para reemplazar el actual.");
+    const strNombreLimpio = strNombreEditado.trim();
+    if (!strNombreLimpio) {
+      setStrErrorEdicion("El nombre no puede quedar vacío.");
       return;
     }
-    if (!FORMATOS_PERMITIDOS[archivoReemplazo.type]) {
-      setStrErrorReemplazo(
-        `Formato no permitido. Formatos aceptados: ${Object.values(FORMATOS_PERMITIDOS).join(", ")}.`
-      );
+    if (!categoriaEditada) {
+      setStrErrorEdicion("Selecciona una categoría.");
       return;
     }
-    if (archivoReemplazo.size > TAMANIO_MAXIMO_BYTES) {
-      setStrErrorReemplazo("El archivo supera el tamaño máximo permitido de 10 MB.");
-      return;
+    if (archivoReemplazo) {
+      if (!FORMATOS_PERMITIDOS[archivoReemplazo.type]) {
+        setStrErrorEdicion(
+          `Formato no permitido. Formatos aceptados: ${Object.values(FORMATOS_PERMITIDOS).join(", ")}.`
+        );
+        return;
+      }
+      if (archivoReemplazo.size > TAMANIO_MAXIMO_BYTES) {
+        setStrErrorEdicion("El archivo supera el tamaño máximo permitido de 10 MB.");
+        return;
+      }
     }
 
-    setBolReemplazando(true);
-    setStrErrorReemplazo("");
+    setBolGuardandoEdicion(true);
+    setStrErrorEdicion("");
 
     try {
       const formData = new FormData();
-      formData.append("archivo", archivoReemplazo);
+      formData.append("nombre", strNombreLimpio);
+      formData.append("categoria", categoriaEditada);
+      if (archivoReemplazo) {
+        formData.append("archivo", archivoReemplazo);
+      }
 
-      await actualizarDocumento(documentoReemplazar.id, formData);
+      await actualizarDocumento(documentoEditar.id, formData);
 
-      setStrExito("Archivo reemplazado correctamente.");
-      cerrarDialogoReemplazar();
+      setStrExito("Documento actualizado correctamente.");
+      cerrarDialogoEditar();
       await cargarDocumentos();
     } catch (error) {
-      setStrErrorReemplazo(obtenerMensajeError(error, "Ocurrió un error al reemplazar el archivo."));
+      setStrErrorEdicion(obtenerMensajeError(error, "Ocurrió un error al guardar los cambios."));
     } finally {
-      setBolReemplazando(false);
+      setBolGuardandoEdicion(false);
+    }
+  }
+
+  function abrirDialogoDetalle(doc: Documento) {
+    setDocumentoDetalle(doc);
+    setStrDescripcionEditada(doc.descripcion ?? "");
+    setStrErrorDescripcion("");
+  }
+
+  async function handleGuardarDescripcion() {
+    if (!documentoDetalle) return;
+
+    setBolGuardandoDescripcion(true);
+    setStrErrorDescripcion("");
+
+    try {
+      const descripcionLimpia = strDescripcionEditada.trim() || null;
+      const documentoActualizado = await establecerDescripcion(documentoDetalle.id, descripcionLimpia);
+      setDocumentoDetalle(documentoActualizado);
+      setStrExito("Descripción actualizada correctamente.");
+      await cargarDocumentos();
+    } catch (error) {
+      setStrErrorDescripcion(obtenerMensajeError(error, "Ocurrió un error al guardar la descripción."));
+    } finally {
+      setBolGuardandoDescripcion(false);
     }
   }
 
@@ -634,7 +691,7 @@ export default function DocumentosPage() {
                           variant="ghost"
                           size="icon-sm"
                           title="Ver detalles"
-                          onClick={() => setDocumentoDetalle(doc)}
+                          onClick={() => abrirDialogoDetalle(doc)}
                         >
                           <Info className="h-4 w-4" />
                         </Button>
@@ -660,10 +717,10 @@ export default function DocumentosPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            title="Reemplazar archivo"
-                            onClick={() => abrirDialogoReemplazar(doc)}
+                            title="Editar documento"
+                            onClick={() => abrirDialogoEditar(doc)}
                           >
-                            <Replace className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" />
                           </Button>
                         )}
                         {bolPuedeEliminar && (
@@ -751,6 +808,19 @@ export default function DocumentosPage() {
               </div>
 
               <div className="flex flex-col gap-1">
+                <label htmlFor="descripcion" className="text-[12px] font-medium text-foreground">
+                  Descripción <span className="text-muted-foreground">(opcional)</span>
+                </label>
+                <textarea
+                  id="descripcion"
+                  name="descripcion"
+                  rows={2}
+                  maxLength={MAX_DESCRIPCION_DOCUMENTO}
+                  className={`${claseCampo(false)} h-auto resize-none py-2`}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
                 <label htmlFor="archivo" className="text-[12px] font-medium text-foreground">
                   Archivo <span className="text-muted-foreground">(PDF, DOCX, JPG o PNG · máx. 10 MB)</span>
                 </label>
@@ -780,7 +850,7 @@ export default function DocumentosPage() {
                 <Button type="button" variant="outline" onClick={cerrarDialogoSubir} disabled={bolSubiendo}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={bolSubiendo}>
+                <Button type="submit" cargando={bolSubiendo}>
                   {bolSubiendo ? "Subiendo..." : "Subir"}
                 </Button>
               </DialogFooter>
@@ -865,9 +935,33 @@ export default function DocumentosPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="descripcionDetalle" className="text-[12px] font-medium text-foreground">
+                  Descripción <span className="text-muted-foreground">(opcional)</span>
+                </label>
+                <textarea
+                  id="descripcionDetalle"
+                  rows={2}
+                  maxLength={MAX_DESCRIPCION_DOCUMENTO}
+                  value={strDescripcionEditada}
+                  onChange={(event) => setStrDescripcionEditada(event.target.value)}
+                  className={`${claseCampo(false)} h-auto resize-none py-2`}
+                />
+                {strErrorDescripcion && (
+                  <p className="text-[12px] text-destructive">{strErrorDescripcion}</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setDocumentoDetalle(null)}>
                   Cerrar
+                </Button>
+                <Button
+                  onClick={handleGuardarDescripcion}
+                  cargando={bolGuardandoDescripcion}
+                  disabled={strDescripcionEditada === (documentoDetalle.descripcion ?? "")}
+                >
+                  {bolGuardandoDescripcion ? "Guardando..." : "Guardar descripción"}
                 </Button>
               </div>
             </div>
@@ -896,28 +990,62 @@ export default function DocumentosPage() {
             <Button variant="outline" onClick={() => setDocumentoEliminar(null)} disabled={bolEliminando}>
               Cancelar
             </Button>
-            <Button variant="destructive" onClick={handleConfirmarEliminar} disabled={bolEliminando}>
+            <Button variant="destructive" onClick={handleConfirmarEliminar} cargando={bolEliminando}>
               {bolEliminando ? "Eliminando..." : "Eliminar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo: reemplazar archivo */}
-      <Dialog open={documentoReemplazar !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoReemplazar()}>
+      {/* Diálogo: editar documento (nombre, categoría y, opcionalmente, el archivo) */}
+      <Dialog open={documentoEditar !== null} onOpenChange={(bolOpen) => !bolOpen && cerrarDialogoEditar()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className={CLASE_TITULO_DIALOGO}>Reemplazar archivo</DialogTitle>
+            <DialogTitle className={CLASE_TITULO_DIALOGO}>Editar documento</DialogTitle>
             <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">
-              {documentoReemplazar &&
-                `Se reemplazará el archivo de "${documentoReemplazar.nombre}". El nombre y la categoría no cambian.`}
+              Modifica el nombre o la categoría, y reemplaza el archivo si hace falta.
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleConfirmarReemplazo} className="flex flex-col gap-3">
+          <form onSubmit={handleGuardarEdicion} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="nombreEditado" className="text-[12px] font-medium text-foreground">
+                Nombre
+              </label>
+              <input
+                id="nombreEditado"
+                value={strNombreEditado}
+                onChange={(event) => setStrNombreEditado(event.target.value)}
+                autoComplete="off"
+                className={claseCampo(false)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label htmlFor="categoriaEditada" className="text-[12px] font-medium text-foreground">
+                Categoría
+              </label>
+              <select
+                id="categoriaEditada"
+                value={categoriaEditada}
+                onChange={(event) => setCategoriaEditada(event.target.value as CategoriaDocumento)}
+                className={claseCampo(false)}
+              >
+                {/* Las 7 categorías del backend, no solo las 5 del formulario de carga:
+                    un documento existente puede tener FACTURA o FOTOGRAFIA (reservadas para
+                    cargas automáticas) y debe poder verse/editarse igual. */}
+                {(Object.keys(ETIQUETA_CATEGORIA) as CategoriaDocumento[]).map((cat) => (
+                  <option key={cat} value={cat}>
+                    {ETIQUETA_CATEGORIA[cat]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex flex-col gap-1">
               <label htmlFor="archivoReemplazo" className="text-[12px] font-medium text-foreground">
-                Nuevo archivo <span className="text-muted-foreground">(PDF, DOCX, JPG o PNG · máx. 10 MB)</span>
+                Reemplazar archivo{" "}
+                <span className="text-muted-foreground">(opcional · PDF, DOCX, JPG o PNG · máx. 10 MB)</span>
               </label>
               <input
                 id="archivoReemplazo"
@@ -928,18 +1056,18 @@ export default function DocumentosPage() {
               />
             </div>
 
-            {strErrorReemplazo && (
+            {strErrorEdicion && (
               <p className="rounded-lg border border-destructive/20 bg-danger-subtle px-3 py-2 text-[13px] text-destructive">
-                {strErrorReemplazo}
+                {strErrorEdicion}
               </p>
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={cerrarDialogoReemplazar} disabled={bolReemplazando}>
+              <Button type="button" variant="outline" onClick={cerrarDialogoEditar} disabled={bolGuardandoEdicion}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={bolReemplazando}>
-                {bolReemplazando ? "Reemplazando..." : "Reemplazar"}
+              <Button type="submit" cargando={bolGuardandoEdicion}>
+                {bolGuardandoEdicion ? "Guardando..." : "Guardar cambios"}
               </Button>
             </DialogFooter>
           </form>
@@ -982,7 +1110,7 @@ export default function DocumentosPage() {
                     <div key={registro.id} className="rounded-lg border border-border px-3 py-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <Badge variant="secondary" className="font-caption text-[11px]">
-                          {ETIQUETA_ACCION_AUDITORIA[registro.accion]}
+                          {etiquetaAccion(registro.accion)}
                         </Badge>
                         <p className="font-caption text-[11px] text-muted-foreground">
                           {formatearFecha(registro.createdAt)}

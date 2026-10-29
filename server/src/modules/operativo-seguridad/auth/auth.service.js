@@ -14,6 +14,7 @@ async function login({ email, password, ip }) {
   if (!passwordValida) {
     await registrarAuditoria({
       usuarioId: usuario.id,
+      rol: usuario.rol,
       accion: "LOGIN_FALLIDO",
       entidad: "Usuario",
       entidadId: usuario.id,
@@ -29,6 +30,7 @@ async function login({ email, password, ip }) {
 
   await registrarAuditoria({
     usuarioId: usuario.id,
+    rol: usuario.rol,
     accion: "LOGIN",
     entidad: "Usuario",
     entidadId: usuario.id,

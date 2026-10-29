@@ -52,6 +52,23 @@ async function actualizar(req, res, next) {
   }
 }
 
+async function describir(req, res, next) {
+  try {
+    const { descripcion } = req.body;
+    if (descripcion === undefined) {
+      throw Object.assign(new Error("El campo descripcion es requerido"), { status: 400 });
+    }
+    const documento = await documentosService.describir(req.params.id, {
+      descripcion,
+      actorId: req.usuario.id,
+      ip: req.ip,
+    });
+    res.json({ documento });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function eliminar(req, res, next) {
   try {
     await documentosService.eliminar(req.params.id, { actorId: req.usuario.id, ip: req.ip });
@@ -61,4 +78,4 @@ async function eliminar(req, res, next) {
   }
 }
 
-module.exports = { listar, obtener, crear, actualizar, eliminar };
+module.exports = { listar, obtener, crear, actualizar, describir, eliminar };

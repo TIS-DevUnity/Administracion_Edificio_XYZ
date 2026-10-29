@@ -32,6 +32,7 @@ export interface Documento {
   id: string;
   nombre: string;
   categoria: CategoriaDocumento;
+  descripcion: string | null;
   mimeType: string;
   tamanioBytes: number;
   entidad: string | null;
@@ -39,6 +40,8 @@ export interface Documento {
   subidoPorId: string | null;
   createdAt: string;
 }
+
+export const MAX_DESCRIPCION_DOCUMENTO = 1000;
 
 export const FORMATOS_PERMITIDOS: Record<string, string> = {
   "application/pdf": "PDF",
@@ -49,8 +52,19 @@ export const FORMATOS_PERMITIDOS: Record<string, string> = {
 
 export const TAMANIO_MAXIMO_BYTES = 10 * 1024 * 1024; // 10 MB
 
-export async function listarDocumentos(): Promise<Documento[]> {
-  const response = await api.get<{ documentos: Documento[] }>("/documentos");
+// Subconjunto de FORMATOS_PERMITIDOS para comprobantes de pago: el criterio de
+// aceptación pide una "foto del comprobante", no un PDF/DOCX.
+export const FORMATOS_PERMITIDOS_COMPROBANTE: Record<string, string> = {
+  "image/jpeg": "JPG",
+  "image/png": "PNG",
+};
+
+export async function listarDocumentos(filtros?: {
+  categoria?: CategoriaDocumento;
+  entidad?: string;
+  entidadId?: string;
+}): Promise<Documento[]> {
+  const response = await api.get<{ documentos: Documento[] }>("/documentos", { params: filtros });
   return response.data.documentos;
 }
 
@@ -75,6 +89,13 @@ export async function actualizarDocumento(id: string, formData: FormData): Promi
 
 export async function eliminarDocumento(id: string): Promise<void> {
   await api.delete(`/documentos/${id}`);
+}
+
+export async function establecerDescripcion(id: string, descripcion: string | null): Promise<Documento> {
+  const response = await api.patch<{ documento: Documento }>(`/documentos/${id}/descripcion`, {
+    descripcion,
+  });
+  return response.data.documento;
 }
 
 export function formatearFecha(strFechaISO: string): string {

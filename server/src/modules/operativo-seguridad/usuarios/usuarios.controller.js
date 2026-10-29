@@ -23,7 +23,7 @@ async function obtener(req, res, next) {
 
 async function crear(req, res, next) {
   try {
-    const { nombre, apellido, email, password, rol } = req.body;
+    const { nombre, apellido, email, password, rol, copropietarioId } = req.body;
     if (!nombre || !apellido || !email || !password || !rol) {
       return res.status(400).json({ error: "nombre, apellido, email, password y rol son requeridos" });
     }
@@ -34,6 +34,9 @@ async function crear(req, res, next) {
     if (!ROLES_VALIDOS.includes(rol)) {
       return res.status(400).json({ error: `rol debe ser uno de: ${ROLES_VALIDOS.join(", ")}` });
     }
+    if (copropietarioId !== undefined && copropietarioId !== null && typeof copropietarioId !== "string") {
+      return res.status(400).json({ error: "copropietarioId debe ser un texto o null" });
+    }
 
     const usuario = await usuariosService.crear({
       nombre,
@@ -41,6 +44,7 @@ async function crear(req, res, next) {
       email,
       password,
       rol,
+      copropietarioId,
       actorId: req.usuario.id,
       ip: req.ip,
     });
@@ -52,14 +56,17 @@ async function crear(req, res, next) {
 
 async function actualizar(req, res, next) {
   try {
-    const { nombre, apellido, email, rol } = req.body;
+    const { nombre, apellido, email, rol, copropietarioId } = req.body;
     if (rol && !ROLES_VALIDOS.includes(rol)) {
       return res.status(400).json({ error: `rol debe ser uno de: ${ROLES_VALIDOS.join(", ")}` });
+    }
+    if (copropietarioId !== undefined && copropietarioId !== null && typeof copropietarioId !== "string") {
+      return res.status(400).json({ error: "copropietarioId debe ser un texto o null" });
     }
 
     const usuario = await usuariosService.actualizar(
       req.params.id,
-      { nombre, apellido, email, rol },
+      { nombre, apellido, email, rol, copropietarioId },
       { actorId: req.usuario.id, ip: req.ip }
     );
     res.json({ usuario });

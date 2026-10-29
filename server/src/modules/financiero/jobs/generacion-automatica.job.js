@@ -1,82 +1,171 @@
 const prisma = require('../../../config/prisma')
+const { filtroPagaExpensa } = require('../../operativo-seguridad/inmuebles/asignacion.util')
 const expensasService = require('../expensas/expensas.service')
 const configuracionMoraService = require('../configuracion-mora/configuracion-mora.service')
 const notificacionesService = require('../notificaciones/notificaciones.service')
+const campanita = require('../notificaciones/campanita.service')
+const planesPagoService = require('../planes-pago/planes-pago.service')
+const { fechaEnZona, vencimientoDelPeriodo } = require('../expensas/mora.util')
 
+/** Periodo (YYYY-MM) de una fecha, visto en hora de Bolivia. */
 function periodoActual(fecha = new Date()) {
-  const anio = fecha.getFullYear()
-  const mes = String(fecha.getMonth() + 1).padStart(2, '0')
-  return `${anio}-${mes}`
+  return fechaEnZona(fecha).slice(0, 7)
 }
 
-function ultimoDiaDelMes(fecha = new Date()) {
-  return new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0)
+/** Dia del mes de una fecha, visto en hora de Bolivia. */
+function diaDelMes(fecha = new Date()) {
+  return Number(fechaEnZona(fecha).slice(8, 10))
 }
 
 /**
- * Si hoy coincide con el dia de generacion configurado (o si se pasa
- * { forzar: true }, usado por el endpoint manual de administracion), genera
- * la expensa del periodo actual para cada inmueble activo que todavia no la
- * tenga, y notifica por correo a sus ocupantes. Un inmueble que ya tiene
- * expensa (o falla por cualquier otro motivo) no debe frenar a los demas.
+ * Si hoy es el dia de generacion configurado, o uno posterior en que el periodo todavia no
+ * se genero (por ejemplo, el servidor estaba apagado ese dia), o si se pasa
+ * { forzar: true } (usado por el endpoint manual de administracion), genera
+ * la expensa del periodo actual para cada departamento activo y con alguien
+ * asignado que todavia no la tenga, y notifica por correo a sus ocupantes.
+ * Un inmueble que ya tiene expensa (o falla por cualquier otro motivo) no
+ * debe frenar a los demas. El agua no se genera aqui: nace en 0 y el
+ * administrador la carga despues expensa por expensa.
+ *
+ * `usuarioId` / `ip` solo vienen cuando lo dispara un administrador a mano; el cron
+ * real los deja en null y la auditoria lo registra como origen AUTOMATICO.
  */
-async function ejecutarGeneracionAutomatica(fecha = new Date(), { forzar = false } = {}) {
+async function ejecutarGeneracionAutomatica(
+  fecha = new Date(),
+  { forzar = false, usuarioId = null, ip = null } = {}
+) {
   const config = await configuracionMoraService.obtenerVigente().catch(() => null)
   if (!config) {
     console.warn('[cron:expensas] No hay configuracion de mora vigente, se omite la generacion')
     return { generadas: 0, omitidas: 0 }
   }
 
-  if (!forzar && fecha.getDate() !== config.diaGeneracion) {
+  const periodo = periodoActual(fecha)
+  const dia = diaDelMes(fecha)
+  if (!forzar && dia < config.diaGeneracion) {
     return { generadas: 0, omitidas: 0, motivo: 'no es el dia de generacion' }
   }
+  // Pasado el dia de generacion solo se recupera un mes que nunca se genero: si el periodo ya tiene
+  // expensas no se hace nada (el dia exacto sigue completando los inmuebles que falten).
+  if (!forzar && dia > config.diaGeneracion && (await prisma.expensa.count({ where: { periodo } })) > 0) {
+    return { generadas: 0, omitidas: 0, motivo: 'el periodo ya fue generado' }
+  }
+  const fechaVencimiento = vencimientoDelPeriodo(periodo, config.diaVencimiento)
 
-  const periodo = periodoActual(fecha)
-  const fechaVencimiento = ultimoDiaDelMes(fecha)
-
-  const inmuebles = await prisma.inmueble.findMany({ where: { activo: true } })
+  const inmuebles = await prisma.inmueble.findMany({
+    where: filtroPagaExpensa(fecha),
+    orderBy: { codigo: 'asc' }
+  })
 
   let generadas = 0
-  let omitidas = 0
+  const correos = { enviados: 0, fallidos: 0, omitidos: 0 }
+  const nuevas = []
+  const yaGeneradas = []
+  const pendientes = []
+
+  // Las que ya tienen expensa del periodo se saltan: asi reintentar no genera errores ni duplica.
+  const existentes = await prisma.expensa.findMany({
+    where: { periodo, inmuebleId: { in: inmuebles.map((inmueble) => inmueble.id) } },
+    select: { inmuebleId: true }
+  })
+  const conExpensa = new Set(existentes.map((expensa) => expensa.inmuebleId))
 
   for (const inmueble of inmuebles) {
+    if (conExpensa.has(inmueble.id)) {
+      yaGeneradas.push(inmueble.codigo)
+      continue
+    }
     try {
       const expensa = await expensasService.generar({
         inmuebleId: inmueble.id,
         periodo,
-        fechaVencimiento
+        fechaVencimiento,
+        usuarioId,
+        ip,
+        origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO',
+        configuracion: config
       })
       generadas += 1
-      await notificacionesService.notificarExpensaGenerada(expensa)
+      nuevas.push(expensa)
     } catch (err) {
-      // Ya existe expensa para este inmueble/periodo, o el inmueble esta inactivo:
-      // no es un error fatal del job, se contabiliza y se sigue con el resto.
-      omitidas += 1
-      console.warn(`[cron:expensas] Inmueble ${inmueble.codigo}: ${err.message}`)
+      // No es un error fatal del job: se conserva lo generado y se sigue con el resto.
+      // Una expensa que ya existia no es un problema; cualquier otro motivo queda como
+      // pendiente para corregirlo y volver a ejecutar (lo ya generado no se duplica).
+      if (err.codigo === 'EXPENSA_DUPLICADA') {
+        yaGeneradas.push(inmueble.codigo)
+      } else {
+        pendientes.push({ inmuebleId: inmueble.id, codigo: inmueble.codigo, motivo: err.message })
+        console.warn(`[cron:expensas] Inmueble ${inmueble.codigo}: ${err.message}`)
+      }
+    }
+  }
+
+  // Departamentos que no entran en esta generacion y por que (baulera y parqueo no pagan).
+  const pagan = new Set(inmuebles.map((inmueble) => inmueble.id))
+  const otrosDepartamentos = await prisma.inmueble.findMany({
+    where: { clase: 'DEPARTAMENTO', id: { notIn: [...pagan] } },
+    select: { codigo: true, activo: true },
+    orderBy: { codigo: 'asc' }
+  })
+  const excluidos = otrosDepartamentos.map((inmueble) => ({
+    codigo: inmueble.codigo,
+    motivo: inmueble.activo ? 'Sin nadie asignado' : 'Inmueble inactivo'
+  }))
+  const omitidas = yaGeneradas.length + pendientes.length
+
+  // Se vuelven a leer para avisar con los montos tal como quedaron guardados.
+  if (nuevas.length > 0) {
+    const vigentes = await prisma.expensa.findMany({
+      where: { id: { in: nuevas.map((expensa) => expensa.id) } },
+      include: { inmueble: true, cargos: { orderBy: [{ clase: 'asc' }, { codigo: 'asc' }] } }
+    })
+    for (const expensa of vigentes) {
+      // El aviso por correo nunca frena la generacion: si falla, queda registrado el motivo.
+      const resultado = await notificacionesService.notificarExpensaGenerada(expensa).catch((err) => {
+        console.warn(`[cron:expensas] Aviso por correo de ${expensa.id}: ${err.message}`)
+        return null
+      })
+      if (resultado) {
+        correos.enviados += resultado.enviados
+        correos.fallidos += resultado.fallidos
+        correos.omitidos += resultado.omitidos
+      }
     }
   }
 
   console.log(
-    `[cron:expensas] Generacion automatica ${periodo}: ${generadas} generadas, ${omitidas} omitidas`
+    `[cron:expensas] Generacion automatica ${periodo}: ${generadas} generadas, ` +
+      `${yaGeneradas.length} ya existian, ${pendientes.length} pendientes`
   )
-  return { generadas, omitidas }
+  return { periodo, generadas, omitidas, yaGeneradas, pendientes, excluidos, correos }
 }
 
 /**
- * Revisa todas las expensas pendientes/parciales y aplica mora a las que ya
- * pasaron su fecha de vencimiento + dias de gracia, notificando por correo.
+ * Revisa las expensas con deuda y deja la mora al dia: genera una linea por cada mes de
+ * atraso que todavia no tenga. El correo se envia unicamente cuando se agrega mora nueva,
+ * asi un pago parcial no provoca avisos repetidos.
  */
-async function ejecutarAplicacionMoraAutomatica() {
-  const expensasVencibles = await prisma.expensa.findMany({
-    where: { estado: { in: ['PENDIENTE', 'PARCIAL'] } }
+async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } = {}) {
+  const config = await configuracionMoraService.obtenerVigente().catch(() => null)
+  if (!config) {
+    console.warn('[cron:mora] No hay configuracion de mora vigente, se omite la aplicacion')
+    return { aplicadas: 0 }
+  }
+
+  const expensasConDeuda = await prisma.expensa.findMany({
+    where: { estado: { in: ['PENDIENTE', 'PARCIAL', 'VENCIDA'] } }
   })
 
   let aplicadas = 0
 
-  for (const expensa of expensasVencibles) {
+  for (const expensa of expensasConDeuda) {
     try {
-      const resultado = await expensasService.aplicarMora(expensa.id)
-      if (resultado.estado === 'VENCIDA') {
+      const resultado = await expensasService.aplicarMora(expensa.id, {
+        usuarioId,
+        ip,
+        origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO'
+      })
+      if (resultado.moraActualizada) {
         aplicadas += 1
         await notificacionesService.notificarMoraAplicada(resultado)
       }
@@ -85,13 +174,33 @@ async function ejecutarAplicacionMoraAutomatica() {
     }
   }
 
-  console.log(`[cron:mora] Aplicacion automatica de mora: ${aplicadas} expensas marcadas VENCIDA`)
+  console.log(`[cron:mora] Aplicacion automatica de mora: ${aplicadas} expensas con mora nueva`)
   return { aplicadas }
+}
+
+/**
+ * Proceso diario de avisos: crea las notificaciones de la campanita que correspondan hoy
+ * (proximo vencimiento, fin de gracia, vencida, deuda con mora) y marca las cuotas de planes de
+ * pago que vencieron sin pagarse. Se puede repetir sin duplicar avisos.
+ */
+async function ejecutarNotificacionesDiarias({ hoy = new Date() } = {}) {
+  const cuotasVencidas = await planesPagoService.marcarCuotasVencidas(periodoHoy(hoy))
+  const avisos = await campanita.ejecutarNotificacionesAutomaticas({ hoy })
+  console.log(
+    `[cron:notificaciones] ${avisos.creadas} avisos nuevos en ${avisos.revisadas} expensas revisadas, ` +
+      `${cuotasVencidas} cuotas marcadas vencidas`
+  )
+  return { cuotasMarcadasVencidas: cuotasVencidas, ...avisos }
+}
+
+/** Dia (YYYY-MM-DD) de una fecha en hora de Bolivia. */
+function periodoHoy(fecha) {
+  return fechaEnZona(fecha)
 }
 
 module.exports = {
   periodoActual,
-  ultimoDiaDelMes,
   ejecutarGeneracionAutomatica,
-  ejecutarAplicacionMoraAutomatica
+  ejecutarAplicacionMoraAutomatica,
+  ejecutarNotificacionesDiarias
 }
