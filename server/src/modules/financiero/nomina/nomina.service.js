@@ -1,9 +1,12 @@
 const { randomUUID } = require('node:crypto')
+const { Prisma } = require('@prisma/client')
 const prisma = require('../../../config/prisma')
 const { Decimal, errorHttp } = require('../expensas/saldo.util')
 const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
+const { distribuirAnticipos } = require('../anticipos/anticipos.util')
 const util = require('./nomina.util')
 
+const OPCIONES_TX = { timeout: 15000 } // la generacion recorre a todos los empleados activos
 const POR_PAGINA_DEFECTO = 50
 const POR_PAGINA_MAXIMO = 200
 
@@ -25,6 +28,62 @@ function normalizarPagina(pagina, porPagina) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Descuento automatico de anticipos en las nominas recien insertadas (`nominas`: { id, empleadoId, sueldoBase }).
+ * Por cada empleado se bloquean (FOR UPDATE) sus anticipos PENDIENTE/PARCIAL con fecha hasta el ultimo dia del
+ * periodo y se reparten del mas antiguo al mas nuevo hasta el sueldo base (la nomina nace sin conceptos, asi
+ * que el neto nunca queda negativo). Lo que no cabe sigue pendiente para la nomina siguiente. Guarda cada
+ * AplicacionAnticipo, actualiza montoDescontado y estado del anticipo, y deja totalAnticipos y sueldoNeto de
+ * la nomina calculados. Devuelve el detalle de cada aplicacion para auditarlo despues del commit.
+ */
+async function aplicarAnticipos(tx, nominas, ultimoDia) {
+  if (nominas.length === 0) return []
+  const empleadoIds = nominas.map((n) => n.empleadoId)
+  const hasta = new Date(`${ultimoDia}T00:00:00Z`)
+
+  await tx.$queryRaw`
+    SELECT "id" FROM "anticipos_salariales"
+    WHERE "empleadoId" IN (${Prisma.join(empleadoIds)})
+      AND "estado" IN ('PENDIENTE', 'PARCIAL')
+      AND "fecha" <= ${ultimoDia}::date
+    ORDER BY "fecha", "createdAt", "id"
+    FOR UPDATE`
+  const anticipos = await tx.anticipoSalarial.findMany({
+    where: { empleadoId: { in: empleadoIds }, estado: { in: ['PENDIENTE', 'PARCIAL'] }, fecha: { lte: hasta } },
+    orderBy: [{ fecha: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]
+  })
+
+  const descuentos = []
+  for (const nomina of nominas) {
+    const propios = anticipos.filter((a) => a.empleadoId === nomina.empleadoId)
+    const { aplicaciones, total } = distribuirAnticipos(propios, nomina.sueldoBase)
+    if (aplicaciones.length === 0) continue
+
+    await tx.aplicacionAnticipo.createMany({
+      data: aplicaciones.map((a) => ({ anticipoId: a.anticipoId, nominaId: nomina.id, monto: a.monto }))
+    })
+    for (const a of aplicaciones) {
+      const antes = propios.find((p) => p.id === a.anticipoId)
+      await tx.anticipoSalarial.update({
+        where: { id: a.anticipoId },
+        data: { montoDescontado: a.montoDescontado, estado: a.estado }
+      })
+      descuentos.push({
+        anticipoId: a.anticipoId,
+        nominaId: nomina.id,
+        monto: util.dinero(a.monto),
+        descontadoAntes: util.dinero(antes.montoDescontado),
+        descontadoDespues: util.dinero(a.montoDescontado),
+        estadoAntes: antes.estado,
+        estadoDespues: a.estado
+      })
+    }
+    const totales = util.validarNetoNoNegativo(util.calcularTotales([], nomina.sueldoBase, total))
+    await tx.nomina.update({ where: { id: nomina.id }, data: util.totalesParaGuardar(totales) })
+  }
+  return descuentos
+}
+
+/**
  * Crea una nomina PENDIENTE por cada empleado ACTIVO que ya habia ingresado a mas tardar el ultimo dia del
  * periodo y que todavia no tiene nomina de ese periodo. Copia el sueldo base actual del empleado. Es
  * idempotente: las que ya existen se omiten (createMany con skipDuplicates, porque un P2002 dentro de una
@@ -35,7 +94,7 @@ async function generar({ periodo, usuarioId, ip }) {
   const per = util.validarPeriodoGenerable(periodo)
   const ultimoDia = util.ultimoDiaDelPeriodo(per)
 
-  const { creadas, omitidas } = await prisma.$transaction(async (tx) => {
+  const { creadas, omitidas, descuentos } = await prisma.$transaction(async (tx) => {
     const empleados = await tx.empleado.findMany({
       where: { estado: 'ACTIVO', fechaIngreso: { lte: new Date(`${ultimoDia}T00:00:00Z`) } },
       orderBy: [{ apellidos: 'asc' }, { nombres: 'asc' }]
@@ -61,15 +120,24 @@ async function generar({ periodo, usuarioId, ip }) {
       }
     })
     if (filas.length) await tx.nomina.createMany({ data: filas, skipDuplicates: true })
+    // Solo las que esta llamada inserto de verdad: las que ya existian, o las que creo otra generacion en
+    // paralelo, no reciben descuento de anticipos.
     const insertadas = filas.length
       ? await tx.nomina.findMany({
           where: { id: { in: filas.map((f) => f.id) } },
+          select: { id: true, empleadoId: true, sueldoBase: true }
+        })
+      : []
+    const descuentos = await aplicarAnticipos(tx, insertadas, ultimoDia)
+    const creadas = insertadas.length
+      ? await tx.nomina.findMany({
+          where: { id: { in: insertadas.map((n) => n.id) } },
           include: { empleado: INCLUIR_EMPLEADO },
           orderBy: [{ empleado: { apellidos: 'asc' } }, { empleado: { nombres: 'asc' } }]
         })
       : []
-    return { creadas: insertadas, omitidas: empleados.length - insertadas.length }
-  })
+    return { creadas, omitidas: empleados.length - insertadas.length, descuentos }
+  }, OPCIONES_TX)
 
   for (const nomina of creadas) {
     await registrarAuditoria({
@@ -81,7 +149,26 @@ async function generar({ periodo, usuarioId, ip }) {
         periodo: per,
         empleado: `${nomina.empleado.nombres} ${nomina.empleado.apellidos}`,
         documento: nomina.empleado.documento,
-        sueldoBase: util.dinero(nomina.sueldoBase)
+        sueldoBase: util.dinero(nomina.sueldoBase),
+        totalAnticipos: util.dinero(nomina.totalAnticipos),
+        sueldoNeto: util.dinero(nomina.sueldoNeto)
+      },
+      ip
+    })
+  }
+  for (const d of descuentos) {
+    await registrarAuditoria({
+      usuarioId,
+      accion: 'UPDATE',
+      entidad: 'AnticipoSalarial',
+      entidadId: d.anticipoId,
+      detalle: {
+        motivo: 'DESCUENTO_NOMINA',
+        nominaId: d.nominaId,
+        periodo: per,
+        montoAplicado: d.monto,
+        montoDescontado: { antes: d.descontadoAntes, despues: d.descontadoDespues },
+        estado: { antes: d.estadoAntes, despues: d.estadoDespues }
       },
       ip
     })

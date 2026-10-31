@@ -20,6 +20,13 @@ const SUPERVISION = autorizar('ADMINISTRADOR', 'DIRECTORIO')
  *       del empleado: un cambio de sueldo posterior no la altera. Es idempotente: repetir la generacion omite las
  *       nominas que ya existen. Los empleados inactivos no entran; sus nominas anteriores se conservan.
  *       No se puede generar un periodo posterior al mes actual (hora de Bolivia).
+ *
+ *       Descuento de anticipos: al crear cada nomina se descuentan los anticipos PENDIENTE o PARCIAL del empleado
+ *       con fecha hasta el ultimo dia del periodo, del mas antiguo al mas nuevo y hasta donde alcance el sueldo base
+ *       (el neto nunca queda negativo). Lo que no cabe queda pendiente para la nomina siguiente. Solo se tocan las
+ *       nominas que esta llamada creo: una nomina ya generada no se modifica, y un anticipo registrado despues de
+ *       generar la de su mes se descuenta en la siguiente. `totalAnticipos` y `sueldoNeto` de la respuesta ya
+ *       incluyen el descuento.
  *       Responde 201 si se creo alguna nomina y 200 si no habia nada nuevo.
  *     tags: [Nómina]
  *     security: [{ bearerAuth: [] }]
