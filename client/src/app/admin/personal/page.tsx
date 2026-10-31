@@ -3,6 +3,8 @@ import { ArrowUpRight, ClipboardList, Banknote, ChartColumnIncreasing, Users, Ha
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const enlaces = [
+  { href: "/admin/personal/empleados", titulo: "Empleados", descripcion: "Registro, consulta y edición del personal, su cargo, sueldo base y estado", Icono: Users },
+  { href: "/admin/personal/anticipos", titulo: "Anticipos salariales", descripcion: "Registro de anticipos, pendientes de descuento y comprobantes PDF", Icono: HandCoins },
   { href: "/admin/personal/nomina", titulo: "Nómina mensual", descripcion: "Generación de nóminas, revisión de sueldos y estados de pago", Icono: ClipboardList },
   { href: "/admin/personal/nomina/pagos", titulo: "Pagos e historial", descripcion: "Consulta de pagos, métodos utilizados y boletas anteriores", Icono: Banknote },
   { href: "/admin/personal/nomina/reportes", titulo: "Reportes de personal", descripcion: "Gastos salariales, filtros mensuales y exportación PDF", Icono: ChartColumnIncreasing },
@@ -31,19 +33,9 @@ export default function PaginaPersonal() {
           </Link>
         ))}
       </div>
-      <div className="space-y-2">
-        <h3 className="font-subtitle text-[14px] text-foreground">Próximas integraciones · Frontend 1</h3>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Card className="opacity-75"><CardContent className="flex items-center gap-3">
-            <Users className="h-5 w-5 text-muted-foreground" />
-            <div><p className="font-subtitle text-[13px]">Empleados</p><p className="font-caption text-[11px] text-muted-foreground">Registro, consulta y edición · pendiente de integrar</p></div>
-          </CardContent></Card>
-          <Card className="opacity-75"><CardContent className="flex items-center gap-3">
-            <HandCoins className="h-5 w-5 text-muted-foreground" />
-            <div><p className="font-subtitle text-[13px]">Anticipos y conceptos</p><p className="font-caption text-[11px] text-muted-foreground">Gestión de anticipos, bonos y descuentos · pendiente de integrar</p></div>
-          </CardContent></Card>
-        </div>
-      </div>
+      <p className="font-caption text-[11px] text-muted-foreground">
+        Los bonos, horas extra y descuentos se registran en el detalle de cada nómina pendiente (Nómina mensual → Detalle).
+      </p>
     </section>
   );
 }
