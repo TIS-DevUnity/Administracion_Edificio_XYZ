@@ -7,11 +7,12 @@ import { cajaBancosService } from "@/services/caja-bancos.service";
 import { nominaService, mensajeErrorNomina } from "@/services/nomina.service";
 import type { Nomina, MetodoPagoNomina } from "@/types/nomina";
 import { dinero, fechaActualBolivia, nombreEmpleado } from "./nomina-utils";
+import { abrirCalendario } from "@/components/personal/PersonalUI";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ErrorNomina, CLASE_LABEL } from "./NominaUI";
+import { ErrorNomina, CLASE_LABEL, CLASE_TITULO_DIALOGO } from "./NominaUI";
 
 /** Pago definitivo; el sueldo neto siempre viene de backend. */
 export function PagarNominaDialog({ nomina, abierto, onCerrar, onPagada }: {
@@ -64,8 +65,8 @@ export function PagarNominaDialog({ nomina, abierto, onCerrar, onPagada }: {
   return <Dialog open={abierto} onOpenChange={(v) => { if (!v && !enviando) { setError(""); onCerrar(); } }}>
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
       <DialogHeader>
-        <DialogTitle className="font-subtitle">Confirmar pago de nómina</DialogTitle>
-        <DialogDescription>Esta operación es definitiva. Una nómina pagada no podrá modificarse ni pagarse nuevamente.</DialogDescription>
+        <DialogTitle className={CLASE_TITULO_DIALOGO}>Confirmar pago de nómina</DialogTitle>
+        <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">Esta operación es definitiva. Una nómina pagada no podrá modificarse ni pagarse nuevamente.</DialogDescription>
       </DialogHeader>
       {nomina && <div className="space-y-4">
         <div className="rounded-lg border border-border bg-card p-3">
@@ -78,7 +79,7 @@ export function PagarNominaDialog({ nomina, abierto, onCerrar, onPagada }: {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1"><span className={CLASE_LABEL}>Fecha de pago</span>
-            <Input type="date" value={fecha} max={fechaActualBolivia()} onChange={(e) => setFecha(e.target.value)} disabled={enviando} />
+            <Input type="date" className="cursor-pointer" onClick={abrirCalendario} value={fecha} max={fechaActualBolivia()} onChange={(e) => setFecha(e.target.value)} disabled={enviando} />
           </label>
           <div className="space-y-1"><span className={CLASE_LABEL}>Método de pago</span>
             <Select value={metodo} onValueChange={(v) => { setMetodo(v as MetodoPagoNomina); setCuentaId("predeterminada"); }} disabled={enviando}>

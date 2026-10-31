@@ -6,8 +6,9 @@ import { nominaService, mensajeErrorNomina } from "@/services/nomina.service";
 import { descargarBlob, dinero, fechaCorta, imprimirBlob, nombreEmpleado, periodoActualBolivia } from "@/components/nomina/nomina-utils";
 import { DetalleNominaDialog } from "@/components/nomina/DetalleNominaDialog";
 import { NominaNav } from "@/components/nomina/NominaNav";
-import { CLASE_LABEL, CargandoNomina, ErrorNomina, EstadoBadge, IndicadorNomina } from "@/components/nomina/NominaUI";
+import { CLASE_LABEL, CLASE_TITULO_TARJETA, CargandoNomina, ErrorNomina, EstadoBadge, IndicadorNomina } from "@/components/nomina/NominaUI";
 import { ETIQUETA_METODO } from "@/components/personal/PersonalUI";
+import { abrirCalendario } from "@/components/personal/PersonalUI";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -56,8 +57,8 @@ export default function PaginaPagosNomina() {
     <NominaNav />
     <Card><CardContent className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="space-y-1"><span className={CLASE_LABEL}>Desde</span><Input type="month" value={desde} onChange={(e) => { setDesde(e.target.value); setPagina(1); }} /></label>
-        <label className="space-y-1"><span className={CLASE_LABEL}>Hasta</span><Input type="month" value={hasta} onChange={(e) => { setHasta(e.target.value); setPagina(1); }} /></label>
+        <label className="space-y-1"><span className={CLASE_LABEL}>Desde</span><Input type="month" className="cursor-pointer" onClick={abrirCalendario} value={desde} onChange={(e) => { setDesde(e.target.value); setPagina(1); }} /></label>
+        <label className="space-y-1"><span className={CLASE_LABEL}>Hasta</span><Input type="month" className="cursor-pointer" onClick={abrirCalendario} value={hasta} onChange={(e) => { setHasta(e.target.value); setPagina(1); }} /></label>
         <div className="min-w-36 space-y-1"><span className={CLASE_LABEL}>Estado</span>
           <Select value={estado} onValueChange={(v) => { setEstado(v); setPagina(1); }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="TODAS">Todos</SelectItem><SelectItem value="PENDIENTE">Pendiente</SelectItem><SelectItem value="PAGADA">Pagada</SelectItem></SelectContent>
@@ -78,7 +79,7 @@ export default function PaginaPagosNomina() {
     </div>
     {errorPdf && <ErrorNomina mensaje={errorPdf} />}
     <Card>
-      <CardHeader><CardTitle className="font-subtitle">Historial de nóminas</CardTitle></CardHeader>
+      <CardHeader><CardTitle className={CLASE_TITULO_TARJETA}>Historial de nóminas</CardTitle></CardHeader>
       <CardContent className="space-y-3">
         {rangoInvalido ? <p className="py-8 text-center text-muted-foreground">Corrige el intervalo de períodos.</p> : consulta.isPending ? <CargandoNomina /> : consulta.isError ? <ErrorNomina mensaje={mensajeErrorNomina(consulta.error)} reintentar={() => void consulta.refetch()} /> : <>
           <Table><TableHeader><TableRow>

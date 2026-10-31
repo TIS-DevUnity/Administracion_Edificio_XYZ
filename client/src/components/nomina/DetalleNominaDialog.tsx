@@ -6,7 +6,7 @@ import { useSesionActual } from "@/lib/session";
 import { normalizarRol } from "@/lib/permissions";
 import { nominaService, mensajeErrorNomina } from "@/services/nomina.service";
 import { dinero, descargarBlob, fechaCorta, imprimirBlob, nombreEmpleado } from "./nomina-utils";
-import { CLASE_LABEL, CLASE_SUBTITULO, CargandoNomina, ErrorNomina, EstadoBadge } from "./NominaUI";
+import { CLASE_LABEL, CLASE_SUBTITULO, CLASE_TITULO_DIALOGO, CargandoNomina, ErrorNomina, EstadoBadge } from "./NominaUI";
 import { GestionConceptosSlot } from "./front1/GestionConceptosSlot";
 import { PagarNominaDialog } from "./PagarNominaDialog";
 import { ETIQUETA_METODO } from "@/components/personal/PersonalUI";
@@ -47,8 +47,8 @@ export function DetalleNominaDialog({ nominaId, onCerrar }: { nominaId: string |
     <Dialog open={!!nominaId && !pagar} onOpenChange={(v) => { if (!v) onCerrar(); }}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="font-subtitle">Detalle de nómina</DialogTitle>
-          <DialogDescription>Desglose salarial del período. Los cálculos y estados provienen del backend.</DialogDescription>
+          <DialogTitle className={CLASE_TITULO_DIALOGO}>Detalle de nómina</DialogTitle>
+          <DialogDescription className="text-[13px] leading-[1.45] text-muted-foreground">Desglose salarial del período. Los cálculos y estados provienen del backend.</DialogDescription>
         </DialogHeader>
         {consulta.isPending ? <CargandoNomina /> : consulta.isError ? <ErrorNomina mensaje={mensajeErrorNomina(consulta.error)} reintentar={() => void consulta.refetch()} /> : n && <div className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border bg-card p-3">
