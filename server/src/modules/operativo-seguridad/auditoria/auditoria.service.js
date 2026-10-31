@@ -6,7 +6,7 @@ const MODULOS = {
   // "FacturaAgua" ya no existe, pero se conserva para agrupar los eventos historicos que dejo.
   Financiero: [
     "Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora", "MoraExpensa", "FacturaAgua",
-    "MovimientoFinanciero", "CategoriaMovimiento", "PlanPago", "CuotaPlan", "Empleado",
+    "MovimientoFinanciero", "CategoriaMovimiento", "PlanPago", "CuotaPlan", "Empleado", "Nomina", "AnticipoSalarial",
   ],
   Seguridad: ["Usuario"],
   Copropietarios: ["Copropietario"],
