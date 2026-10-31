@@ -6,6 +6,7 @@
  */
 const { Decimal, errorHttp, parsearMonto } = require('../expensas/saldo.util')
 const { fechaEnZona } = require('../expensas/mora.util')
+const { parsearFechaAnticipo, validarMetodoAnticipo } = require('../anticipos/anticipos.util')
 
 const CERO = new Decimal(0)
 const TIPOS_CONCEPTO = ['BONO', 'HORA_EXTRA', 'DESCUENTO']
@@ -202,6 +203,45 @@ function totalAnticiposAplicados(aplicaciones) {
 }
 
 // ---------------------------------------------------------------------------
+// Pago de la nomina
+// ---------------------------------------------------------------------------
+
+/**
+ * Datos del pago: fechaPago (YYYY-MM-DD, no futura, hora de Bolivia), monto y metodoPago (EFECTIVO,
+ * TRANSFERENCIA, TARJETA o CHEQUE; SALDO_A_FAVOR no aplica). El monto admite 0 porque una nomina cuyo
+ * neto quedo en 0 (los anticipos consumieron el sueldo) se confirma con monto 0. Que el monto coincida con
+ * el sueldo neto se comprueba aparte, con la nomina bloqueada (`validarMontoPago`).
+ */
+function validarDatosPago(datos = {}, hoy) {
+  const campos = ['fechaPago', 'monto', 'metodoPago']
+  const faltantes = campos.filter((c) => datos[c] === undefined || datos[c] === null || (typeof datos[c] === 'string' && datos[c].trim() === ''))
+  if (faltantes.length) {
+    throw errorHttp(`Faltan campos obligatorios: ${faltantes.join(', ')}`, 400, {
+      codigo: 'CAMPOS_OBLIGATORIOS',
+      detalle: { campos: faltantes }
+    })
+  }
+  const { texto } = parsearFechaAnticipo(datos.fechaPago, hoy, 'fechaPago', 'FECHA_PAGO_INVALIDA')
+  return {
+    fechaPago: texto,
+    monto: parsearMonto(datos.monto, 'monto', { permitirCero: true }),
+    metodoPago: validarMetodoAnticipo(datos.metodoPago)
+  }
+}
+
+/** El monto pagado debe ser IGUAL al sueldo neto: no hay pagos parciales. 400 MONTO_NO_COINCIDE. */
+function validarMontoPago(monto, sueldoNeto) {
+  const neto = redondear(sueldoNeto)
+  if (!new Decimal(monto).equals(neto)) {
+    throw errorHttp(`El monto debe ser igual al sueldo neto de la nomina (Bs ${dinero(neto)}): no se admiten pagos parciales`, 400, {
+      codigo: 'MONTO_NO_COINCIDE',
+      detalle: { sueldoNeto: dinero(neto), monto: dinero(monto) }
+    })
+  }
+  return neto
+}
+
+// ---------------------------------------------------------------------------
 // Filtros del listado
 // ---------------------------------------------------------------------------
 
@@ -311,6 +351,8 @@ module.exports = {
   detalleCalculo,
   totalesParaGuardar,
   totalAnticiposAplicados,
+  validarDatosPago,
+  validarMontoPago,
   normalizarFiltroPeriodo,
   normalizarFiltroEstado,
   normalizarBusqueda,

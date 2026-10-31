@@ -20,22 +20,22 @@ const vacio = (v) => v === undefined || v === null || (typeof v === 'string' && 
 // Validacion del alta
 // ---------------------------------------------------------------------------
 
-function errorFecha(mensaje) {
-  return errorHttp(mensaje, 400, { codigo: 'FECHA_ANTICIPO_INVALIDA' })
+function errorFecha(mensaje, codigo) {
+  return errorHttp(mensaje, 400, { codigo })
 }
 
 /** Dia YYYY-MM-DD valido y no futuro (hoy en hora de Bolivia). Devuelve { texto, fecha } (fecha: medianoche UTC, columna DATE). */
-function parsearFechaAnticipo(valor, hoy = fechaEnZona(), campo = 'fecha') {
+function parsearFechaAnticipo(valor, hoy = fechaEnZona(), campo = 'fecha', codigo = 'FECHA_ANTICIPO_INVALIDA') {
   if (typeof valor !== 'string' || !SOLO_FECHA.test(valor.trim())) {
-    throw errorFecha(`${campo} debe tener el formato YYYY-MM-DD`)
+    throw errorFecha(`${campo} debe tener el formato YYYY-MM-DD`, codigo)
   }
   const texto = valor.trim()
   const fecha = new Date(`${texto}T00:00:00Z`)
   if (Number.isNaN(fecha.getTime()) || fecha.toISOString().slice(0, 10) !== texto) {
-    throw errorFecha(`${campo} no es una fecha valida`)
+    throw errorFecha(`${campo} no es una fecha valida`, codigo)
   }
-  if (texto < FECHA_MINIMA) throw errorFecha(`${campo} no puede ser anterior a ${FECHA_MINIMA}`)
-  if (texto > hoy) throw errorFecha(`${campo} no puede ser una fecha futura`)
+  if (texto < FECHA_MINIMA) throw errorFecha(`${campo} no puede ser anterior a ${FECHA_MINIMA}`, codigo)
+  if (texto > hoy) throw errorFecha(`${campo} no puede ser una fecha futura`, codigo)
   return { texto, fecha }
 }
 
@@ -51,7 +51,7 @@ function normalizarDescripcion(valor) {
 /** Metodo de pago de un anticipo: los de un pago real; SALDO_A_FAVOR no aplica a personal. */
 function validarMetodoAnticipo(valor) {
   if (valor === 'SALDO_A_FAVOR') {
-    throw errorHttp('SALDO_A_FAVOR no aplica a un anticipo salarial: use EFECTIVO, TRANSFERENCIA, TARJETA o CHEQUE', 400, {
+    throw errorHttp('SALDO_A_FAVOR no aplica a pagos de personal (anticipos ni nomina): use EFECTIVO, TRANSFERENCIA, TARJETA o CHEQUE', 400, {
       codigo: 'METODO_PAGO_INVALIDO'
     })
   }

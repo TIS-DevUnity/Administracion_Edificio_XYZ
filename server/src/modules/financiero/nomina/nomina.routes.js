@@ -211,4 +211,55 @@ router.post('/:id/conceptos', autenticar, GESTION, controller.agregarConcepto)
 router.patch('/:id/conceptos/:conceptoId', autenticar, GESTION, controller.editarConcepto)
 router.delete('/:id/conceptos/:conceptoId', autenticar, GESTION, controller.quitarConcepto)
 
+/**
+ * @openapi
+ * /api/financiero/nomina/{id}/pagar:
+ *   post:
+ *     summary: Confirma el pago de una nomina pendiente (solo ADMINISTRADOR)
+ *     description: |
+ *       Revise antes los conceptos y el sueldo neto. `monto` debe ser IGUAL al sueldo neto de la nomina
+ *       (400 MONTO_NO_COINCIDE): no hay pagos parciales. `fechaPago` no puede ser futura. `metodoPago`:
+ *       EFECTIVO, TRANSFERENCIA, TARJETA o CHEQUE (SALDO_A_FAVOR no aplica: 400 METODO_PAGO_INVALIDO).
+ *       La nomina pasa a PAGADA y queda inmutable: no se edita, no se anula ni se elimina, y tampoco sus
+ *       conceptos ni los anticipos descontados. Pagar una nomina ya pagada da 409 NOMINA_YA_PAGADA, tambien
+ *       con dos solicitudes simultaneas. Un empleado inactivo puede cobrar una nomina pendiente que ya existia.
+ *
+ *       Con CAJA_BANCOS_ASIENTOS activo el pago se registra como egreso del edificio en la cuenta `cuentaId` o,
+ *       si no se indica, en la cuenta por defecto del metodo de pago (efectivo: caja; el resto: banco); una
+ *       cuenta indicada debe ser del tipo que corresponde al metodo. Si el mes de `fechaPago` ya esta cerrado se
+ *       rechaza (409 PERIODO_CERRADO) y no se guarda nada. Con el interruptor apagado el pago se confirma
+ *       igual, sin movimiento de caja. Los pagos de nomina siempre cuentan como gasto de personal en el saldo
+ *       del edificio.
+ *
+ *       Si el sueldo neto es 0 (los anticipos consumieron todo el sueldo) se confirma con `monto: 0`; la nomina
+ *       queda PAGADA con monto pagado 0 y NO se crea movimiento de caja porque no hay dinero que mover.
+ *     tags: [Nómina]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [fechaPago, monto, metodoPago]
+ *             properties:
+ *               fechaPago: { type: string, format: date, example: "2026-10-31" }
+ *               monto: { type: number, example: 2520.50, description: "Igual al sueldo neto de la nomina" }
+ *               metodoPago: { type: string, enum: [EFECTIVO, TRANSFERENCIA, TARJETA, CHEQUE], example: TRANSFERENCIA }
+ *               cuentaId: { type: string, description: "Opcional. Cuenta de caja o banco de la que sale el dinero" }
+ *     responses:
+ *       200: { description: "{ nomina (completa, PAGADA), asiento: { id, cuentaId, cuenta, periodo, estado } o null, mensaje }" }
+ *       400: { description: "Campos faltantes (CAMPOS_OBLIGATORIOS), fecha (FECHA_PAGO_INVALIDA), metodo (METODO_PAGO_INVALIDO), monto distinto del neto (MONTO_NO_COINCIDE, con detalle { sueldoNeto, monto }) o cuenta incompatible (CUENTA_INCOMPATIBLE)" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador }
+ *       404: { description: Nomina no encontrada }
+ *       409: { description: "Nomina ya pagada (NOMINA_YA_PAGADA), mes de caja cerrado (PERIODO_CERRADO), cuenta inactiva o sin cuenta por defecto" }
+ */
+router.post('/:id/pagar', autenticar, GESTION, controller.pagar)
+
 module.exports = router

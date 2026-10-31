@@ -70,4 +70,13 @@ async function quitarConcepto(req, res, next) {
   }
 }
 
-module.exports = { generar, listar, obtener, agregarConcepto, editarConcepto, quitarConcepto }
+async function pagar(req, res, next) {
+  try {
+    const resultado = await service.pagar(req.params.id, { datos: req.body ?? {}, usuarioId: req.usuario.id, ip: req.ip })
+    res.json({ ...resultado, mensaje: 'Pago de nomina confirmado' })
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { generar, listar, obtener, agregarConcepto, editarConcepto, quitarConcepto, pagar }

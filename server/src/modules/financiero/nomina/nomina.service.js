@@ -4,6 +4,8 @@ const prisma = require('../../../config/prisma')
 const { Decimal, errorHttp } = require('../expensas/saldo.util')
 const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
 const { distribuirAnticipos } = require('../anticipos/anticipos.util')
+const personal = require('../caja-bancos/asientos-personal.util')
+const { instanteDeDia } = require('../caja-bancos/periodos.util')
 const util = require('./nomina.util')
 
 const OPCIONES_TX = { timeout: 15000 } // la generacion recorre a todos los empleados activos
@@ -356,4 +358,86 @@ function quitarConcepto(nominaId, conceptoId, { usuarioId, ip }) {
   })
 }
 
-module.exports = { generar, listar, obtener, agregarConcepto, editarConcepto, quitarConcepto }
+// ---------------------------------------------------------------------------
+// Pago
+// ---------------------------------------------------------------------------
+
+/**
+ * Confirma el pago de una nomina PENDIENTE, en una transaccion con la fila de la nomina bloqueada: dos
+ * solicitudes simultaneas no pagan dos veces (la segunda ve PAGADA y recibe 409 NOMINA_YA_PAGADA).
+ *  - El monto debe ser igual al sueldo neto (400 MONTO_NO_COINCIDE); no hay pagos parciales.
+ *  - Con CAJA_BANCOS_ASIENTOS activo se registra el egreso en caja o banco (cuenta indicada o la cuenta por
+ *    defecto del metodo de pago); si el mes de caja esta cerrado: 409 PERIODO_CERRADO y no se guarda nada.
+ *    Con el interruptor apagado no se crea asiento ni se valida el periodo: el pago se confirma igual.
+ *  - Si el neto es 0 (los anticipos consumieron el sueldo) se confirma con monto 0, sin movimiento de caja.
+ *  - Un empleado inactivo puede cobrar una nomina pendiente que ya existia.
+ * Una nomina pagada no se vuelve a modificar: no existe ninguna ruta para editarla, anularla ni borrarla.
+ */
+async function pagar(nominaId, { datos, usuarioId, ip }) {
+  const valores = util.validarDatosPago(datos)
+  const cuentaId = personal.normalizarCuentaNomina(datos.cuentaId) // formato, antes de abrir la transaccion
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "nominas" WHERE "id" = ${nominaId} FOR UPDATE`
+    const nomina = await tx.nomina.findUnique({ where: { id: nominaId }, include: { empleado: INCLUIR_EMPLEADO } })
+    if (!nomina) throw errorHttp('Nomina no encontrada', 404)
+    if (nomina.estado === 'PAGADA') {
+      throw errorHttp('La nomina ya esta pagada: no se puede registrar el pago otra vez', 409, {
+        codigo: 'NOMINA_YA_PAGADA',
+        detalle: { periodo: nomina.periodo, fechaPago: nomina.fechaPago }
+      })
+    }
+    const neto = util.validarMontoPago(valores.monto, nomina.sueldoNeto)
+
+    // Sin dinero que mover (neto 0) no hay asiento ni se exige un periodo de caja abierto.
+    const destino = neto.gt(0)
+      ? await personal.prepararAsientoNomina(tx, {
+          metodoPago: valores.metodoPago,
+          fecha: valores.fechaPago,
+          cuentaId
+        })
+      : null
+
+    const pagada = await tx.nomina.update({
+      where: { id: nominaId },
+      data: {
+        estado: 'PAGADA',
+        fechaPago: instanteDeDia(valores.fechaPago),
+        montoPagado: neto,
+        metodoPago: valores.metodoPago,
+        pagadoPorId: usuarioId ?? null
+      }
+    })
+    const asiento = destino ? await personal.crearAsientoNomina(tx, pagada, nomina.empleado, destino) : null
+    const completa = await tx.nomina.findUnique({ where: { id: nominaId }, include: INCLUIR_DETALLE })
+    return { nomina: completa, asiento, cuenta: destino?.cuenta ?? null, estadoAntes: nomina.estado }
+  }, OPCIONES_TX)
+
+  const { nomina, asiento, cuenta } = resultado
+  await registrarAuditoria({
+    usuarioId,
+    accion: 'UPDATE',
+    entidad: 'Nomina',
+    entidadId: nominaId,
+    detalle: {
+      motivo: 'PAGO',
+      periodo: nomina.periodo,
+      montoPagado: util.dinero(nomina.montoPagado),
+      metodoPago: nomina.metodoPago,
+      fechaPago: valores.fechaPago,
+      cuenta: cuenta ? { id: cuenta.id, nombre: cuenta.nombre } : null,
+      asientoId: asiento?.id ?? null,
+      estado: { antes: resultado.estadoAntes, despues: nomina.estado }
+    },
+    ip
+  })
+
+  return {
+    nomina: util.nominaParaCliente(nomina),
+    asiento: asiento
+      ? { id: asiento.id, cuentaId: cuenta.id, cuenta: cuenta.nombre, periodo: asiento.periodo, estado: asiento.estado }
+      : null
+  }
+}
+
+module.exports = { generar, listar, obtener, agregarConcepto, editarConcepto, quitarConcepto, pagar }
