@@ -48,6 +48,10 @@ model Usuario {
   cierresCaja                 CierreCaja[]         @relation("CierreCajaPor")
   eventosConciliacion         ConciliacionEvento[] @relation("ConciliacionEventoPor")
   pagosInformadosRevisados    PagoInformado[]      @relation("PagoInformadoRevisadoPor")
+  empleadosRegistrados           Empleado[]         @relation("EmpleadoRegistradoPor")
+  nominasPersonalRegistradas     Nomina[]           @relation("NominaRegistradaPor")
+  nominasPersonalPagadas         Nomina[]           @relation("NominaPagadaPor")
+  anticiposSalarialesRegistrados AnticipoSalarial[] @relation("AnticipoRegistradoPor")
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -310,6 +314,8 @@ enum OrigenMovimientoCaja {
   RECIBO                 // cobro de expensa / pago anticipado / cuota de plan
   MOVIMIENTO_FINANCIERO  // ingreso o egreso extraordinario (incluye comisiones manuales)
   TRASPASO               // deposito de caja al banco (dos patas unidas por traspasoId)
+  PAGO_NOMINA            // egreso por el pago de una nomina de personal (HU8)
+  ANTICIPO_SALARIAL      // egreso por un anticipo salarial a un empleado (HU8)
 }
 
 enum OperacionConciliacion {
@@ -659,6 +665,10 @@ model MovimientoCaja {
   movimientoFinanciero   MovimientoFinanciero? @relation(fields: [movimientoFinancieroId], references: [id])
   movimientoFinancieroId String?               @unique
   traspasoId             String?               // une las dos patas de un deposito caja -> banco
+  nomina                 Nomina?               @relation(fields: [nominaId], references: [id])
+  nominaId               String?               @unique
+  anticipoSalarial       AnticipoSalarial?     @relation(fields: [anticipoSalarialId], references: [id])
+  anticipoSalarialId     String?               @unique
 
   // Referencia de la operacion tal como la registramos (la del recibo; null en movimientos que no la tienen).
   referencia String?
@@ -832,6 +842,156 @@ model PagoPersonal {
   @@map("pagos_personal")
   @@unique([personalId, periodo])
   @@index([personalId])
+}
+
+// ---------------------------------------------------------------------------
+// Nomina y pagos de personal (HU8). Convive con Personal/PagoPersonal, que no se usan ni se modifican.
+// ---------------------------------------------------------------------------
+
+enum EstadoEmpleado {
+  ACTIVO
+  INACTIVO  // conserva su historial de pagos; no entra en nominas nuevas
+}
+
+enum EstadoNomina {
+  PENDIENTE  // generada: admite agregar, cambiar o quitar conceptos
+  PAGADA     // confirmada: no se edita ni se elimina
+}
+
+enum TipoConceptoNomina {
+  BONO
+  HORA_EXTRA
+  DESCUENTO
+}
+
+enum EstadoAnticipo {
+  PENDIENTE   // nada descontado todavia
+  PARCIAL     // descontado en parte; el saldo queda para periodos posteriores
+  DESCONTADO  // descontado por completo
+}
+
+model Empleado {
+  id           String         @id @default(uuid())
+  nombres      String
+  apellidos    String
+  documento    String         @unique
+  cargo        String
+  fechaIngreso DateTime       @db.Date
+  telefono     String
+  sueldoBase   Decimal        @db.Decimal(10, 2)
+  estado       EstadoEmpleado @default(ACTIVO)
+
+  nominas      Nomina[]
+  anticipos    AnticipoSalarial[]
+
+  registradoPor   Usuario? @relation("EmpleadoRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@map("empleados")
+  @@index([estado])
+}
+
+// Una nomina por empleado y periodo. `sueldoBase` es una copia del sueldo del empleado al generarla:
+// un cambio posterior del sueldo solo afecta a las nominas futuras.
+model Nomina {
+  id         String   @id @default(uuid())
+
+  empleado   Empleado @relation(fields: [empleadoId], references: [id])
+  empleadoId String
+  periodo    String   // "YYYY-MM"
+
+  sueldoBase      Decimal @db.Decimal(10, 2)
+  totalBonos      Decimal @default(0) @db.Decimal(10, 2)
+  totalHorasExtra Decimal @default(0) @db.Decimal(10, 2)
+  totalDescuentos Decimal @default(0) @db.Decimal(10, 2)
+  totalAnticipos  Decimal @default(0) @db.Decimal(10, 2)
+  sueldoNeto      Decimal @db.Decimal(10, 2)
+
+  estado      EstadoNomina @default(PENDIENTE)
+  fechaPago   DateTime?    @db.Timestamptz(3)
+  montoPagado Decimal?     @db.Decimal(10, 2)
+  metodoPago  MetodoPago?
+
+  conceptos          ConceptoNomina[]
+  anticiposAplicados AplicacionAnticipo[]
+  asiento            MovimientoCaja?
+
+  registradoPor   Usuario? @relation("NominaRegistradaPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+  pagadoPor       Usuario? @relation("NominaPagadaPor", fields: [pagadoPorId], references: [id])
+  pagadoPorId     String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("nominas")
+  @@unique([empleadoId, periodo])
+  @@index([periodo, estado])
+}
+
+// Bono, hora extra o descuento de una nomina (el periodo es el de la nomina).
+model ConceptoNomina {
+  id          String             @id @default(uuid())
+
+  nomina      Nomina             @relation(fields: [nominaId], references: [id], onDelete: Cascade)
+  nominaId    String
+
+  tipo        TipoConceptoNomina
+  descripcion String
+  horas       Decimal?           @db.Decimal(6, 2) // solo HORA_EXTRA
+  monto       Decimal            @db.Decimal(10, 2)
+
+  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@map("conceptos_nomina")
+  @@index([nominaId])
+}
+
+model AnticipoSalarial {
+  id         String   @id @default(uuid())
+
+  empleado   Empleado @relation(fields: [empleadoId], references: [id])
+  empleadoId String
+
+  monto           Decimal        @db.Decimal(10, 2)
+  montoDescontado Decimal        @default(0) @db.Decimal(10, 2)
+  fecha           DateTime       @db.Date
+  metodoPago      MetodoPago
+  descripcion     String
+  estado          EstadoAnticipo @default(PENDIENTE)
+
+  aplicaciones AplicacionAnticipo[]
+  asiento      MovimientoCaja?
+
+  registradoPor   Usuario? @relation("AnticipoRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("anticipos_salariales")
+  @@index([empleadoId, estado])
+}
+
+// Que parte de que anticipo se descuenta en que nomina.
+model AplicacionAnticipo {
+  id         String           @id @default(uuid())
+
+  anticipo   AnticipoSalarial @relation(fields: [anticipoId], references: [id])
+  anticipoId String
+  nomina     Nomina           @relation(fields: [nominaId], references: [id], onDelete: Cascade)
+  nominaId   String
+
+  monto      Decimal          @db.Decimal(10, 2)
+
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@map("aplicaciones_anticipo")
+  @@unique([anticipoId, nominaId])
+  @@index([nominaId])
 }
 
 // ---------------------------------------------------------------------------
