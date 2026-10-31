@@ -232,8 +232,29 @@ function anticipoParaCliente(a) {
   return salida
 }
 
+/** Datos planos del comprobante de anticipo (los que consume boleta-anticipo-pdf.service). */
+function datosParaComprobante(a) {
+  return {
+    id: a.id,
+    empleado: {
+      nombres: a.empleado.nombres,
+      apellidos: a.empleado.apellidos,
+      documento: a.empleado.documento,
+      cargo: a.empleado.cargo
+    },
+    monto: dinero(a.monto),
+    montoDescontado: dinero(a.montoDescontado),
+    saldoPendiente: saldoPendiente(a.monto, a.montoDescontado).toFixed(2),
+    fecha: textoDeDia(a.fecha),
+    metodoPago: a.metodoPago,
+    descripcion: a.descripcion,
+    estado: a.estado
+  }
+}
+
 module.exports = {
   ESTADOS,
+  datosParaComprobante,
   MAX_DESCRIPCION,
   dinero,
   parsearFechaAnticipo,

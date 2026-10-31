@@ -192,4 +192,11 @@ async function obtener(id) {
   return { anticipo: util.anticipoParaCliente(anticipo) }
 }
 
-module.exports = { crear, listar, pendientes, obtener }
+/** Datos planos del comprobante de anticipo (para el PDF). 404 si no existe. */
+async function datosComprobante(id) {
+  const anticipo = await prisma.anticipoSalarial.findUnique({ where: { id }, include: { empleado: true } })
+  if (!anticipo) throw errorHttp('Anticipo no encontrado', 404)
+  return util.datosParaComprobante(anticipo)
+}
+
+module.exports = { crear, listar, pendientes, obtener, datosComprobante }

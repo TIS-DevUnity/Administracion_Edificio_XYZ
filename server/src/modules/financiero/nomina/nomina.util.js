@@ -242,12 +242,84 @@ function validarMontoPago(monto, sueldoNeto) {
 }
 
 // ---------------------------------------------------------------------------
+// Boleta de sueldo
+// ---------------------------------------------------------------------------
+
+const dia = (fecha) => new Date(fecha).toISOString().slice(0, 10)
+
+/**
+ * Datos planos de la boleta de sueldo (los que consume boleta-nomina-pdf.service) a partir de la nomina con su
+ * empleado, conceptos y anticipos aplicados (con el anticipo: fecha y descripcion). Los totales son los guardados
+ * en la nomina. Si esta PENDIENTE no lleva datos de pago.
+ */
+function datosParaBoleta(n) {
+  const de = (tipo) => n.conceptos.filter((c) => c.tipo === tipo)
+  const base = redondear(n.sueldoBase)
+  const bonos = redondear(n.totalBonos)
+  const horas = redondear(n.totalHorasExtra)
+  const pagada = n.estado === 'PAGADA'
+  return {
+    periodo: n.periodo,
+    estado: n.estado,
+    empleado: {
+      nombres: n.empleado.nombres,
+      apellidos: n.empleado.apellidos,
+      documento: n.empleado.documento,
+      cargo: n.empleado.cargo,
+      fechaIngreso: dia(n.empleado.fechaIngreso)
+    },
+    sueldoBase: dinero(base),
+    bonos: de('BONO').map((c) => ({ descripcion: c.descripcion, monto: dinero(c.monto) })),
+    horasExtra: de('HORA_EXTRA').map((c) => ({
+      descripcion: c.descripcion,
+      horas: c.horas === null || c.horas === undefined ? null : new Decimal(c.horas).toFixed(2),
+      monto: dinero(c.monto)
+    })),
+    descuentos: de('DESCUENTO').map((c) => ({ descripcion: c.descripcion, monto: dinero(c.monto) })),
+    anticipos: n.anticiposAplicados.map((a) => ({
+      fecha: dia(a.anticipo.fecha),
+      descripcion: a.anticipo.descripcion ?? '',
+      monto: dinero(a.monto)
+    })),
+    totales: {
+      bonos: dinero(bonos),
+      horasExtra: dinero(horas),
+      descuentos: dinero(n.totalDescuentos),
+      anticipos: dinero(n.totalAnticipos),
+      totalGanado: dinero(base.plus(bonos).plus(horas)),
+      sueldoNeto: dinero(n.sueldoNeto)
+    },
+    pago: pagada
+      ? { fechaPago: fechaEnZona(new Date(n.fechaPago)), metodoPago: n.metodoPago, montoPagado: dinero(n.montoPagado) }
+      : null
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Filtros del listado
 // ---------------------------------------------------------------------------
 
 function normalizarFiltroPeriodo(valor) {
   if (valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '')) return null
   return validarPeriodo(valor)
+}
+
+function normalizarFiltroEmpleadoId(valor) {
+  if (valor === undefined || valor === null || (typeof valor === 'string' && valor.trim() === '')) return null
+  if (typeof valor !== 'string') throw errorHttp('empleadoId debe ser un texto', 400)
+  return valor.trim()
+}
+
+/** periodoDesde/periodoHasta opcionales (YYYY-MM, inclusivos). Si desde es posterior a hasta: 400 RANGO_INVALIDO. */
+function normalizarRangoPeriodos(desde, hasta) {
+  const inicio = normalizarFiltroPeriodo(desde)
+  const fin = normalizarFiltroPeriodo(hasta)
+  if (inicio && fin && inicio > fin) {
+    throw errorHttp('El rango de periodos no es valido: periodoDesde es posterior a periodoHasta', 400, {
+      codigo: 'RANGO_INVALIDO'
+    })
+  }
+  return { desde: inicio, hasta: fin }
 }
 
 function normalizarFiltroEstado(valor) {
@@ -353,6 +425,9 @@ module.exports = {
   totalAnticiposAplicados,
   validarDatosPago,
   validarMontoPago,
+  datosParaBoleta,
+  normalizarFiltroEmpleadoId,
+  normalizarRangoPeriodos,
   normalizarFiltroPeriodo,
   normalizarFiltroEstado,
   normalizarBusqueda,

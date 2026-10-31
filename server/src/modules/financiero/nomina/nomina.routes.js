@@ -71,6 +71,18 @@ router.post('/generar', autenticar, GESTION, controller.generar)
  *         description: Busca en nombres, apellidos o documento del empleado, sin distinguir mayusculas
  *         schema: { type: string, example: mamani }
  *       - in: query
+ *         name: empleadoId
+ *         description: Solo las nominas de ese empleado. Con `estado=PAGADA` es su historial de pagos
+ *         schema: { type: string }
+ *       - in: query
+ *         name: periodoDesde
+ *         description: Primer periodo (YYYY-MM, inclusive). 400 RANGO_INVALIDO si es posterior a periodoHasta
+ *         schema: { type: string, example: "2026-01" }
+ *       - in: query
+ *         name: periodoHasta
+ *         description: Ultimo periodo (YYYY-MM, inclusive)
+ *         schema: { type: string, example: "2026-10" }
+ *       - in: query
  *         name: pagina
  *         schema: { type: integer, example: 1 }
  *       - in: query
@@ -83,6 +95,85 @@ router.post('/generar', autenticar, GESTION, controller.generar)
  *       403: { description: Solo Administrador o Directorio }
  */
 router.get('/', autenticar, SUPERVISION, controller.listar)
+
+/**
+ * @openapi
+ * /api/financiero/nomina/periodos:
+ *   get:
+ *     summary: Periodos con nominas, el mas reciente primero (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Sirve para elegir "periodos anteriores" en la pantalla. Por cada periodo: cuantas nominas hay, cuantas
+ *       estan pendientes y cuantas pagadas, y la suma de sus sueldos netos.
+ *     tags: [Nómina]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "{ periodos: [{ periodo, cantidad, pendientes, pagadas, totalNeto }] }" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/periodos', autenticar, SUPERVISION, controller.periodos)
+
+/**
+ * @openapi
+ * /api/financiero/nomina/reporte:
+ *   get:
+ *     summary: Reporte mensual de gastos de personal (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Por periodo (cualquier mes, tambien los anteriores). `filas`: una por empleado con sueldo base, bonos, horas
+ *       extra, descuentos, anticipos descontados, sueldo neto, estado y fecha de pago. `totales`: la suma de cada
+ *       columna. `resumen`: `costoDelPeriodo`, `pagado`, `pendiente` y cantidades.
+ *
+ *       **El costo del periodo es devengado**: sueldo base + bonos + horas extra - descuentos, que es igual al
+ *       sueldo neto + los anticipos descontados; lo que el edificio debe a su personal por ese mes. `pagado` y
+ *       `pendiente` suman sueldos netos. Los **anticipos otorgados en el mes** (por la fecha del anticipo) van
+ *       aparte, en `anticiposOtorgados`: se registran como gasto cuando salen (asi los cuenta el saldo del
+ *       edificio), por eso no se suman al costo del periodo. Un periodo sin nominas devuelve ceros y listas vacias.
+ *     tags: [Nómina]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: periodo
+ *         required: true
+ *         schema: { type: string, example: "2026-10" }
+ *     responses:
+ *       200: { description: "{ periodo, vacio, filas, totales, resumen: { costoDelPeriodo, pagado, pendiente, cantidad, cantidadPagadas, cantidadPendientes }, anticiposOtorgados: { cantidad, total, items } }" }
+ *       400: { description: "Periodo faltante o invalido (PERIODO_INVALIDO)" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/reporte', autenticar, SUPERVISION, controller.reporte)
+
+/**
+ * @openapi
+ * /api/financiero/nomina/reporte/pdf:
+ *   get:
+ *     summary: Reporte mensual de gastos de personal en PDF (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       El mismo contenido de `/nomina/reporte` en una hoja A4 horizontal: resumen, nominas por empleado con sus
+ *       totales, anticipos otorgados en el mes y una nota que aclara que el costo del periodo es devengado y que
+ *       los anticipos se registran como gasto cuando salen. Un periodo sin nominas dice "Sin nóminas en este
+ *       periodo". Se descarga por defecto; con `inline=true` se abre en el navegador (para imprimir).
+ *     tags: [Nómina]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: periodo
+ *         required: true
+ *         schema: { type: string, example: "2026-10" }
+ *       - in: query
+ *         name: inline
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: "PDF reporte-personal-YYYY-MM.pdf"
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       400: { description: "Periodo faltante o invalido (PERIODO_INVALIDO)" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/reporte/pdf', autenticar, SUPERVISION, controller.reportePdf)
 
 /**
  * @openapi
@@ -106,6 +197,41 @@ router.get('/', autenticar, SUPERVISION, controller.listar)
  *       404: { description: Nomina no encontrada }
  */
 router.get('/:id', autenticar, SUPERVISION, controller.obtener)
+
+/**
+ * @openapi
+ * /api/financiero/nomina/{id}/boleta:
+ *   get:
+ *     summary: Boleta de pago de sueldo en PDF (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Datos del empleado, periodo, sueldo base, bonos, horas extra (con horas y monto), descuentos, anticipos
+ *       descontados, total de cada rubro y el sueldo neto, con espacio para la firma del empleado y del
+ *       administrador. Si la nomina esta PAGADA incluye fecha, metodo y monto pagado; si esta PENDIENTE lleva la
+ *       marca "PENDIENTE DE PAGO" y ningun dato de pago (se puede imprimir para firmar antes de pagar). Si hay
+ *       muchos conceptos el contenido pasa a otra pagina sin cortar filas ni firmas. Sirve tambien para consultar
+ *       e imprimir las boletas de periodos anteriores. Se descarga por defecto; con `inline=true` se abre en el
+ *       navegador.
+ *     tags: [Nómina]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: inline
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: "PDF boleta-nomina-YYYY-MM-apellido.pdf"
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ *       404: { description: Nomina no encontrada }
+ */
+router.get('/:id/boleta', autenticar, SUPERVISION, controller.boleta)
 
 /**
  * @openapi

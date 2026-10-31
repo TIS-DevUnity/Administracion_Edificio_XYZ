@@ -6,7 +6,9 @@ const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/audi
 const { distribuirAnticipos } = require('../anticipos/anticipos.util')
 const personal = require('../caja-bancos/asientos-personal.util')
 const { instanteDeDia } = require('../caja-bancos/periodos.util')
+const { fechaEnZona } = require('../expensas/mora.util')
 const util = require('./nomina.util')
+const { construirReporte, resumirPeriodos } = require('./reporte.util')
 
 const OPCIONES_TX = { timeout: 15000 } // la generacion recorre a todos los empleados activos
 const POR_PAGINA_DEFECTO = 50
@@ -188,14 +190,27 @@ async function generar({ periodo, usuarioId, ip }) {
 // Consulta
 // ---------------------------------------------------------------------------
 
-async function listar({ periodo, estado, q, pagina, porPagina } = {}) {
+/** Filtro de periodo: uno exacto y/o un rango (los periodos YYYY-MM se ordenan como texto). */
+function filtroPeriodo(periodo, rango) {
+  const condiciones = {
+    ...(periodo ? { equals: periodo } : {}),
+    ...(rango.desde ? { gte: rango.desde } : {}),
+    ...(rango.hasta ? { lte: rango.hasta } : {})
+  }
+  return Object.keys(condiciones).length ? { periodo: condiciones } : {}
+}
+
+async function listar({ periodo, estado, q, empleadoId, periodoDesde, periodoHasta, pagina, porPagina } = {}) {
   const per = util.normalizarFiltroPeriodo(periodo)
+  const rango = util.normalizarRangoPeriodos(periodoDesde, periodoHasta)
+  const empleado = util.normalizarFiltroEmpleadoId(empleadoId)
   const est = util.normalizarFiltroEstado(estado)
   const busqueda = util.normalizarBusqueda(q)
   const { numeroPagina, tamanio } = normalizarPagina(pagina, porPagina)
 
   const where = {
-    ...(per ? { periodo: per } : {}),
+    ...filtroPeriodo(per, rango),
+    ...(empleado ? { empleadoId: empleado } : {}),
     ...(est ? { estado: est } : {}),
     ...(busqueda
       ? {
@@ -231,6 +246,77 @@ async function listar({ periodo, estado, q, pagina, porPagina } = {}) {
     resumen: { cantidad: total, pendientes: grupo('PENDIENTE'), pagadas: grupo('PAGADA') },
     paginacion: { pagina: numeroPagina, porPagina: tamanio, total, totalPaginas: Math.ceil(total / tamanio) }
   }
+}
+
+/** Periodos con nominas, el mas reciente primero: [{ periodo, cantidad, pendientes, pagadas, totalNeto }]. */
+async function periodos() {
+  const grupos = await prisma.nomina.groupBy({
+    by: ['periodo', 'estado'],
+    _count: { _all: true },
+    _sum: { sueldoNeto: true }
+  })
+  return {
+    periodos: resumirPeriodos(
+      grupos.map((g) => ({ periodo: g.periodo, estado: g.estado, cantidad: g._count._all, total: g._sum.sueldoNeto }))
+    )
+  }
+}
+
+/**
+ * Reporte mensual de gastos de personal. Consulta las nominas del periodo y los anticipos otorgados dentro del
+ * mes (por la fecha del anticipo) y deja la agregacion a reporte.util (funcion pura). Un periodo sin nominas
+ * devuelve ceros y listas vacias (no es un error).
+ */
+async function reporte({ periodo } = {}) {
+  const per = util.validarPeriodo(periodo)
+  const [nominas, anticipos] = await Promise.all([
+    prisma.nomina.findMany({ where: { periodo: per }, include: { empleado: true } }),
+    prisma.anticipoSalarial.findMany({
+      where: { fecha: { gte: new Date(`${per}-01T00:00:00Z`), lte: new Date(`${util.ultimoDiaDelPeriodo(per)}T00:00:00Z`) } },
+      include: { empleado: true }
+    })
+  ])
+  return construirReporte({
+    periodo: per,
+    nominas: nominas.map((n) => ({
+      id: n.id,
+      periodo: n.periodo,
+      empleado: n.empleado,
+      sueldoBase: n.sueldoBase,
+      totalBonos: n.totalBonos,
+      totalHorasExtra: n.totalHorasExtra,
+      totalDescuentos: n.totalDescuentos,
+      totalAnticipos: n.totalAnticipos,
+      sueldoNeto: n.sueldoNeto,
+      estado: n.estado,
+      fechaPago: n.fechaPago ? fechaEnZona(new Date(n.fechaPago)) : null
+    })),
+    anticipos: anticipos.map((a) => ({
+      id: a.id,
+      empleado: a.empleado,
+      fecha: new Date(a.fecha).toISOString().slice(0, 10),
+      monto: a.monto,
+      metodoPago: a.metodoPago,
+      estado: a.estado
+    }))
+  })
+}
+
+/** Datos planos de la boleta de sueldo (para el PDF). 404 si la nomina no existe. */
+async function datosBoleta(id) {
+  const nomina = await prisma.nomina.findUnique({
+    where: { id },
+    include: {
+      empleado: true,
+      conceptos: { orderBy: { createdAt: 'asc' } },
+      anticiposAplicados: {
+        include: { anticipo: { select: { fecha: true, descripcion: true, monto: true } } },
+        orderBy: { createdAt: 'asc' }
+      }
+    }
+  })
+  if (!nomina) throw errorHttp('Nomina no encontrada', 404)
+  return util.datosParaBoleta(nomina)
 }
 
 async function obtener(id) {
@@ -440,4 +526,4 @@ async function pagar(nominaId, { datos, usuarioId, ip }) {
   }
 }
 
-module.exports = { generar, listar, obtener, agregarConcepto, editarConcepto, quitarConcepto, pagar }
+module.exports = { generar, listar, periodos, reporte, datosBoleta, obtener, agregarConcepto, editarConcepto, quitarConcepto, pagar }

@@ -1,4 +1,7 @@
 const service = require('./nomina.service')
+const { enviarPdf } = require('./pdf-comun.util')
+const { generarBoletaNominaPdf, nombreArchivoBoleta } = require('./boleta-nomina-pdf.service')
+const { generarReportePersonalPdf, nombreArchivoReporte } = require('./reporte-pdf.service')
 
 async function generar(req, res, next) {
   try {
@@ -17,8 +20,8 @@ async function generar(req, res, next) {
 
 async function listar(req, res, next) {
   try {
-    const { periodo, estado, q, pagina, porPagina } = req.query
-    res.json(await service.listar({ periodo, estado, q, pagina, porPagina }))
+    const { periodo, estado, q, empleadoId, periodoDesde, periodoHasta, pagina, porPagina } = req.query
+    res.json(await service.listar({ periodo, estado, q, empleadoId, periodoDesde, periodoHasta, pagina, porPagina }))
   } catch (err) {
     next(err)
   }
@@ -79,4 +82,40 @@ async function pagar(req, res, next) {
   }
 }
 
-module.exports = { generar, listar, obtener, agregarConcepto, editarConcepto, quitarConcepto, pagar }
+async function periodos(req, res, next) {
+  try {
+    res.json(await service.periodos())
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function reporte(req, res, next) {
+  try {
+    res.json(await service.reporte({ periodo: req.query.periodo }))
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function reportePdf(req, res, next) {
+  try {
+    const datos = await service.reporte({ periodo: req.query.periodo })
+    const pdf = await generarReportePersonalPdf(datos)
+    enviarPdf(res, pdf, nombreArchivoReporte(datos), req.query.inline === 'true')
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function boleta(req, res, next) {
+  try {
+    const datos = await service.datosBoleta(req.params.id)
+    const pdf = await generarBoletaNominaPdf(datos)
+    enviarPdf(res, pdf, nombreArchivoBoleta(datos), req.query.inline === 'true')
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { generar, listar, periodos, reporte, reportePdf, boleta, obtener, agregarConcepto, editarConcepto, quitarConcepto, pagar }

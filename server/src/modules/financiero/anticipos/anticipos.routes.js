@@ -130,4 +130,35 @@ router.get('/pendientes', autenticar, SUPERVISION, controller.pendientes)
  */
 router.get('/:id', autenticar, SUPERVISION, controller.obtener)
 
+/**
+ * @openapi
+ * /api/financiero/anticipos/{id}/boleta:
+ *   get:
+ *     summary: Comprobante de anticipo de sueldo en PDF (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Empleado, monto, fecha, metodo de pago, concepto, estado y saldo pendiente de descuento, con espacio para la
+ *       firma del empleado y del administrador. Se descarga por defecto; con `inline=true` se abre en el navegador
+ *       (para imprimir o consultar comprobantes anteriores).
+ *     tags: [Anticipos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: inline
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: "PDF comprobante-anticipo-YYYY-MM-DD-apellido.pdf"
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ *       404: { description: Anticipo no encontrado }
+ */
+router.get('/:id/boleta', autenticar, SUPERVISION, controller.boleta)
+
 module.exports = router

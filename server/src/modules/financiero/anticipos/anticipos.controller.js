@@ -1,4 +1,6 @@
 const service = require('./anticipos.service')
+const { enviarPdf } = require('../nomina/pdf-comun.util')
+const { generarComprobanteAnticipoPdf, nombreArchivoComprobante } = require('./boleta-anticipo-pdf.service')
 
 async function crear(req, res, next) {
   try {
@@ -34,4 +36,14 @@ async function obtener(req, res, next) {
   }
 }
 
-module.exports = { crear, listar, pendientes, obtener }
+async function boleta(req, res, next) {
+  try {
+    const datos = await service.datosComprobante(req.params.id)
+    const pdf = await generarComprobanteAnticipoPdf(datos)
+    enviarPdf(res, pdf, nombreArchivoComprobante(datos), req.query.inline === 'true')
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { crear, listar, pendientes, obtener, boleta }
