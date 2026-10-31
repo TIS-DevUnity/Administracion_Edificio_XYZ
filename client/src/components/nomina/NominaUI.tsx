@@ -8,9 +8,13 @@ import { dinero } from "./nomina-utils";
 
 export const CLASE_LABEL = "font-caption text-[11px] uppercase tracking-[0.01em] text-muted-foreground";
 export const CLASE_SUBTITULO = "font-subtitle text-[14px] font-semibold text-foreground";
+/** Títulos de tarjetas (font-subtitle 14px, client/CLAUDE.md). */
+export const CLASE_TITULO_TARJETA = "font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground";
+/** Títulos de diálogos/modales críticos (font-title 18px, client/CLAUDE.md). */
+export const CLASE_TITULO_DIALOGO = "font-title text-[18px] font-bold leading-[1.2] tracking-[-0.015em] text-foreground";
 
 export function EstadoBadge({ estado }: { estado: "PAGADA" | "PENDIENTE" }) {
-  return <Badge variant="outline" className={estado === "PAGADA" ? "border-success/30 bg-success-subtle text-success" : "border-primary/30 bg-primary/10 text-primary"}>
+  return <Badge variant="outline" className={`font-caption text-[11px] ${estado === "PAGADA" ? "border-success/30 bg-success-subtle text-success" : "border-primary/30 bg-primary/10 text-primary"}`}>
     {estado === "PAGADA" ? "Pagada" : "Pendiente"}
   </Badge>;
 }
