@@ -28,6 +28,7 @@ const notificacionesRoutes = require('./modules/financiero/notificaciones/notifi
 const saldoEdificioRoutes = require('./modules/financiero/saldo-edificio/saldo-edificio.routes')
 const pagosInformadosRoutes = require('./modules/financiero/pagos-informados/pagos-informados.routes')
 const cajaBancosRoutes = require('./modules/financiero/caja-bancos/caja-bancos.routes')
+const empleadosRoutes = require('./modules/financiero/empleados/empleados.routes')
 
 const app = express()
 
@@ -61,6 +62,7 @@ app.use('/api/financiero/notificaciones', notificacionesRoutes)
 app.use('/api/financiero/saldo-edificio', saldoEdificioRoutes)
 app.use('/api/financiero/pagos-informados', pagosInformadosRoutes)
 app.use('/api/financiero/caja-bancos', cajaBancosRoutes)
+app.use('/api/financiero/empleados', empleadosRoutes)
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 app.use(manejarErrores)
