@@ -7,6 +7,7 @@ import { descargarBlob, dinero, fechaCorta, imprimirBlob, nombreEmpleado, period
 import { DetalleNominaDialog } from "@/components/nomina/DetalleNominaDialog";
 import { NominaNav } from "@/components/nomina/NominaNav";
 import { CLASE_LABEL, CargandoNomina, ErrorNomina, EstadoBadge, IndicadorNomina } from "@/components/nomina/NominaUI";
+import { ETIQUETA_METODO } from "@/components/personal/PersonalUI";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -87,7 +88,7 @@ export default function PaginaPagosNomina() {
             {datos?.nominas.map((n) => <TableRow key={n.id}>
               <TableCell>{n.periodo}</TableCell><TableCell><p className="font-medium">{nombreEmpleado(n.empleado)}</p><p className="font-caption text-[11px] text-muted-foreground">{n.empleado.cargo}</p></TableCell>
               <TableCell className="font-medium">{dinero(n.sueldoNeto)}</TableCell><TableCell><EstadoBadge estado={n.estado} /></TableCell>
-              <TableCell>{fechaCorta(n.fechaPago)}</TableCell><TableCell>{n.metodoPago ?? "—"}</TableCell>
+              <TableCell>{fechaCorta(n.fechaPago)}</TableCell><TableCell>{n.metodoPago ? ETIQUETA_METODO[n.metodoPago] : "—"}</TableCell>
               <TableCell><div className="flex items-center gap-1">
                 <Button size="sm" variant="outline" onClick={() => setSeleccion(n.id)} title="Ver nómina"><Eye className="h-4 w-4" /></Button>
                 {n.estado === "PAGADA" && <><Button size="sm" variant="ghost" title="Descargar boleta" disabled={!!enPdf} onClick={() => void manejarPdf(n.id, n.periodo, n.empleado.documento, false)}><Download className="h-4 w-4" /></Button>

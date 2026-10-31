@@ -9,6 +9,7 @@ import { dinero, descargarBlob, fechaCorta, imprimirBlob, nombreEmpleado } from 
 import { CLASE_LABEL, CLASE_SUBTITULO, CargandoNomina, ErrorNomina, EstadoBadge } from "./NominaUI";
 import { GestionConceptosSlot } from "./front1/GestionConceptosSlot";
 import { PagarNominaDialog } from "./PagarNominaDialog";
+import { ETIQUETA_METODO } from "@/components/personal/PersonalUI";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -83,7 +84,7 @@ export function DetalleNominaDialog({ nominaId, onCerrar }: { nominaId: string |
           </div>
           {n.estado === "PAGADA" && <div className="rounded-lg bg-success-subtle p-3 text-[12px]">
             <p className="font-medium text-success">Pago confirmado</p>
-            <p className="mt-1 text-muted-foreground">Fecha: {fechaCorta(n.fechaPago)} · Método: {n.metodoPago ?? "No registrado"} · Monto: {dinero(n.montoPagado)}</p>
+            <p className="mt-1 text-muted-foreground">Fecha: {fechaCorta(n.fechaPago)} · Método: {n.metodoPago ? ETIQUETA_METODO[n.metodoPago] : "No registrado"} · Monto: {dinero(n.montoPagado)}</p>
           </div>}
           {aviso && <p role="status" className="rounded-lg border border-success/30 bg-success-subtle p-3 text-[12px]">{aviso}</p>}
           {error && <ErrorNomina mensaje={error} />}
