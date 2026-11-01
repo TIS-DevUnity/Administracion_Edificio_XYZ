@@ -15,6 +15,8 @@ import {
   Landmark,
   ArrowLeftRight,
   ChartColumnIncreasing,
+  Banknote,
+  BriefcaseBusiness,
   ShieldCheck,
   UserCheck,
   UserCog,
@@ -41,6 +43,7 @@ import { LogoMark } from "@/components/LogoMark";
 const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
   panel: LayoutDashboard,
   finanzas: LineChart,
+  personal: BriefcaseBusiness,
   inmuebles: Building2,
   residentes: UserCheck,
   copropietarios: Users,
@@ -222,6 +225,26 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                       <span className="truncate">Flujo de caja y gráficos</span>
                     </Link>
                   )}
+
+                  {seccion.id === "personal" && (
+                    <>
+                      <Link href="/admin/personal/nomina"
+                        aria-current={pathname === "/admin/personal/nomina" ? "page" : undefined}
+                        className={`font-subtitle ml-5 flex min-h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname === "/admin/personal/nomina" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
+                        <ClipboardList className="h-4 w-4 shrink-0" /><span className="truncate">Nómina mensual</span>
+                      </Link>
+                      <Link href="/admin/personal/nomina/pagos"
+                        aria-current={pathname === "/admin/personal/nomina/pagos" ? "page" : undefined}
+                        className={`font-subtitle ml-5 flex min-h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname === "/admin/personal/nomina/pagos" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
+                        <Banknote className="h-4 w-4 shrink-0" /><span className="truncate">Pagos e historial</span>
+                      </Link>
+                      <Link href="/admin/personal/nomina/reportes"
+                        aria-current={pathname === "/admin/personal/nomina/reportes" ? "page" : undefined}
+                        className={`font-subtitle ml-5 flex min-h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname === "/admin/personal/nomina/reportes" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
+                        <ChartColumnIncreasing className="h-4 w-4 shrink-0" /><span className="truncate">Reportes de personal</span>
+                      </Link>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -373,6 +396,26 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                       <ChartColumnIncreasing className="h-4 w-4 shrink-0" />
                       <span className="truncate">Flujo de caja y gráficos</span>
                     </Link>
+                  )}
+
+                  {seccion.id === "personal" && (
+                    <>
+                      <Link onClick={handleNavegacionMovil} href="/admin/personal/nomina"
+                        aria-current={pathname === "/admin/personal/nomina" ? "page" : undefined}
+                        className={`font-subtitle ml-5 flex min-h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname === "/admin/personal/nomina" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
+                        <ClipboardList className="h-4 w-4 shrink-0" /><span className="truncate">Nómina mensual</span>
+                      </Link>
+                      <Link onClick={handleNavegacionMovil} href="/admin/personal/nomina/pagos"
+                        aria-current={pathname === "/admin/personal/nomina/pagos" ? "page" : undefined}
+                        className={`font-subtitle ml-5 flex min-h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname === "/admin/personal/nomina/pagos" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
+                        <Banknote className="h-4 w-4 shrink-0" /><span className="truncate">Pagos e historial</span>
+                      </Link>
+                      <Link onClick={handleNavegacionMovil} href="/admin/personal/nomina/reportes"
+                        aria-current={pathname === "/admin/personal/nomina/reportes" ? "page" : undefined}
+                        className={`font-subtitle ml-5 flex min-h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname === "/admin/personal/nomina/reportes" ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}>
+                        <ChartColumnIncreasing className="h-4 w-4 shrink-0" /><span className="truncate">Reportes de personal</span>
+                      </Link>
+                    </>
                   )}
                 </div>
               );

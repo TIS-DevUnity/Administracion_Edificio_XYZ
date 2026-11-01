@@ -130,4 +130,14 @@ function generarReciboPdf(datos) {
   })
 }
 
-module.exports = { generarReciboPdf }
+module.exports = {
+  generarReciboPdf,
+  formatearFecha,
+  formatearMonto,
+  filaDato,
+  linea,
+  MARGEN,
+  COLOR_TEXTO,
+  COLOR_SUAVE,
+  COLOR_LINEA
+}

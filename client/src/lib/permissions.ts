@@ -14,6 +14,7 @@ export type SeccionId =
   | "morosidad"
   | "documentos"
   | "finanzas"
+  | "personal"
   | "auditoria";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
@@ -50,6 +51,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     morosidad: ["ver", "crear", "editar", "eliminar"],
     documentos: ["ver", "crear", "eliminar"],
     finanzas: ["ver", "crear", "editar", "eliminar"],
+    personal: ["ver", "crear", "editar"],
     // "auditoria" no aparece a propósito: la HU la define como exclusiva de
     // Directorio ("un usuario sin el rol de Directorio... debe impedir el
     // acceso"), incluyendo a Administrador — es una bitácora de control
@@ -69,6 +71,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     documentos: ["ver", "crear"],
     auditoria: ["ver"],
     finanzas: ["ver", "crear", "editar"],
+    personal: ["ver"],
   },
   CONSULTA: {
     panel: ["ver"],
@@ -124,6 +127,7 @@ export interface SeccionNav {
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
   { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
+  { id: "personal", label: "Personal y Nómina", href: "/admin/personal" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },
   { id: "residentes", label: "Residentes", href: "/admin/residentes" },
   { id: "copropietarios", label: "Copropietarios", href: "/admin/copropietarios" },
