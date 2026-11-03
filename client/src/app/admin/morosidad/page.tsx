@@ -642,13 +642,13 @@ function ContenidoMorosidad() {
 
   return (
     <div className="px-4 py-6 sm:px-6">
-      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+      <div className="mb-6 flex flex-col justify-between gap-4 2xl:flex-row 2xl:items-start">
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
           Supervisión de expensas generadas por el job automático y aplicación de recargos por mora.
         </p>
 
         {bolPuedeGestionar && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
+          <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:shrink-0">
             <Button type="button" className="w-full bg-accent-secondary text-white hover:bg-accent-secondary/80 md:w-auto">
               <FlaskConical className="mr-2 h-4 w-4" />
               Entorno de Simulación
