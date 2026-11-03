@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Droplets,
+  FlaskConical,
   Mail,
   PiggyBank,
   UserRound,
@@ -647,7 +648,12 @@ function ContenidoMorosidad() {
         </p>
 
         {bolPuedeGestionar && (
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
+            <Button type="button" className="w-full bg-accent-secondary text-white hover:bg-accent-secondary/80 md:w-auto">
+              <FlaskConical className="mr-2 h-4 w-4" />
+              Entorno de Simulación
+            </Button>
+
             <Button
               variant="outline"
               className="w-full md:w-auto"
