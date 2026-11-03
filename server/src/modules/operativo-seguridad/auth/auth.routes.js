@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const { autenticar } = require("../../../middlewares/auth.middleware");
 const { autorizar } = require("../../../middlewares/rbac.middleware");
+const { limitarLogin } = require("../../../middlewares/login-limiter");
 const controller = require("./auth.controller");
 
 const router = Router();
@@ -23,8 +24,9 @@ const router = Router();
  *     responses:
  *       200: { description: Login exitoso }
  *       401: { description: Credenciales invalidas }
+ *       429: { description: Demasiados intentos fallidos; reintentar en 15 minutos }
  */
-router.post("/login", controller.login);
+router.post("/login", limitarLogin, controller.login);
 
 /**
  * @openapi
