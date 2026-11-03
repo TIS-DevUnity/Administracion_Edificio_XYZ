@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Eye, FileText, RefreshCw, Search } from "lucide-react";
 
@@ -18,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { listarInmuebles } from "@/lib/inmuebles";
 import { normalizarRol } from "@/lib/permissions";
 import { useSesionActual } from "@/lib/session";
+import { RUTA_SIMULACION } from "@/lib/simulacion/almacen";
 import { cuentaInmuebleService } from "@/services/cuentaInmueble.service";
 import type { EstadoCuentaDTO, MovimientoLibro } from "@/types/cuentaInmueble";
 import { QueryProvider } from "../QueryProvider";
@@ -197,6 +199,7 @@ function DetalleAnticipado({ fila, onCerrar, onVerCuenta }: {
 }
 
 function ContenidoAnticipados() {
+  const bolEnSimulacion = usePathname().startsWith(RUTA_SIMULACION);
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
   // El rol CONSULTA solo puede ver la cuenta de sus propios inmuebles (acceso-propio.js).
@@ -236,7 +239,7 @@ function ContenidoAnticipados() {
     <div className="space-y-6 px-4 py-6 sm:px-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
         <div className="space-y-2">
-          <Link href="/admin/morosidad" className="font-caption inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:text-primary/80">
+          <Link href={bolEnSimulacion ? RUTA_SIMULACION : "/admin/morosidad"} className="font-caption inline-flex items-center gap-1 text-[12px] font-medium text-primary hover:text-primary/80">
             <ArrowLeft className="h-3.5 w-3.5" /> Volver a Morosidad y Expensas
           </Link>
           <h2 className={CLASE_TITULO_SECCION}>Pagos anticipados y saldo a favor</h2>

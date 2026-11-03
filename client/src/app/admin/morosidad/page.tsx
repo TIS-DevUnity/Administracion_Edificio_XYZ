@@ -1,7 +1,7 @@
 "use client";
 
 import React, { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { QueryProvider } from "./QueryProvider";
@@ -33,6 +33,7 @@ import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
 import { SaldoFavorInmueble } from "@/components/SaldoFavorInmueble";
 import { useSesionActual } from "@/lib/session";
+import { RUTA_SIMULACION } from "@/lib/simulacion/almacen";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { listarInmuebles } from "@/lib/inmuebles";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -99,6 +100,7 @@ function etiquetaPeriodo(strPeriodo: string) {
 
 function ContenidoMorosidad() {
   const searchParams = useSearchParams();
+  const bolEnSimulacion = usePathname().startsWith(RUTA_SIMULACION);
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
   const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
@@ -649,10 +651,14 @@ function ContenidoMorosidad() {
 
         {bolPuedeGestionar && (
           <div className="grid gap-2 sm:grid-cols-2 xl:flex xl:shrink-0">
-            <Button type="button" className="w-full bg-accent-secondary text-white hover:bg-accent-secondary/80 md:w-auto">
-              <FlaskConical className="mr-2 h-4 w-4" />
-              Entorno de Simulación
-            </Button>
+            {!bolEnSimulacion && (
+              <Button asChild className="w-full bg-accent-secondary text-white hover:bg-accent-secondary/80 md:w-auto">
+                <Link href={RUTA_SIMULACION}>
+                  <FlaskConical className="mr-2 h-4 w-4" />
+                  Entorno de Simulación
+                </Link>
+              </Button>
+            )}
 
             <Button
               variant="outline"
@@ -1021,7 +1027,7 @@ function ContenidoMorosidad() {
             <p className={`${CLASE_AYUDA} mt-1`}>Quiénes pagaron por adelantado y cómo se descuenta ese monto de las expensas generadas.</p>
           </div>
           <Button asChild variant="outline" className="w-full sm:w-auto">
-            <Link href="/admin/morosidad/anticipados">
+            <Link href={bolEnSimulacion ? `${RUTA_SIMULACION}/anticipados` : "/admin/morosidad/anticipados"}>
               <PiggyBank className="h-4 w-4" />
               Ver listado
             </Link>

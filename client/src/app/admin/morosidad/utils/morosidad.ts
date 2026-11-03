@@ -1,4 +1,5 @@
 import axios from "axios";
+import { fechaSimuladaActiva } from "@/lib/simulacion/almacen";
 import type { ConfiguracionMoraDTO, ExpensaDTO } from "@/types/finance";
 
 export function formatCurrency(amount: number) {
@@ -25,6 +26,8 @@ export function formatearFechaCalendario(valor: string) {
 }
 
 export function fechaHoyBolivia(): string {
+  const strSimulada = fechaSimuladaActiva();
+  if (strSimulada) return strSimulada;
   const partes = new Intl.DateTimeFormat("en-US", {
     year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/La_Paz",
   }).formatToParts(new Date());
