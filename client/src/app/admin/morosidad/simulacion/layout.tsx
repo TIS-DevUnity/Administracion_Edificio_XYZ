@@ -123,6 +123,9 @@ export default function LayoutSimulacion({ children }: { children: ReactNode }) 
 
   return (
     <>
+      {/* Marco en el borde de la pantalla: siempre visible, incluso sobre los diálogos, y no bloquea los clics. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[100] border-4 border-accent-secondary" />
+
       <div className="mx-4 mt-6 space-y-3 rounded-lg border border-accent-secondary/30 bg-accent-secondary/10 p-4 sm:mx-6">
         <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
           <div className="flex items-start gap-3">
