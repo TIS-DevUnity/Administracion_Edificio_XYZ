@@ -63,6 +63,11 @@ export function periodoActual(): string {
   return fechaHoyBolivia().slice(0, 7);
 }
 
+/** Una expensa pagada solo admite cargar el agua si todavía no la tiene (el saldo a favor pudo cubrirla antes). */
+export function pagadaConAguaCargada(exp: ExpensaDTO): boolean {
+  return exp.estado === "PAGADA" && Boolean(exp.aguaRegistradaEn);
+}
+
 export function tieneMoraAplicada(exp: ExpensaDTO): boolean {
   return exp.estado === "VENCIDA" && Number(exp.montoMora || 0) > 0;
 }

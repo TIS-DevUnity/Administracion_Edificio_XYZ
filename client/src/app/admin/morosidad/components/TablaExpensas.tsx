@@ -86,7 +86,7 @@ function AguaEditable({
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  const estaPagada = exp.estado === "PAGADA";
+  const estaPagada = pagadaConAguaCargada(exp);
   const tieneMora = (exp.moras?.length ?? 0) > 0;
   const habilitada = bolPuedeGestionar && !estaPagada && !tieneMora;
   const registrada = Boolean(exp.aguaRegistradaEn);

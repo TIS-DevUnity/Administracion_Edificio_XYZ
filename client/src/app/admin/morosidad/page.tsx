@@ -9,7 +9,7 @@ import { BadgeEstadoExpensa, ETIQUETA_ESTADO, TablaExpensas } from "./components
 import { ResumenMorosidad } from "./components/ResumenMorosidad";
 import { DialogoCargaAgua } from "./components/DialogoCargaAgua";
 import { AvisoServicioCorreo, DialogoRegistroCorreos } from "./components/RegistroCorreos";
-import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaRealBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
+import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaRealBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, pagadaConAguaCargada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
 import axios from "axios";
 import {
   CalendarClock,
@@ -334,7 +334,7 @@ function ContenidoMorosidad() {
   async function guardarAguaEnTabla(exp: ExpensaDTO, monto: number): Promise<void> {
     const permiso = validarAccion(rol, "morosidad", "editar");
     if (!permiso.permitido) throw new Error(permiso.mensaje);
-    if (exp.estado === "PAGADA") throw new Error("No se puede editar agua de una expensa pagada.");
+    if (pagadaConAguaCargada(exp)) throw new Error("No se puede editar agua de una expensa pagada.");
     if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar agua con mora generada.");
 
     // Confirmamos primero la operación en el servidor. Evita presentar un importe
@@ -625,7 +625,7 @@ function ContenidoMorosidad() {
 
   // `aguaRegistradaEn` null = el administrador todavía no cargó el agua de esa expensa.
   const expensasSinAgua = useMemo(
-    () => expensas.filter((exp) => !exp.aguaRegistradaEn && exp.estado !== "PAGADA"),
+    () => expensas.filter((exp) => !exp.aguaRegistradaEn),
     [expensas]
   );
 
@@ -1038,7 +1038,7 @@ function ContenidoMorosidad() {
               </>
             )}
             <p className={CLASE_AYUDA}>
-              El agua puede corregirse mientras la expensa no tenga mora y el nuevo total no quede por debajo de lo ya pagado.
+              El agua puede corregirse mientras la expensa no tenga mora y el nuevo total no quede por debajo de lo ya pagado. Una expensa pagada solo admite cargarla si todavía no la tiene.
             </p>
           </section>
         </CardContent>
@@ -1409,7 +1409,7 @@ function ContenidoMorosidad() {
                     </span>
                     <span className="flex items-center gap-2 text-foreground">
                       {formatCurrency(Number(expensaDetalle.montoAgua))}
-                      {bolPuedeGestionar && !bolEditandoAgua && expensaDetalle.estado !== "PAGADA" && (expensaDetalle.moras?.length ?? 0) === 0 && (
+                      {bolPuedeGestionar && !bolEditandoAgua && !pagadaConAguaCargada(expensaDetalle) && (expensaDetalle.moras?.length ?? 0) === 0 && (
                         <button
                           type="button"
                           onClick={() => {
