@@ -221,6 +221,9 @@ function ContenidoMorosidad() {
   const expensas = expensasQuery.data?.expensas ?? EXPENSAS_VACIAS;
   const paginacion = expensasQuery.data?.paginacion;
   const configMora = configQuery.data ?? null;
+  // El día de descuento de anticipados solo existe en la simulación hasta que el servidor lo envíe:
+  // sin ese campo el backend sigue descontando al generar la expensa, y no se debe mostrar otra cosa.
+  const bolMostrarDiaDescuento = bolEnSimulacion || configMora?.diaDescuentoSaldo !== undefined;
   const historialConfiguracion = historialQuery.data ?? [];
   const inmuebles = inmueblesQuery.data ?? [];
   const tiposInmueble = tiposQuery.data ?? [];
@@ -394,8 +397,8 @@ function ContenidoMorosidad() {
       setStrErrorConfig("El vencimiento debe estar entre 1 y 28 y no puede preceder a la generación.");
       return;
     }
-    if (formData.diaDescuentoSaldo === "" || !Number.isInteger(formData.diaDescuentoSaldo) ||
-        formData.diaDescuentoSaldo < Number(formData.diaGeneracion) || formData.diaDescuentoSaldo > Number(formData.diaVencimiento)) {
+    if (bolMostrarDiaDescuento && (formData.diaDescuentoSaldo === "" || !Number.isInteger(formData.diaDescuentoSaldo) ||
+        formData.diaDescuentoSaldo < Number(formData.diaGeneracion) || formData.diaDescuentoSaldo > Number(formData.diaVencimiento))) {
       setStrErrorConfig("El día de descuento de pagos anticipados debe estar entre el de generación y el de vencimiento.");
       return;
     }
@@ -423,7 +426,7 @@ function ContenidoMorosidad() {
       await financeService.actualizarConfiguracion({
         diaGeneracion: Number(formData.diaGeneracion),
         diaVencimiento: Number(formData.diaVencimiento),
-        diaDescuentoSaldo: Number(formData.diaDescuentoSaldo),
+        ...(bolMostrarDiaDescuento ? { diaDescuentoSaldo: Number(formData.diaDescuentoSaldo) } : {}),
         diasGracia: Number(formData.diasGracia),
         tipoValor: formData.tipoValor,
         modoMora: formData.modoMora,
@@ -736,15 +739,17 @@ function ContenidoMorosidad() {
                     onChange={(e) => setFormData((prev) => ({ ...prev, diaVencimiento: e.target.value === "" ? "" : Number(e.target.value) }))}
                   />
                 </div>
-                <div className="grid gap-1">
-                  <label htmlFor="diaDescuentoSaldo" className={CLASE_LABEL_CAMPO}>Día de descuento de pagos anticipados</label>
-                  <Input
-                    id="diaDescuentoSaldo" type="number" min="1" max="28"
-                    value={formData.diaDescuentoSaldo}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, diaDescuentoSaldo: e.target.value === "" ? "" : Number(e.target.value) }))}
-                  />
-                  <p className={CLASE_AYUDA}>Da tiempo a cargar el agua del mes antes de descontar el saldo a favor. Debe estar entre el día de generación y el de vencimiento.</p>
-                </div>
+                {bolMostrarDiaDescuento && (
+                  <div className="grid gap-1">
+                    <label htmlFor="diaDescuentoSaldo" className={CLASE_LABEL_CAMPO}>Día de descuento de pagos anticipados</label>
+                    <Input
+                      id="diaDescuentoSaldo" type="number" min="1" max="28"
+                      value={formData.diaDescuentoSaldo}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, diaDescuentoSaldo: e.target.value === "" ? "" : Number(e.target.value) }))}
+                    />
+                    <p className={CLASE_AYUDA}>Da tiempo a cargar el agua del mes antes de descontar el saldo a favor. Debe estar entre el día de generación y el de vencimiento.</p>
+                  </div>
+                )}
                 <div className="grid gap-1">
                   <label className={CLASE_LABEL_CAMPO}>Días de gracia</label>
                   <Input
@@ -826,7 +831,7 @@ function ContenidoMorosidad() {
                     {historialConfiguracion.map((regla) => (
                       <div key={regla.id} className="border-b border-border pb-2 text-[12px] leading-[1.45] text-foreground last:border-0">
                         <span className="font-medium">{formatearFecha(regla.vigenteDesde)}</span> · {regla.modoMora === "UNICA" ? "Única" : "Mensual"} · {Number(regla.valor)}{regla.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
-                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, descuento de anticipados día {regla.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}, vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
+                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, {bolMostrarDiaDescuento && <>descuento de anticipados día {regla.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}, </>}vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
                       </div>
                     ))}
                   </div>
@@ -931,9 +936,14 @@ function ContenidoMorosidad() {
             Las expensas se generan automáticamente el día{" "}
             <span className="font-medium text-foreground">{configMora.diaGeneracion}</span> de cada mes. El
             vencimiento está configurado para el día{" "}
-            <span className="font-medium text-foreground">{configMora.diaVencimiento}</span>, los pagos anticipados se
-            descuentan el día{" "}
-            <span className="font-medium text-foreground">{configMora.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}</span> y el recargo por mora es
+            <span className="font-medium text-foreground">{configMora.diaVencimiento}</span>
+            {bolMostrarDiaDescuento && (
+              <>
+                , los pagos anticipados se descuentan el día{" "}
+                <span className="font-medium text-foreground">{configMora.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}</span>
+              </>
+            )}{" "}
+            y el recargo por mora es
             de{" "}
             <span className="font-medium text-foreground">
               {Number(configMora.valor)}

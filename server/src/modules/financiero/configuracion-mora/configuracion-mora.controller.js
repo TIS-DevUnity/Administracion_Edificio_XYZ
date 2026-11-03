@@ -20,7 +20,7 @@ async function listarHistorial(req, res, next) {
 
 async function crear(req, res, next) {
   try {
-    const { diaGeneracion, diaVencimiento, diaDescuentoSaldo, diasGracia, tipoValor, valor, modoMora, vigenteDesde } = req.body
+    const { diaGeneracion, diaVencimiento, diasGracia, tipoValor, valor, modoMora, vigenteDesde } = req.body
     if (
       diaGeneracion === undefined ||
       diasGracia === undefined ||
@@ -34,7 +34,6 @@ async function crear(req, res, next) {
     const config = await service.crear({
       diaGeneracion,
       diaVencimiento,
-      diaDescuentoSaldo,
       diasGracia,
       tipoValor,
       valor,

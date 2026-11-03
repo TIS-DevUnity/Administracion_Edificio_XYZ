@@ -45,7 +45,7 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *       200: { description: OK }
  *       400: { description: Filtro invalido }
  *   post:
- *     summary: Genera la expensa de un departamento (expensa fija segun su tipo; usa el saldo a favor si es su deuda mas antigua y ya llego el dia de descuento)
+ *     summary: Genera la expensa de un departamento (expensa fija segun su tipo; usa el saldo a favor si es su deuda mas antigua)
  *     description: |
  *       Solo pagan expensa los departamentos activos con alguien asignado (propietario o
  *       inquilino); baulera, parqueo y departamentos sin asignar se rechazan con 409. El monto es

@@ -3,6 +3,7 @@
  * reglas del backend (expensas.service.js, saldo.util.js, mora.util.js, reglas-pago.util.js,
  * cargos.util.js, configuracion-mora.service.js, generacion-automatica.job.js, estado-cuenta.util.js
  * y cuenta-inmueble.service.js): si esas reglas cambian, hay que cambiarlas también aquí.
+ * Excepción: el día de descuento del saldo a favor (diaDescuentoSaldo) está aquí antes que en el backend.
  * Solo trabaja sobre `EstadoSimulacion`: no conoce la red ni el almacenamiento.
  * Los importes se guardan en centavos para no acumular errores de redondeo.
  */

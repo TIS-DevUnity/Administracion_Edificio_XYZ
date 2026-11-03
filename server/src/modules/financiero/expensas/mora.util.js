@@ -4,7 +4,6 @@ const Decimal = Prisma.Decimal
 const ZONA_HORARIA = process.env.CRON_TIMEZONE || 'America/La_Paz'
 const MS_POR_DIA = 24 * 60 * 60 * 1000
 const MAX_MESES_MORA = 120 // tope de seguridad del calculo
-const DIA_DESCUENTO_POR_DEFECTO = 9
 
 /** Fecha de calendario (YYYY-MM-DD) de un instante, vista en hora de Bolivia. */
 function fechaEnZona(fecha = new Date()) {
@@ -52,15 +51,6 @@ function sumarMeses(isoDate, meses) {
 function vencimientoDelPeriodo(periodo, dia) {
   const [anio, mes] = periodo.split('-').map(Number)
   return new Date(Date.UTC(anio, mes - 1, dia))
-}
-
-/**
- * Dia (YYYY-MM-DD) desde el que el saldo a favor puede descontarse de una expensa del periodo.
- * Antes de ese dia no se toca, para dar tiempo a cargar el agua del mes.
- */
-function fechaDescuentoSaldo(periodo, config) {
-  const dia = config?.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO
-  return `${periodo}-${String(dia).padStart(2, '0')}`
 }
 
 /**
@@ -136,7 +126,6 @@ module.exports = {
   sumarMeses,
   diasEntre,
   vencimientoDelPeriodo,
-  fechaDescuentoSaldo,
   fechaCorteMora,
   saldoExpensaAlDia,
   calcularLineasMora

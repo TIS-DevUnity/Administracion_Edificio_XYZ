@@ -4,7 +4,6 @@ const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/audi
 
 const MODOS_MORA = ['UNICA', 'MENSUAL']
 const DIA_VENCIMIENTO_POR_DEFECTO = 10
-const DIA_DESCUENTO_POR_DEFECTO = 9
 
 /**
  * Configuracion que rige en `fecha` (por defecto hoy): la mas reciente cuyo vigenteDesde ya
@@ -68,8 +67,6 @@ function resolverVigenteDesde(valor) {
  *  - diaGeneracion: dia del mes en que se generan las expensas (1-28).
  *  - diaVencimiento: dia del mes en que vencen (1-28, no antes del dia de generacion). Si no
  *    se envia se conserva el de la configuracion anterior.
- *  - diaDescuentoSaldo: dia del mes (1-28) en que el saldo a favor se descuenta de la expensa, entre el
- *    dia de generacion y el de vencimiento. Si no se envia se conserva el de la configuracion anterior.
  *  - diasGracia: dias extra despues del vencimiento antes de que corra la mora.
  *  - tipoValor / valor: porcentaje (sobre lo que falta pagar) o monto fijo por mes de atraso.
  *  - modoMora: MENSUAL (una mora por cada mes de atraso) o UNICA (solo la primera).
@@ -79,7 +76,6 @@ function resolverVigenteDesde(valor) {
 async function crear({
   diaGeneracion,
   diaVencimiento,
-  diaDescuentoSaldo,
   diasGracia,
   tipoValor,
   valor,
@@ -112,10 +108,10 @@ async function crear({
     throw errorValidacion(`modoMora debe ser uno de: ${MODOS_MORA.join(', ')}`)
   }
 
-  const anterior = await prisma.configuracionMora.findFirst({ orderBy: { vigenteDesde: 'desc' } })
   let dia = diaVencimiento
   if (dia === undefined || dia === null) {
-    dia = Math.max(anterior?.diaVencimiento ?? DIA_VENCIMIENTO_POR_DEFECTO, diaGeneracion)
+    const vigente = await prisma.configuracionMora.findFirst({ orderBy: { vigenteDesde: 'desc' } })
+    dia = Math.max(vigente?.diaVencimiento ?? DIA_VENCIMIENTO_POR_DEFECTO, diaGeneracion)
   }
 
   if (!Number.isInteger(dia) || dia < 1 || dia > 28) {
@@ -126,19 +122,10 @@ async function crear({
     throw errorValidacion('diaVencimiento no puede ser anterior al dia de generacion')
   }
 
-  let diaDescuento = diaDescuentoSaldo
-  if (diaDescuento === undefined || diaDescuento === null) {
-    diaDescuento = Math.min(Math.max(anterior?.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO, diaGeneracion), dia)
-  }
-
-  if (!Number.isInteger(diaDescuento) || diaDescuento < diaGeneracion || diaDescuento > dia) {
-    throw errorValidacion('diaDescuentoSaldo debe ser un entero entre el dia de generacion y el de vencimiento')
-  }
-
   const desde = resolverVigenteDesde(vigenteDesde)
 
   const config = await prisma.configuracionMora.create({
-    data: { diaGeneracion, diaVencimiento: dia, diaDescuentoSaldo: diaDescuento, diasGracia, tipoValor, valor, modoMora, vigenteDesde: desde }
+    data: { diaGeneracion, diaVencimiento: dia, diasGracia, tipoValor, valor, modoMora, vigenteDesde: desde }
   })
 
   await registrarAuditoria({
@@ -149,7 +136,6 @@ async function crear({
     detalle: {
       diaGeneracion,
       diaVencimiento: dia,
-      diaDescuentoSaldo: diaDescuento,
       diasGracia,
       tipoValor,
       valor,

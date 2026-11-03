@@ -5,8 +5,7 @@ const configuracionMoraService = require('../configuracion-mora/configuracion-mo
 const notificacionesService = require('../notificaciones/notificaciones.service')
 const campanita = require('../notificaciones/campanita.service')
 const planesPagoService = require('../planes-pago/planes-pago.service')
-const { fechaDescuentoSaldo, fechaEnZona, vencimientoDelPeriodo } = require('../expensas/mora.util')
-const { configuracionDeLaExpensa } = require('../expensas/configuracion-expensa.util')
+const { fechaEnZona, vencimientoDelPeriodo } = require('../expensas/mora.util')
 
 /** Periodo (YYYY-MM) de una fecha, visto en hora de Bolivia. */
 function periodoActual(fecha = new Date()) {
@@ -142,43 +141,9 @@ async function ejecutarGeneracionAutomatica(
 }
 
 /**
- * Descuenta el saldo a favor de las expensas cuyo dia de descuento ya llego, de la mas antigua a la mas
- * nueva por inmueble. Si un inmueble no puede cubrir una expensa (por ejemplo, el saldo no completa un mes
- * atrasado) se deja para la proxima revision. Se puede repetir: un dia perdido se recupera en el siguiente.
- */
-async function ejecutarDescuentoSaldos({ hoy = new Date() } = {}) {
-  const saldos = await prisma.movimientoSaldo.groupBy({ by: ['inmuebleId'], _sum: { monto: true } })
-  const hoyIso = fechaEnZona(hoy)
-  let aplicados = 0
-
-  for (const { inmuebleId } of saldos.filter((fila) => Number(fila._sum.monto) > 0)) {
-    const expensas = await prisma.expensa.findMany({
-      where: { inmuebleId, estado: { not: 'PAGADA' }, planPagoId: null },
-      orderBy: [{ fechaVencimiento: 'asc' }, { periodo: 'asc' }]
-    })
-    for (const expensa of expensas) {
-      const config = await configuracionDeLaExpensa(prisma, expensa)
-      if (hoyIso < fechaDescuentoSaldo(expensa.periodo, config)) break
-      try {
-        const resultado = await expensasService.aplicarSaldoFavor(expensa.id, { usuarioId: null, ip: null })
-        aplicados += 1
-        if (resultado.expensa.estado !== 'PAGADA') break
-      } catch (err) {
-        console.warn(`[cron:saldos] Expensa ${expensa.id}: ${err.message}`)
-        break
-      }
-    }
-  }
-
-  console.log(`[cron:saldos] Descuento de saldo a favor: ${aplicados} expensas`)
-  return { aplicados }
-}
-
-/**
  * Revisa las expensas con deuda y deja la mora al dia: genera una linea por cada mes de
  * atraso que todavia no tenga. El correo se envia unicamente cuando se agrega mora nueva,
- * asi un pago parcial no provoca avisos repetidos. Primero descuenta los saldos a favor que
- * correspondan, para no cobrar mora sobre lo que ya estaba pagado por adelantado.
+ * asi un pago parcial no provoca avisos repetidos.
  */
 async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } = {}) {
   const config = await configuracionMoraService.obtenerVigente().catch(() => null)
@@ -186,11 +151,6 @@ async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } 
     console.warn('[cron:mora] No hay configuracion de mora vigente, se omite la aplicacion')
     return { aplicadas: 0 }
   }
-
-  const { aplicados: saldosAplicados } = await ejecutarDescuentoSaldos().catch((err) => {
-    console.warn(`[cron:saldos] Fallo inesperado: ${err.message}`)
-    return { aplicados: 0 }
-  })
 
   const expensasConDeuda = await prisma.expensa.findMany({
     where: { estado: { in: ['PENDIENTE', 'PARCIAL', 'VENCIDA'] } }
@@ -215,7 +175,7 @@ async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } 
   }
 
   console.log(`[cron:mora] Aplicacion automatica de mora: ${aplicadas} expensas con mora nueva`)
-  return { aplicadas, saldosAplicados }
+  return { aplicadas }
 }
 
 /**
@@ -241,7 +201,6 @@ function periodoHoy(fecha) {
 module.exports = {
   periodoActual,
   ejecutarGeneracionAutomatica,
-  ejecutarDescuentoSaldos,
   ejecutarAplicacionMoraAutomatica,
   ejecutarNotificacionesDiarias
 }

@@ -43,7 +43,7 @@ export const financeService = {
   async actualizarConfiguracion(data: {
     diaGeneracion: number;
     diaVencimiento: number;
-    diaDescuentoSaldo: number;
+    diaDescuentoSaldo?: number;
     diasGracia: number;
     tipoValor: "PORCENTAJE" | "MONTO_FIJO";
     modoMora: "UNICA" | "MENSUAL";

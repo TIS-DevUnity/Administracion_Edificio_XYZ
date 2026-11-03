@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const Module = require('module')
 
 const estado = {}
-const llamadas = { generar: [], consultas: [], aplicarSaldo: [] }
+const llamadas = { generar: [], consultas: [] }
 
 function escenario({ config = { id: 'cfg1', diaGeneracion: 10, diaVencimiento: 15, diasGracia: 0 }, inmuebles, expensas = [] } = {}) {
   estado.config = config
@@ -16,18 +16,9 @@ function escenario({ config = { id: 'cfg1', diaGeneracion: 10, diaVencimiento: 1
   estado.expensas = [...expensas]
   llamadas.generar = []
   llamadas.consultas = []
-  llamadas.aplicarSaldo = []
-  estado.saldos = []
-  estado.configuraciones = {}
-  estado.fallaAplicar = {}
 }
 
 const prismaFalso = {
-  movimientoSaldo: { groupBy: async () => estado.saldos },
-  configuracionMora: {
-    findUnique: async ({ where }) => estado.configuraciones[where.id] ?? null,
-    findFirst: async () => null
-  },
   inmueble: {
     findMany: async ({ where }) => {
       llamadas.consultas.push('inmueble.findMany')
@@ -37,12 +28,6 @@ const prismaFalso = {
   expensa: {
     findMany: async ({ where }) => {
       llamadas.consultas.push('expensa.findMany')
-      // Consulta del descuento de saldos: deudas de un inmueble, la mas antigua primero.
-      if (where.estado) {
-        return estado.expensas
-          .filter((e) => e.inmuebleId === where.inmuebleId && e.estado !== 'PAGADA')
-          .sort((a, b) => a.periodo.localeCompare(b.periodo))
-      }
       if (where.id) return estado.expensas.filter((e) => where.id.in.includes(e.id)).map((e) => ({ ...e, inmueble: {}, cargos: [] }))
       return estado.expensas.filter((e) => e.periodo === where.periodo && where.inmuebleId.in.includes(e.inmuebleId))
     },
@@ -62,13 +47,6 @@ const expensasFalso = {
     const creada = { id: `e-${inmuebleId}-${periodo}`, inmuebleId, periodo }
     estado.expensas.push(creada)
     return creada
-  },
-  aplicarSaldoFavor: async (id) => {
-    llamadas.aplicarSaldo.push(id)
-    if (estado.fallaAplicar[id]) throw new Error(estado.fallaAplicar[id])
-    const expensa = estado.expensas.find((e) => e.id === id)
-    expensa.estado = expensa.quedaEn ?? 'PAGADA'
-    return { expensa, saldoFavorAplicado: '10.00' }
   }
 }
 
@@ -93,7 +71,7 @@ Module._load = function (request, parent, isMain) {
   return cargarOriginal.call(this, request, parent, isMain)
 }
 
-const { ejecutarGeneracionAutomatica, ejecutarDescuentoSaldos } = require('./generacion-automatica.job')
+const { ejecutarGeneracionAutomatica } = require('./generacion-automatica.job')
 
 // Fechas en hora de Bolivia (UTC-4): mediodia del dia indicado.
 const dia = (texto) => new Date(`${texto}T12:00:00-04:00`)
@@ -203,62 +181,4 @@ test('sin configuracion de mora vigente no genera nada', async () => {
   const r = await ejecutarGeneracionAutomatica(dia('2026-10-12'))
   assert.deepEqual(r, { generadas: 0, omitidas: 0 })
   assert.deepEqual(llamadas.generar, [])
-})
-
-const conSaldo = (expensas, configuraciones = {}) => {
-  escenario({ expensas })
-  estado.saldos = [{ inmuebleId: 'i1', _sum: { monto: 500 } }, { inmuebleId: 'i2', _sum: { monto: 0 } }]
-  estado.configuraciones = configuraciones
-}
-const pendiente = { inmuebleId: 'i1', estado: 'PENDIENTE', configuracionMoraId: 'c', createdAt: new Date() }
-const dia9 = { c: { diaDescuentoSaldo: 9 } }
-
-test('el saldo a favor no se descuenta antes del dia configurado', async () => {
-  conSaldo([{ ...pendiente, id: 'a', periodo: '2026-10' }], dia9)
-  const r = await ejecutarDescuentoSaldos({ hoy: dia('2026-10-08') })
-  assert.equal(r.aplicados, 0)
-  assert.deepEqual(llamadas.aplicarSaldo, [])
-})
-
-test('el dia configurado se descuenta, y un dia perdido se recupera despues', async () => {
-  conSaldo([{ ...pendiente, id: 'a', periodo: '2026-10' }], dia9)
-  assert.equal((await ejecutarDescuentoSaldos({ hoy: dia('2026-10-09') })).aplicados, 1)
-  conSaldo([{ ...pendiente, id: 'a', periodo: '2026-10' }], dia9)
-  assert.equal((await ejecutarDescuentoSaldos({ hoy: dia('2026-10-12') })).aplicados, 1)
-})
-
-test('el dia de descuento se puede cambiar por configuracion', async () => {
-  conSaldo([{ ...pendiente, id: 'a', periodo: '2026-10' }], { c: { diaDescuentoSaldo: 5 } })
-  assert.equal((await ejecutarDescuentoSaldos({ hoy: dia('2026-10-05') })).aplicados, 1)
-})
-
-test('sin saldo a favor no se toca el inmueble', async () => {
-  conSaldo([{ ...pendiente, id: 'b', inmuebleId: 'i2', periodo: '2026-10' }], dia9)
-  await ejecutarDescuentoSaldos({ hoy: dia('2026-10-20') })
-  assert.deepEqual(llamadas.aplicarSaldo, [])
-})
-
-test('va de la expensa mas antigua a la mas nueva y sigue solo si la anterior quedo pagada', async () => {
-  conSaldo([{ ...pendiente, id: 'nov', periodo: '2026-11' }, { ...pendiente, id: 'oct', periodo: '2026-10' }], dia9)
-  await ejecutarDescuentoSaldos({ hoy: dia('2026-11-09') })
-  assert.deepEqual(llamadas.aplicarSaldo, ['oct', 'nov'])
-
-  conSaldo([{ ...pendiente, id: 'nov', periodo: '2026-11' }, { ...pendiente, id: 'oct', periodo: '2026-10', quedaEn: 'PARCIAL' }], dia9)
-  await ejecutarDescuentoSaldos({ hoy: dia('2026-11-09') })
-  assert.deepEqual(llamadas.aplicarSaldo, ['oct'])
-})
-
-test('la expensa de un mes cuyo dia no llego no se toca aunque la anterior si', async () => {
-  conSaldo([{ ...pendiente, id: 'oct', periodo: '2026-10' }, { ...pendiente, id: 'nov', periodo: '2026-11' }], dia9)
-  await ejecutarDescuentoSaldos({ hoy: dia('2026-11-05') })
-  assert.deepEqual(llamadas.aplicarSaldo, ['oct'])
-})
-
-test('un rechazo de las reglas de pago no frena a los demas inmuebles', async () => {
-  conSaldo([{ ...pendiente, id: 'a', periodo: '2026-10' }, { ...pendiente, id: 'b', inmuebleId: 'i2', periodo: '2026-10' }], dia9)
-  estado.saldos = [{ inmuebleId: 'i1', _sum: { monto: 5 } }, { inmuebleId: 'i2', _sum: { monto: 5 } }]
-  estado.fallaAplicar = { a: 'no alcanza' }
-  const r = await ejecutarDescuentoSaldos({ hoy: dia('2026-10-09') })
-  assert.deepEqual(llamadas.aplicarSaldo, ['a', 'b'])
-  assert.equal(r.aplicados, 1)
 })
