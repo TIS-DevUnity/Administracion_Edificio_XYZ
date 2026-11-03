@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Droplets,
   Mail,
+  PiggyBank,
   UserRound,
   X,
   RefreshCw,
@@ -102,6 +103,8 @@ function ContenidoMorosidad() {
   const bolPuedeGestionar = puedeEjecutar(rol, "morosidad", "editar");
   // GET /notificaciones/correos: ADMINISTRADOR y DIRECTORIO (notificaciones.routes.js).
   const bolPuedeVerCorreos = rol !== "CONSULTA";
+  // El rol CONSULTA solo puede ver la cuenta de sus propios inmuebles (acceso-propio.js).
+  const bolPuedeVerAnticipados = rol !== "CONSULTA";
   const [bolCargaAguaAbierta, setBolCargaAguaAbierta] = useState(false);
   const [bolRegistroCorreosAbierto, setBolRegistroCorreosAbierto] = useState(false);
 
@@ -1004,6 +1007,21 @@ function ContenidoMorosidad() {
       )}
 
       <ResumenMorosidad expensas={expensas} />
+
+      {bolPuedeVerAnticipados && (
+        <div className="mb-6 flex flex-col gap-3 rounded-lg border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className={CLASE_TITULO_SECCION}>Pagos anticipados y saldo a favor</h2>
+            <p className={`${CLASE_AYUDA} mt-1`}>Quiénes pagaron por adelantado y cómo se descuenta ese monto de las expensas generadas.</p>
+          </div>
+          <Button asChild variant="outline" className="w-full sm:w-auto">
+            <Link href="/admin/morosidad/anticipados">
+              <PiggyBank className="h-4 w-4" />
+              Ver listado
+            </Link>
+          </Button>
+        </div>
+      )}
 
       {/* Registro general */}
       <Card className="gap-0 overflow-hidden py-0 shadow-sm">
