@@ -171,6 +171,9 @@ model ConfiguracionMora {
   // Dia del mes (1-28) en que vence la expensa. La mora corre desde el dia siguiente
   // al vencimiento mas los dias de gracia.
   diaVencimiento Int           @default(10)
+  // Dia del mes (1-28) desde el que el saldo a favor se descuenta de la expensa. Deja tiempo para
+  // cargar el agua antes del descuento; no puede ser posterior al vencimiento.
+  diaDescuentoSaldo Int        @default(9)
   diasGracia     Int           @default(0)
   tipoValor      TipoValorMora @default(PORCENTAJE)
   valor          Decimal       @db.Decimal(10, 2)

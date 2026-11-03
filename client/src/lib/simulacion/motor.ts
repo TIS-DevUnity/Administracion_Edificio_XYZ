@@ -43,6 +43,7 @@ export interface ConfigSim {
   id: string;
   diaGeneracion: number;
   diaVencimiento: number;
+  diaDescuentoSaldo?: number; // puede faltar en configuraciones capturadas antes de ese campo
   diasGracia: number;
   modoMora: "UNICA" | "MENSUAL";
   tipoValor: "PORCENTAJE" | "MONTO_FIJO";
@@ -168,6 +169,7 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000;
 const DESFASE_BOLIVIA_MS = 4 * 60 * 60 * 1000; // Bolivia es UTC-4 todo el año
 const MAX_MESES_MORA = 120;
 const MAX_DIAS_POR_SALTO = 1100;
+const DIA_DESCUENTO_POR_DEFECTO = 9;
 const METODOS_MANUALES = ["EFECTIVO", "TRANSFERENCIA", "TARJETA", "CHEQUE"];
 const ORDEN_CLASE_CARGO: Record<ClaseInmueble, number> = { DEPARTAMENTO: 0, BAULERA: 1, PARQUEO: 2 };
 const ORDEN_CLASE_EXTRA: Partial<Record<ClaseInmueble, number>> = { PARQUEO: 0, BAULERA: 1 };
@@ -213,6 +215,11 @@ export function sumarMeses(fechaIso: string, meses: number) {
   const ultimoDia = new Date(Date.UTC(anioFinal, mesFinal + 1, 0)).getUTCDate();
   const diaFinal = Math.min(dia, ultimoDia);
   return `${anioFinal}-${String(mesFinal + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
+}
+
+/** Día desde el que el saldo a favor puede descontarse de una expensa del período. */
+function fechaDescuentoSaldo(periodo: string, config: ConfigSim | null) {
+  return `${periodo}-${String(config?.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO).padStart(2, "0")}`;
 }
 
 function vencimientoDelPeriodo(periodo: string, dia: number) {
@@ -438,6 +445,14 @@ export function crearConfig(estado: EstadoSimulacion, datos: Record<string, unkn
   if (!Number.isInteger(dia) || dia < 1 || dia > 28) throw error("diaVencimiento debe ser un entero entre 1 y 28", 400);
   if (dia < Number(diaGeneracion)) throw error("diaVencimiento no puede ser anterior al dia de generacion", 400);
 
+  let diaDescuento = datos.diaDescuentoSaldo as number | null | undefined;
+  if (diaDescuento === undefined || diaDescuento === null) {
+    diaDescuento = Math.min(Math.max(historialConfig(estado)[0]?.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO, Number(diaGeneracion)), dia);
+  }
+  if (!Number.isInteger(diaDescuento) || diaDescuento < Number(diaGeneracion) || diaDescuento > dia) {
+    throw error("diaDescuentoSaldo debe ser un entero entre el dia de generacion y el de vencimiento", 400);
+  }
+
   const momento = ahora(estado);
   let desde = momento;
   if (vigenteDesde) {
@@ -452,7 +467,7 @@ export function crearConfig(estado: EstadoSimulacion, datos: Record<string, unkn
   }
 
   const config: ConfigSim = {
-    id: nuevoId(estado, "config"), diaGeneracion: Number(diaGeneracion), diaVencimiento: dia, diasGracia: Number(diasGracia),
+    id: nuevoId(estado, "config"), diaGeneracion: Number(diaGeneracion), diaVencimiento: dia, diaDescuentoSaldo: diaDescuento, diasGracia: Number(diasGracia),
     tipoValor, valor, modoMora, vigenteDesde: desde,
   };
   estado.configuraciones.push(config);
@@ -541,8 +556,9 @@ export function generar(estado: EstadoSimulacion, datos: { inmuebleId: string; p
   };
   estado.expensas.push(expensa);
 
-  // El saldo a favor se usa de inmediato, pero solo si esta es la deuda más antigua del inmueble.
-  const aplicado = hayDeudaAnterior(estado, expensa) ? 0 : aplicarSaldoAExpensa(estado, expensa);
+  // El saldo a favor se descuenta desde el día configurado, para dar tiempo a cargar el agua. Aquí solo se
+  // usa si la expensa se genera con ese día ya alcanzado y es la deuda más antigua del inmueble.
+  const aplicado = hayDeudaAnterior(estado, expensa) || estado.fecha < fechaDescuentoSaldo(periodo, config) ? 0 : aplicarSaldoAExpensa(estado, expensa);
   return { expensa, aplicado };
 }
 
@@ -660,8 +676,29 @@ export function aplicarMora(estado: EstadoSimulacion, expensaId: string) {
   return { expensa, moraActualizada: true };
 }
 
+/** Igual que ejecutarDescuentoSaldos del backend: de la expensa más antigua a la más nueva por inmueble. */
+export function ejecutarDescuentoSaldos(estado: EstadoSimulacion) {
+  let aplicados = 0;
+  for (const inmueble of estado.inmuebles) {
+    if (saldoFavorDe(estado, inmueble.id) <= 0) continue;
+    for (const { expensa } of cargarDeudas(estado, inmueble.id)) {
+      if (estado.fecha < fechaDescuentoSaldo(expensa.periodo, configDeLaExpensa(estado, expensa))) break;
+      try {
+        aplicarSaldoFavor(estado, expensa.id);
+      } catch (err) {
+        if (!(err instanceof ErrorSimulacion)) throw err;
+        break;
+      }
+      aplicados += 1;
+      if (expensa.estado !== "PAGADA") break;
+    }
+  }
+  return { aplicados };
+}
+
 export function ejecutarMora(estado: EstadoSimulacion) {
-  if (!configVigente(estado)) return { aplicadas: 0 };
+  if (!configVigente(estado)) return { aplicadas: 0, saldosAplicados: 0 };
+  const saldosAplicados = ejecutarDescuentoSaldos(estado).aplicados;
   let aplicadas = 0;
   for (const expensa of estado.expensas) {
     if (expensa.estado === "PAGADA") continue;
@@ -670,7 +707,7 @@ export function ejecutarMora(estado: EstadoSimulacion) {
       registrarAviso(estado, "MORA_APLICADA", expensa);
     }
   }
-  return { aplicadas };
+  return { aplicadas, saldosAplicados };
 }
 
 // ----- Pagos -----
@@ -801,7 +838,8 @@ export function cargarAgua(estado: EstadoSimulacion, expensaId: string, montoAgu
   expensa.estado = calcularEstado(expensa, expensa.estado === "VENCIDA");
   expensa.aguaRegistradaEn = ahora(estado);
 
-  const aplicado = agua > aguaAnterior && !hayDeudaAnterior(estado, expensa) ? aplicarSaldoAExpensa(estado, expensa) : 0;
+  const bolDiaDescuento = estado.fecha >= fechaDescuentoSaldo(expensa.periodo, configDeLaExpensa(estado, expensa));
+  const aplicado = agua > aguaAnterior && bolDiaDescuento && !hayDeudaAnterior(estado, expensa) ? aplicarSaldoAExpensa(estado, expensa) : 0;
   return { expensa, aplicado };
 }
 
@@ -844,7 +882,7 @@ export function cambiarVencimiento(estado: EstadoSimulacion, expensaId: string, 
  */
 export function moverFecha(estado: EstadoSimulacion, nuevaFecha: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(nuevaFecha) || Number.isNaN(aMs(nuevaFecha))) throw error("La fecha no es válida.", 400);
-  const resumen = { dias: 0, expensasGeneradas: 0, expensasConMora: 0, periodos: [] as string[] };
+  const resumen = { dias: 0, expensasGeneradas: 0, expensasConMora: 0, saldosAplicados: 0, periodos: [] as string[] };
 
   if (nuevaFecha < estado.fecha) {
     if (estado.expensas.length > 0 || estado.movimientos.length > 0) {
@@ -864,7 +902,9 @@ export function moverFecha(estado: EstadoSimulacion, nuevaFecha: string) {
       resumen.expensasGeneradas += generacion.generadas;
       if (generacion.periodo) resumen.periodos.push(generacion.periodo);
     }
-    resumen.expensasConMora += ejecutarMora(estado).aplicadas;
+    const mora = ejecutarMora(estado);
+    resumen.expensasConMora += mora.aplicadas;
+    resumen.saldosAplicados += mora.saldosAplicados;
   }
   resumen.dias = dias;
   return resumen;

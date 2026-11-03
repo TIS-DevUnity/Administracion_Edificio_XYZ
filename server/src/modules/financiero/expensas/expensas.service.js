@@ -2,7 +2,7 @@ const prisma = require('../../../config/prisma')
 const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
 const { filtroOcupanteVigente } = require('../../operativo-seguridad/inmuebles/asignacion.util')
 const configuracionMoraService = require('../configuracion-mora/configuracion-mora.service')
-const { calcularLineasMora, fechaEnZona, fechaCalendario, sumarDias, vencimientoDelPeriodo } = require('./mora.util')
+const { calcularLineasMora, fechaEnZona, fechaCalendario, fechaDescuentoSaldo, sumarDias, vencimientoDelPeriodo } = require('./mora.util')
 const reglas = require('./reglas-pago.util')
 const cargosUtil = require('./cargos.util')
 const { configuracionDeLaExpensa } = require('./configuracion-expensa.util')
@@ -185,13 +185,14 @@ async function generar({
         ].map((cargo) => ({ ...cargo, expensaId: creada.id }))
       })
 
-      // El saldo a favor (pagos anticipados / excesos) se usa de inmediato, pero solo si esta
-      // es la deuda mas antigua del inmueble: los pagos siempre van del mes mas antiguo al mas nuevo.
+      // El saldo a favor (pagos anticipados / excesos) se descuenta desde el dia configurado, para dar
+      // tiempo a cargar el agua: normalmente lo hace el proceso diario (ver ejecutarDescuentoSaldos). Aqui
+      // solo se usa si la expensa se genera con ese dia ya alcanzado y es la deuda mas antigua del inmueble.
       const anteriores = await tx.expensa.count({
         where: { inmuebleId, id: { not: creada.id }, estado: { not: 'PAGADA' }, planPagoId: null, periodo: { lt: periodo } }
       })
       const saldo =
-        anteriores === 0
+        anteriores === 0 && fechaEnZona() >= fechaDescuentoSaldo(periodo, configVigente)
           ? await aplicarSaldoAExpensa(tx, { ...creada, pagos: [] }, usuarioId)
           : { aplicado: new Decimal(0) }
 
@@ -834,7 +835,7 @@ async function aplicarSaldoFavor(expensaId, { usuarioId, ip }) {
  *    y sus lineas nunca se editan, asi que cambiar el total despues dejaria cargos sin sustento.
  *  - El nuevo total no puede quedar por debajo de lo que ya se pago de la expensa.
  *  - Si el agua sube y el inmueble tiene saldo a favor, se usa para cubrir ese aumento (solo
- *    cuando esta es su deuda mas antigua, igual que el resto de pagos).
+ *    cuando esta es su deuda mas antigua y ya llego el dia de descuento del saldo).
  */
 async function cargarAgua(expensaId, { montoAgua, usuarioId = null, ip = null }) {
   const agua = parsearMonto(montoAgua, 'montoAgua', { permitirCero: true })
@@ -896,9 +897,11 @@ async function cargarAgua(expensaId, { montoAgua, usuarioId = null, ip = null })
       data: { montoAgua: agua, montoTotal, estado, aguaRegistradaEn: new Date() }
     })
 
-    // Si el agua subio y al inmueble le sobra saldo a favor, se usa para cubrir ese aumento.
+    // Si el agua subio, ya llego el dia de descuento y al inmueble le sobra saldo a favor, se usa para
+    // cubrir ese aumento. Antes de ese dia el saldo se conserva para el descuento del proceso diario.
     let saldo = { aplicado: new Decimal(0) }
-    if (agua.gt(aguaAnterior)) {
+    const configuracion = await configuracionDeLaExpensa(tx, expensa)
+    if (agua.gt(aguaAnterior) && fechaEnZona() >= fechaDescuentoSaldo(expensa.periodo, configuracion)) {
       const anteriores = await tx.expensa.count({
         where: {
           inmuebleId: expensa.inmuebleId,

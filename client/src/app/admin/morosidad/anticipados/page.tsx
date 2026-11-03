@@ -137,7 +137,7 @@ function DetalleAnticipado({ fila, onCerrar, onVerCuenta }: {
 
             {fila.saldo > 0 && fila.deudaPendiente > 0 && (
               <p className="rounded-lg border border-accent-secondary/30 bg-accent-secondary/10 px-3 py-2 text-[13px] leading-[1.45] text-foreground">
-                Este departamento debe {formatCurrency(fila.deudaPendiente)}. El saldo se descuenta solo en la expensa que sea su deuda más antigua.
+                Este departamento debe {formatCurrency(fila.deudaPendiente)}. El saldo se descuenta solo el día de descuento configurado, empezando por su deuda más antigua.
               </p>
             )}
 
@@ -244,7 +244,7 @@ function ContenidoAnticipados() {
           </Link>
           <h2 className={CLASE_TITULO_SECCION}>Pagos anticipados y saldo a favor</h2>
           <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
-            Departamentos que pagaron por adelantado o de más. El monto se descuenta automáticamente de las expensas que se van generando, empezando por la deuda más antigua.
+            Departamentos que pagaron por adelantado o de más. El monto se descuenta automáticamente de las expensas el día de descuento configurado, empezando por la deuda más antigua.
           </p>
         </div>
         <Button variant="outline" cargando={consulta.isFetching} onClick={() => void consulta.refetch()}>

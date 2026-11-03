@@ -88,6 +88,7 @@ const ETIQUETA_METODO_PAGO: Record<MetodoPago, string> = {
 };
 
 const EXPENSAS_VACIAS: ExpensaDTO[] = [];
+const DIA_DESCUENTO_POR_DEFECTO = 9;
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 
@@ -153,6 +154,7 @@ function ContenidoMorosidad() {
     // nuevo), para que el input no se rellene solo con un "0".
     diaGeneracion: number | "";
     diaVencimiento: number | "";
+    diaDescuentoSaldo: number | "";
     diasGracia: number | "";
     tipoValor: TipoValorMora;
     modoMora: "UNICA" | "MENSUAL";
@@ -161,6 +163,7 @@ function ContenidoMorosidad() {
   }>({
     diaGeneracion: 1,
     diaVencimiento: 10,
+    diaDescuentoSaldo: DIA_DESCUENTO_POR_DEFECTO,
     diasGracia: 5,
     tipoValor: "PORCENTAJE",
     modoMora: "MENSUAL",
@@ -242,6 +245,7 @@ function ContenidoMorosidad() {
     setFormData({
       diaGeneracion: Number(configMora.diaGeneracion),
       diaVencimiento: Number(configMora.diaVencimiento),
+      diaDescuentoSaldo: Number(configMora.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO),
       diasGracia: Number(configMora.diasGracia),
       tipoValor: configMora.tipoValor, modoMora: configMora.modoMora,
       valor: Number(configMora.valor), vigenteDesde: "",
@@ -390,6 +394,11 @@ function ContenidoMorosidad() {
       setStrErrorConfig("El vencimiento debe estar entre 1 y 28 y no puede preceder a la generación.");
       return;
     }
+    if (formData.diaDescuentoSaldo === "" || !Number.isInteger(formData.diaDescuentoSaldo) ||
+        formData.diaDescuentoSaldo < Number(formData.diaGeneracion) || formData.diaDescuentoSaldo > Number(formData.diaVencimiento)) {
+      setStrErrorConfig("El día de descuento de pagos anticipados debe estar entre el de generación y el de vencimiento.");
+      return;
+    }
     if (formData.diasGracia === "" || !Number.isInteger(formData.diasGracia) || formData.diasGracia < 0) {
       setStrErrorConfig("Los días de gracia no pueden ser negativos.");
       return;
@@ -414,6 +423,7 @@ function ContenidoMorosidad() {
       await financeService.actualizarConfiguracion({
         diaGeneracion: Number(formData.diaGeneracion),
         diaVencimiento: Number(formData.diaVencimiento),
+        diaDescuentoSaldo: Number(formData.diaDescuentoSaldo),
         diasGracia: Number(formData.diasGracia),
         tipoValor: formData.tipoValor,
         modoMora: formData.modoMora,
@@ -557,12 +567,13 @@ function ContenidoMorosidad() {
       // único camino que también notifica por correo a los ocupantes afectados.
       const resultado = await financeService.ejecutarMoraJob();
 
+      const strSaldos = resultado.saldosAplicados ? ` Se descontó saldo a favor en ${resultado.saldosAplicados} expensa${resultado.saldosAplicados === 1 ? "" : "s"}.` : "";
       if (resultado.aplicadas > 0) {
         setStrExito(
-          `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.`
+          `Revisión completa: se aplicó o actualizó mora en ${resultado.aplicadas} expensa${resultado.aplicadas === 1 ? "" : "s"}.${strSaldos}`
         );
       } else {
-        setStrExito("Revisión completa: el backend no aplicó recargos nuevos. Puede ser por fechas, reglas históricas o pagos registrados.");
+        setStrExito(`Revisión completa: el backend no aplicó recargos nuevos. Puede ser por fechas, reglas históricas o pagos registrados.${strSaldos}`);
       }
       await actualizarExpensas();
     } catch (error) {
@@ -726,6 +737,15 @@ function ContenidoMorosidad() {
                   />
                 </div>
                 <div className="grid gap-1">
+                  <label htmlFor="diaDescuentoSaldo" className={CLASE_LABEL_CAMPO}>Día de descuento de pagos anticipados</label>
+                  <Input
+                    id="diaDescuentoSaldo" type="number" min="1" max="28"
+                    value={formData.diaDescuentoSaldo}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, diaDescuentoSaldo: e.target.value === "" ? "" : Number(e.target.value) }))}
+                  />
+                  <p className={CLASE_AYUDA}>Da tiempo a cargar el agua del mes antes de descontar el saldo a favor. Debe estar entre el día de generación y el de vencimiento.</p>
+                </div>
+                <div className="grid gap-1">
                   <label className={CLASE_LABEL_CAMPO}>Días de gracia</label>
                   <Input
                     type="number"
@@ -806,7 +826,7 @@ function ContenidoMorosidad() {
                     {historialConfiguracion.map((regla) => (
                       <div key={regla.id} className="border-b border-border pb-2 text-[12px] leading-[1.45] text-foreground last:border-0">
                         <span className="font-medium">{formatearFecha(regla.vigenteDesde)}</span> · {regla.modoMora === "UNICA" ? "Única" : "Mensual"} · {Number(regla.valor)}{regla.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
-                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
+                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, descuento de anticipados día {regla.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}, vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
                       </div>
                     ))}
                   </div>
@@ -911,7 +931,9 @@ function ContenidoMorosidad() {
             Las expensas se generan automáticamente el día{" "}
             <span className="font-medium text-foreground">{configMora.diaGeneracion}</span> de cada mes. El
             vencimiento está configurado para el día{" "}
-            <span className="font-medium text-foreground">{configMora.diaVencimiento}</span> y el recargo por mora es
+            <span className="font-medium text-foreground">{configMora.diaVencimiento}</span>, los pagos anticipados se
+            descuentan el día{" "}
+            <span className="font-medium text-foreground">{configMora.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}</span> y el recargo por mora es
             de{" "}
             <span className="font-medium text-foreground">
               {Number(configMora.valor)}

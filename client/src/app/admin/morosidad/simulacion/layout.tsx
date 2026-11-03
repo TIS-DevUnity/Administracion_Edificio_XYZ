@@ -81,6 +81,7 @@ export default function LayoutSimulacion({ children }: { children: ReactNode }) 
             (resumen.expensasGeneradas > 0
               ? `Se generaron ${resumen.expensasGeneradas} expensas (${resumen.periodos.join(", ")}). `
               : "No correspondía generar expensas. ") +
+            (resumen.saldosAplicados > 0 ? `Se descontó saldo a favor en ${resumen.saldosAplicados} expensa${resumen.saldosAplicados === 1 ? "" : "s"}. ` : "") +
             (resumen.expensasConMora > 0 ? `Se aplicó mora ${resumen.expensasConMora} veces.` : "No se aplicó mora nueva.")
         );
       } catch (error) {
@@ -123,8 +124,8 @@ export default function LayoutSimulacion({ children }: { children: ReactNode }) 
 
   return (
     <>
-      {/* Marco en el borde de la pantalla: siempre visible, incluso sobre los diálogos, y no bloquea los clics. */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[100] border-4 border-accent-secondary" />
+      {/* Marco del área de contenido (sin el encabezado de 4rem ni el menú lateral w-60). Sigue visible al hacer scroll y no bloquea los clics. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 bottom-0 top-16 z-20 border-4 border-accent-secondary lg:left-60" />
 
       <div className="mx-4 mt-6 space-y-3 rounded-lg border border-accent-secondary/30 bg-accent-secondary/10 p-4 sm:mx-6">
         <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
@@ -202,7 +203,7 @@ export default function LayoutSimulacion({ children }: { children: ReactNode }) 
             </div>
 
             <p className={CLASE_AYUDA}>
-              Al avanzar la fecha se repite, día por día, lo que hace el proceso automático real: genera las expensas del mes y aplica la mora que corresponda.
+              Al avanzar la fecha se repite, día por día, lo que hace el proceso automático real: genera las expensas del mes, descuenta los pagos anticipados el día configurado y aplica la mora que corresponda.
             </p>
 
             {strResultado && <p className="rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">{strResultado}</p>}

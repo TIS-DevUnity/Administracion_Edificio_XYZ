@@ -31,8 +31,8 @@ Pendientes del cronograma (existe el modelo en `schema.prisma`, sin codigo todav
   - `montoTotal = montoBase + montoAgua`; el estado se recalcula con lo ya pagado.
   - Se puede corregir mientras la expensa no tenga mora generada (`EXPENSA_CON_MORA`) y el
     nuevo total no quede por debajo de lo ya pagado (`AGUA_MENOR_A_LO_PAGADO`).
-  - Si el agua sube y al inmueble le sobraba saldo a favor y esa expensa es su deuda mas
-    antigua, el saldo cubre el aumento (`saldoFavorAplicado` en la respuesta).
+  - Si el agua sube, al inmueble le sobraba saldo a favor, esa expensa es su deuda mas antigua y
+    ya llego el dia de descuento, el saldo cubre el aumento (`saldoFavorAplicado` en la respuesta).
   - `aguaRegistradaEn` indica cuando se cargo (null = todavia falta). Para ver a quien le
     falta: `GET /api/financiero/expensas?periodo=2026-10&aguaCargada=false`.
   - Cada carga o correccion queda en la auditoria con el monto anterior y el nuevo.
@@ -83,7 +83,8 @@ Viven en `expensas/reglas-pago.util.js`; si cambia la politica se cambia solo ah
 3. La expensa **actual** admite cuotas, aunque tenga mora, hasta que se genere la siguiente.
 4. En cada expensa el pago cubre **primero la mora y luego el monto**.
 5. Si el pago cubre toda la deuda, lo que sobra queda como **pago anticipado** (saldo a favor),
-   que se descuenta solo de la proxima expensa que se genere.
+   que se descuenta solo el dia `ConfiguracionMora.diaDescuentoSaldo` del mes (9 por defecto), para
+   dar tiempo a cargar el agua. Lo hace el proceso diario antes de revisar la mora.
 6. `POST /inmuebles/{id}/pagos-anticipados` solo aplica si no se debe nada.
 
 Un pago que incumple se rechaza con 409 y un `codigo` (`DEUDA_ATRASADA`,
