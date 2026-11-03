@@ -34,6 +34,9 @@ const anticiposRoutes = require('./modules/financiero/anticipos/anticipos.routes
 
 const app = express()
 
+// Detras de un proxy (Render, etc.) se necesita para ver la IP real del cliente; ej: TRUST_PROXY=1
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY)
+
 app.use(helmet())
 app.use(cors())
 app.use(express.json())
