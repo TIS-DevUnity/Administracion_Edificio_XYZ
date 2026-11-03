@@ -9,7 +9,7 @@ import { BadgeEstadoExpensa, ETIQUETA_ESTADO, TablaExpensas } from "./components
 import { ResumenMorosidad } from "./components/ResumenMorosidad";
 import { DialogoCargaAgua } from "./components/DialogoCargaAgua";
 import { AvisoServicioCorreo, DialogoRegistroCorreos } from "./components/RegistroCorreos";
-import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
+import { formatCurrency, formatearFecha, formatearFechaCalendario, fechaHoyBolivia, fechaRealBolivia, fechaEnBolivia, estaEnPeriodoGracia, periodoActual, tieneMoraAplicada, resumenSaldo, calcularSaldoPendiente, obtenerMensajeError } from "./utils/morosidad";
 import axios from "axios";
 import {
   CalendarClock,
@@ -127,7 +127,8 @@ function ContenidoMorosidad() {
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get("q") ?? "");
   const [filtroInmuebleId, setFiltroInmuebleId] = useState("");
   // Un solo selector de mes; inicialmente muestra el mes actual.
-  const [filtroPeriodo, setFiltroPeriodo] = useState(periodoActual());
+  // Al salir de la simulación este render ocurre antes de que cambie la URL: por eso se decide con la ruta nueva.
+  const [filtroPeriodo, setFiltroPeriodo] = useState(() => (bolEnSimulacion ? periodoActual() : fechaRealBolivia().slice(0, 7)));
   const [filtroTipo, setFiltroTipo] = useState("TODOS");
   const [filtroEstado, setFiltroEstado] = useState("TODOS");
   const [strMensajePermiso, setStrMensajePermiso] = useState("");

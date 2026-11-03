@@ -26,8 +26,11 @@ export function formatearFechaCalendario(valor: string) {
 }
 
 export function fechaHoyBolivia(): string {
-  const strSimulada = fechaSimuladaActiva();
-  if (strSimulada) return strSimulada;
+  return fechaSimuladaActiva() ?? fechaRealBolivia();
+}
+
+/** La fecha de verdad, sin importar la simulación. */
+export function fechaRealBolivia(): string {
   const partes = new Intl.DateTimeFormat("en-US", {
     year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/La_Paz",
   }).formatToParts(new Date());
