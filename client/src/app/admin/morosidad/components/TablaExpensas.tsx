@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ExpensaDTO, ConfiguracionMoraDTO, EstadoExpensa } from "@/types/finance";
-import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, tieneMoraAplicada, obtenerMensajeError, resumenSaldo } from "../utils/morosidad";
+import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, pagadaConAguaCargada, tieneMoraAplicada, obtenerMensajeError, resumenSaldo } from "../utils/morosidad";
 
 const CLASE_HEADER_TABLA = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_LABEL_CAMPO = CLASE_HEADER_TABLA;
@@ -86,7 +86,7 @@ function AguaEditable({
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  const estaPagada = exp.estado === "PAGADA";
+  const estaPagada = pagadaConAguaCargada(exp);
   const tieneMora = (exp.moras?.length ?? 0) > 0;
   const habilitada = bolPuedeGestionar && !estaPagada && !tieneMora;
   const registrada = Boolean(exp.aguaRegistradaEn);

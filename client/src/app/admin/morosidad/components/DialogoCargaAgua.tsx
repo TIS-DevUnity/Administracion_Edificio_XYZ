@@ -17,7 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { financeService } from "@/services/finance.service";
 import type { ExpensaDTO, TipoInmuebleDTO } from "@/types/finance";
-import { formatCurrency, obtenerMensajeError } from "../utils/morosidad";
+import { formatCurrency, obtenerMensajeError, pagadaConAguaCargada } from "../utils/morosidad";
 
 const CLASE_HEADER_TABLA = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 const CLASE_LABEL_CAMPO = CLASE_HEADER_TABLA;
@@ -31,7 +31,7 @@ type EstadoFila = { tipo: "ok" } | { tipo: "error"; mensaje: string };
 
 /** Por qué no se puede cargar el agua de una expensa (mismas reglas que PATCH /expensas/:id/agua). */
 function motivoBloqueo(exp: ExpensaDTO): string | null {
-  if (exp.estado === "PAGADA") return "Pagada";
+  if (pagadaConAguaCargada(exp)) return "Pagada";
   if ((exp.moras?.length ?? 0) > 0) return "Con mora";
   if (exp.planPagoId) return "En plan de pagos";
   return null;
@@ -356,8 +356,8 @@ export function DialogoCargaAgua({
         )}
 
         <p className={CLASE_AYUDA}>
-          Presiona Enter para pasar al siguiente departamento. El agua no se puede cambiar si la expensa está pagada, tiene
-          mora o está en un plan de pagos, ni dejar el total por debajo de lo ya pagado.
+          Presiona Enter para pasar al siguiente departamento. El agua no se puede cambiar si la expensa tiene mora o está en
+          un plan de pagos, ni dejar el total por debajo de lo ya pagado. Una expensa pagada solo admite cargarla si todavía no la tiene.
         </p>
 
         <DialogFooter className="items-center gap-2 sm:justify-between">
