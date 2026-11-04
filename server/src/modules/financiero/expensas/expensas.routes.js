@@ -54,7 +54,9 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *       Quien tiene mas de un departamento paga baulera y parqueo una sola vez, en el primero
  *       por codigo. El agua (`montoAgua`) nace en 0 y el administrador la carga despues en
  *       `PATCH /api/financiero/expensas/{id}/agua`; baulera y parqueo no llevan agua. Si no se
- *       envia `fechaVencimiento` se usa el dia de vencimiento de la configuracion de mora.
+ *       envia `fechaVencimiento` se usa el dia de vencimiento de la configuracion de mora. El saldo a
+ *       favor del inmueble no se usa al generar si hoy es anterior al dia de descuento del saldo
+ *       (`diaDescuentoSaldo`, por defecto el 9): lo descuenta el proceso diario desde ese dia.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -151,6 +153,10 @@ router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
  * /api/financiero/expensas/{id}/aplicar-saldo:
  *   post:
  *     summary: Cubre lo pendiente de una expensa con el saldo a favor del inmueble
+ *     description: |
+ *       El saldo a favor se descuenta solo, a partir del dia de descuento configurado de cada mes
+ *       (`diaDescuentoSaldo` de la configuracion de mora, por defecto el 9); este endpoint permite hacerlo a
+ *       mano. No cubre una expensa cuyo agua todavia no se cargo (409 AGUA_SIN_CARGAR).
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -161,7 +167,7 @@ router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
  *     responses:
  *       200: { description: Saldo aplicado, devuelve la expensa y saldoFavorAplicado }
  *       404: { description: Expensa no encontrada }
- *       409: { description: "La expensa ya esta pagada, el inmueble no tiene saldo a favor, no es la deuda mas antigua o el saldo no completa un mes atrasado" }
+ *       409: { description: "La expensa ya esta pagada, el inmueble no tiene saldo a favor, no es la deuda mas antigua, el saldo no completa un mes atrasado o falta cargar el agua (codigo AGUA_SIN_CARGAR)" }
  */
 router.post('/:id/aplicar-saldo', autenticar, GESTION, controller.aplicarSaldoFavor)
 
@@ -175,7 +181,9 @@ router.post('/:id/aplicar-saldo', autenticar, GESTION, controller.aplicarSaldoFa
  *       del edificio ni reparto. `montoTotal = montoBase + montoAgua` y el estado se recalcula con
  *       lo ya pagado. Se puede corregir mientras la expensa no tenga mora generada y el nuevo total
  *       no quede por debajo de lo ya pagado. Si el agua sube y el inmueble tiene saldo a favor,
- *       este cubre el aumento (`saldoFavorAplicado`). Cada cambio queda en la auditoria.
+ *       este cubre el aumento (`saldoFavorAplicado`), pero solo desde el dia de descuento del saldo
+ *       (`diaDescuentoSaldo`, por defecto el 9): antes de ese dia no se usa y lo descuenta el proceso
+ *       diario. Cada cambio queda en la auditoria.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:

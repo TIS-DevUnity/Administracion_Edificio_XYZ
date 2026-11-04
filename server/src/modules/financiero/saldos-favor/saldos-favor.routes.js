@@ -16,7 +16,8 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO')
  *     summary: Lista los inmuebles que tienen saldo a favor (pagos anticipados) en una sola consulta
  *     description: |
  *       Devuelve todos los inmuebles con saldo a favor mayor a cero, sin consultar departamento por departamento.
- *       Ese saldo se va descontando solo de las expensas que se generan; aqui se ve lo que queda.
+ *       Ese saldo se descuenta solo de las expensas pendientes a partir del dia de descuento configurado de cada
+ *       mes (`diaDescuentoSaldo` de la configuracion de mora, por defecto el 9); aqui se ve lo que queda.
  *
  *       - `resumen`: cantidad de inmuebles con saldo y la suma de todos los saldos.
  *       - `saldos`: uno por inmueble, ordenado por codigo.

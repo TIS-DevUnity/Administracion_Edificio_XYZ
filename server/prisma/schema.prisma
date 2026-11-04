@@ -175,6 +175,10 @@ model ConfiguracionMora {
   tipoValor      TipoValorMora @default(PORCENTAJE)
   valor          Decimal       @db.Decimal(10, 2)
   modoMora       ModoMora      @default(MENSUAL)
+  // Dia del mes (1-28) en que se descuenta el saldo a favor de las expensas pendientes. Va entre
+  // diaGeneracion y diaVencimiento (lo valida la aplicacion). Antes de ese dia, generar la expensa y
+  // cargar el agua no usan el saldo.
+  diaDescuentoSaldo Int        @default(9)
   // Desde cuando rige. La vigente en una fecha es la mas reciente con vigenteDesde <= fecha;
   // una con fecha futura queda programada y no cambia lo que ya esta generado.
   vigenteDesde   DateTime      @default(now()) @db.Timestamptz(3)

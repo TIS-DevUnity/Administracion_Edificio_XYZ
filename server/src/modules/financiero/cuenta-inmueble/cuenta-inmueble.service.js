@@ -216,7 +216,7 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
     saldoFavor: saldoFavor.toFixed(2),
     tipoPago: 'ANTICIPADO',
     mensaje:
-      'Pago anticipado registrado como saldo a favor. Se descuenta solo en la proxima expensa que se genere, o a mano con POST /api/financiero/expensas/{id}/aplicar-saldo'
+      'Pago anticipado registrado como saldo a favor. Se descuenta solo, a partir del dia de descuento configurado de cada mes (diaDescuentoSaldo, por defecto el 9), en las expensas pendientes, o a mano con POST /api/financiero/expensas/{id}/aplicar-saldo (la expensa debe tener el agua cargada)'
   }
 }
 
