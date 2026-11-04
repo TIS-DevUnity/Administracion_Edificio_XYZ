@@ -204,8 +204,6 @@ export default function LayoutSimulacion({ children }: { children: ReactNode }) 
 
             <p className={CLASE_AYUDA}>
               Al avanzar la fecha se repite, día por día, lo que hace el proceso automático real: genera las expensas del mes, descuenta los pagos anticipados el día configurado y aplica la mora que corresponda.
-              {estado.configuraciones.some((config) => config.diaDescuentoSaldo === undefined) &&
-                " El día de descuento todavía es solo de la simulación: en el sistema real el saldo se descuenta al generar la expensa."}
             </p>
 
             {strResultado && <p className="rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">{strResultado}</p>}

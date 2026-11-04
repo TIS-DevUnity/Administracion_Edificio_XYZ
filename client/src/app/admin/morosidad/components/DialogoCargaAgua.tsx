@@ -326,7 +326,7 @@ export function DialogoCargaAgua({
                         )}
                       </TableCell>
                       <TableCell className="text-right text-[13px] font-medium tabular-nums text-foreground">
-                        {formatCurrency(Number(exp.montoBase) + intAgua)}
+                        {formatCurrency(Number(exp.montoBase) + intAgua + Number(exp.montoExtra ?? 0))}
                       </TableCell>
                       <TableCell className="max-w-[200px]">
                         {estado?.tipo === "ok" ? (
