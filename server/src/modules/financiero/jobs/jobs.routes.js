@@ -38,11 +38,15 @@ router.post('/ejecutar-generacion', autenticar, GESTION, controller.ejecutarGene
  * @openapi
  * /api/financiero/jobs/ejecutar-mora:
  *   post:
- *     summary: Dispara manualmente la aplicacion de mora a expensas vencidas
+ *     summary: Dispara manualmente el descuento del saldo a favor y la aplicacion de mora a expensas vencidas
+ *     description: |
+ *       Primero descuenta el saldo a favor de las expensas pendientes si hoy ya es el dia de descuento
+ *       configurado (`diaDescuentoSaldo`, por defecto el 9), de la mas antigua a la mas nueva y sin tocar las
+ *       expensas de plan de pagos; se puede repetir sin descontar dos veces. Despues aplica la mora.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: OK }
+ *       200: { description: "{ aplicadas (expensas con mora nueva), saldosAplicados (expensas a las que se desconto saldo a favor) }" }
  *       403: { description: Sin permisos }
  */
 router.post('/ejecutar-mora', autenticar, GESTION, controller.ejecutarMora)
