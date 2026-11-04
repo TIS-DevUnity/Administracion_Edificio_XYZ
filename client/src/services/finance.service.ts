@@ -43,6 +43,7 @@ export const financeService = {
   async actualizarConfiguracion(data: {
     diaGeneracion: number;
     diaVencimiento: number;
+    diaDescuentoSaldo?: number;
     diasGracia: number;
     tipoValor: "PORCENTAJE" | "MONTO_FIJO";
     modoMora: "UNICA" | "MENSUAL";
@@ -113,8 +114,8 @@ export const financeService = {
     return response.data;
   },
 
-  async ejecutarMoraJob(): Promise<{ aplicadas: number }> {
-    const response = await api.post<{ aplicadas: number }>("/financiero/jobs/ejecutar-mora");
+  async ejecutarMoraJob(): Promise<{ aplicadas: number; saldosAplicados?: number }> {
+    const response = await api.post<{ aplicadas: number; saldosAplicados?: number }>("/financiero/jobs/ejecutar-mora");
     return response.data;
   },
 };

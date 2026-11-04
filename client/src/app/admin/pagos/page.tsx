@@ -16,6 +16,7 @@ import {
 import { AlertaPermiso } from "@/components/AlertaPermiso";
 import { DialogoEstadoCuenta } from "@/components/DialogoEstadoCuenta";
 import { useSesionActual } from "@/lib/session";
+import { enRutaSimulacion } from "@/lib/simulacion/almacen";
 import { normalizarRol, puedeEjecutar, validarAccion } from "@/lib/permissions";
 import { Inmueble, listarInmuebles } from "@/lib/inmuebles";
 import {
@@ -441,12 +442,14 @@ export default function PagosPage() {
         </p>
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button variant="outline" className="w-full md:w-auto" asChild>
-            <Link href="/admin/pagos/planes">
-              <CalendarRange className="mr-2 h-4 w-4" />
-              Planes de pago en cuotas
-            </Link>
-          </Button>
+          {!enRutaSimulacion() && (
+            <Button variant="outline" className="w-full md:w-auto" asChild>
+              <Link href="/admin/pagos/planes">
+                <CalendarRange className="mr-2 h-4 w-4" />
+                Planes de pago en cuotas
+              </Link>
+            </Button>
+          )}
           {bolPuedeRegistrar && (
             <Button className="w-full md:w-auto" onClick={() => abrirDialogoPago()}>
               <Banknote className="mr-2 h-4 w-4" />

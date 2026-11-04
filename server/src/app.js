@@ -31,8 +31,12 @@ const cajaBancosRoutes = require('./modules/financiero/caja-bancos/caja-bancos.r
 const empleadosRoutes = require('./modules/financiero/empleados/empleados.routes')
 const nominaRoutes = require('./modules/financiero/nomina/nomina.routes')
 const anticiposRoutes = require('./modules/financiero/anticipos/anticipos.routes')
+const saldosFavorRoutes = require('./modules/financiero/saldos-favor/saldos-favor.routes')
 
 const app = express()
+
+// Detras de un proxy (Render, etc.) se necesita para ver la IP real del cliente; ej: TRUST_PROXY=1
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY)
 
 app.use(helmet())
 app.use(cors())
@@ -62,6 +66,7 @@ app.use('/api/financiero/movimientos', movimientosRoutes)
 app.use('/api/financiero/planes-pago', planesPagoRoutes)
 app.use('/api/financiero/notificaciones', notificacionesRoutes)
 app.use('/api/financiero/saldo-edificio', saldoEdificioRoutes)
+app.use('/api/financiero/saldos-favor', saldosFavorRoutes)
 app.use('/api/financiero/pagos-informados', pagosInformadosRoutes)
 app.use('/api/financiero/caja-bancos', cajaBancosRoutes)
 app.use('/api/financiero/empleados', empleadosRoutes)

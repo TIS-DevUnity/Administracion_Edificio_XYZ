@@ -48,6 +48,8 @@ export interface ConfiguracionMoraDTO {
   diaGeneracion: number;
   diasGracia: number;
   diaVencimiento: number;
+  /** Día del mes en que los pagos anticipados se descuentan de la expensa (9 si el servidor aún no lo envía). */
+  diaDescuentoSaldo?: number;
   modoMora: "UNICA" | "MENSUAL";
   tipoValor: TipoValorMora;
   valor: number;
