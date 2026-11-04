@@ -85,7 +85,7 @@ export function SaldoFavorInmueble({
       </div>
       <p className="mt-2 text-[12px] leading-[1.45] text-muted-foreground">
         {bolTieneSaldo
-          ? "Viene de pagos anticipados o pagos de más. Se descuenta automáticamente de las próximas expensas."
+          ? "Viene de pagos anticipados o pagos de más. Se descuenta automáticamente de las expensas desde el día de descuento configurado."
           : "Este inmueble no tiene saldo a favor. Se genera cuando se paga de más o por adelantado."}{" "}
         {intDeuda > 0 ? (
           <span className="text-destructive">Deuda pendiente total del inmueble: {bs(intDeuda)}.</span>

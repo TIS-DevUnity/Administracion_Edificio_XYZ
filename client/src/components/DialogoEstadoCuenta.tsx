@@ -100,6 +100,9 @@ function DetalleCargos({ exp }: { exp: ExpensaEstadoCuenta }) {
         <p className={CLASE_LABEL}>Cargos del mes</p>
         <Linea etiqueta="Expensa fija" detalle={exp.tipo ? `(Tipo ${exp.tipo})` : undefined} valor={bs(exp.montoBase)} />
         <Linea etiqueta="Agua" valor={bs(exp.montoAgua)} />
+        {Number(exp.montoExtra ?? 0) > 0 && (
+          <Linea etiqueta="Extra" detalle={exp.extraConcepto ?? undefined} valor={bs(exp.montoExtra ?? 0)} />
+        )}
         <Linea
           etiqueta="Mora"
           detalle={exp.moras.length > 0 ? `(${exp.moras.length} ${exp.moras.length === 1 ? "mes" : "meses"})` : undefined}
@@ -328,6 +331,7 @@ export function DialogoEstadoCuenta({
                 </p>
                 <p className="font-caption text-[11px] text-muted-foreground">
                   incl. agua {bs(estadoCuenta.resumen.totalAgua ?? 0)}
+                  {Number(estadoCuenta.resumen.totalExtra ?? 0) > 0 && ` y extra ${bs(estadoCuenta.resumen.totalExtra ?? 0)}`}
                 </p>
               </div>
               <div>

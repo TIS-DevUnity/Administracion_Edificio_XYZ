@@ -48,6 +48,9 @@ const RUTAS: Ruta[] = [
   ["patch", new RegExp(`^/financiero/expensas/${ID}/agua$`), ([id], cuerpo) => ({
     data: modificarEstado((estado) => expensaConSaldo(estado, motor.cargarAgua(estado, id, cuerpo.montoAgua))),
   })],
+  ["patch", new RegExp(`^/financiero/expensas/${ID}/extra$`), ([id], cuerpo) => ({
+    data: modificarEstado((estado) => expensaConSaldo(estado, motor.cargarExtra(estado, id, cuerpo))),
+  })],
   ["patch", new RegExp(`^/financiero/expensas/${ID}/vencimiento$`), ([id], cuerpo) => ({
     data: modificarEstado((estado) => motor.expensaDTO(estado, motor.cambiarVencimiento(estado, id, cuerpo))),
   })],
