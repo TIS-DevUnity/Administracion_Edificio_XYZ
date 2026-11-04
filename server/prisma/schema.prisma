@@ -345,12 +345,16 @@ model Expensa {
   periodo          String        // formato "YYYY-MM"
 
   // montoTotal = montoBase (expensa fija del tipo + baulera y parqueo) + montoAgua (agua que el
-  // administrador carga a mano para este departamento). No incluye la mora, que se lleva aparte
-  // en `moras` y se resume en `montoMora`.
+  // administrador carga a mano para este departamento) + montoExtra (cobro opcional y ocasional, con
+  // su concepto). No incluye la mora, que se lleva aparte en `moras` y se resume en `montoMora`.
   montoBase        Decimal       @default(0) @db.Decimal(10, 2)
   montoAgua        Decimal       @default(0) @db.Decimal(10, 2)
   // Cuando se cargo el agua. null = todavia no se carga (distinto de haber cargado 0).
   aguaRegistradaEn DateTime?     @db.Timestamptz(3)
+  // Cobro extra opcional (pintura del edificio, reparaciones...). Nace en 0 y sin concepto; el concepto es
+  // obligatorio mientras el monto sea mayor que cero.
+  montoExtra       Decimal       @default(0) @db.Decimal(10, 2)
+  extraConcepto    String?
   montoTotal       Decimal       @db.Decimal(10, 2)
   montoMora        Decimal       @default(0) @db.Decimal(10, 2) // suma de las lineas de `moras`
 

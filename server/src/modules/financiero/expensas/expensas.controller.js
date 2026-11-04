@@ -99,6 +99,24 @@ async function cargarAgua(req, res, next) {
   }
 }
 
+async function cargarExtra(req, res, next) {
+  try {
+    const { montoExtra, concepto } = req.body ?? {}
+    if (montoExtra === undefined) {
+      return res.status(400).json({ error: 'montoExtra es requerido' })
+    }
+    const expensa = await service.cargarExtra(req.params.id, {
+      montoExtra,
+      concepto,
+      usuarioId: req.usuario.id,
+      ip: req.ip
+    })
+    res.json(expensa)
+  } catch (err) {
+    next(err)
+  }
+}
+
 async function cambiarVencimiento(req, res, next) {
   try {
     const { fechaVencimiento, motivo } = req.body
@@ -124,5 +142,6 @@ module.exports = {
   registrarPago,
   aplicarSaldoFavor,
   cargarAgua,
+  cargarExtra,
   cambiarVencimiento
 }
