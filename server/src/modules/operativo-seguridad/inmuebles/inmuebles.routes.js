@@ -15,14 +15,13 @@ const LECTURA = permitir("inmuebles", "ver");
  *   get:
  *     summary: Lista todos los inmuebles (departamentos, parqueos, bauleras). CONSULTA recibe solo los que ocupa.
  *     description: |
- *       Cada inmueble trae `clase` (DEPARTAMENTO, BAULERA o PARQUEO) y `asignado` (tiene un
- *       ocupante vigente). Solo el departamento tiene tipo (A, B, C...). En baulera y parqueo
+ *       Cada inmueble trae `clase` (DEPARTAMENTO, BAULERA o PARQUEO) y `asignado` (ocupante
+ *       vigente en departamento o asociacion directa en parqueo/baulera). Solo el departamento tiene tipo (A, B, C...). En baulera y parqueo
  *       `tipoInmuebleId` es null y `tipoInmueble` es un objeto de compatibilidad con la clase
  *       como nombre y monto 0.
  *
- *       `cargoMensual` es lo que el inmueble suma cada mes a la cuenta de quien lo ocupa: la
- *       expensa fija del tipo en un departamento; en baulera y parqueo su `cuotaMensual`
- *       propia o, si no tiene (null), la tarifa de su clase (`/api/tarifas-inmueble`).
+ *       `cargoMensual` es la cuota fija del tipo para departamentos.
+ *       En parqueo y baulera siempre es Bs 0; son accesorios informativos.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     responses:
@@ -30,9 +29,8 @@ const LECTURA = permitir("inmuebles", "ver");
  *   post:
  *     summary: Registra un nuevo inmueble
  *     description: |
- *       Un departamento (clase por defecto) requiere `tipoInmuebleId`. Una baulera o un parqueo
- *       no tienen tipo: no se debe enviar `tipoInmuebleId`. Opcionalmente una baulera o un
- *       parqueo puede llevar `cuotaMensual` propia, que reemplaza a la tarifa de su clase.
+ *       Un departamento (clase por defecto) requiere `tipoInmuebleId`, `parqueoId` y `bauleraId`.
+ *       Parqueo y baulera no tienen tipo ni cuota propia y no generan cargos adicionales.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -48,7 +46,10 @@ const LECTURA = permitir("inmuebles", "ver");
  *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble" }
  *               piso: { type: string }
  *               areaM2: { type: number }
- *               cuotaMensual: { type: number, nullable: true, description: "Solo baulera y parqueo. Monto propio mensual (0 = exento). Sin valor usa la tarifa de la clase." }
+ *               descripcion: { type: string, nullable: true, description: "Solo departamentos. Hasta 1000 caracteres." }
+ *               parqueoId: { type: string, description: "Obligatorio en departamentos. Parqueo activo, libre y exclusivo." }
+ *               bauleraId: { type: string, description: "Obligatorio en departamentos. Baulera activa, libre y exclusiva." }
+ *               cuotaMensual: { type: number, nullable: true, description: "Campo legado: solo puede ser 0 para accesorios en DEMO." }
  *     responses:
  *       201: { description: Inmueble creado }
  *       400: { description: Datos invalidos (falta el tipo de un departamento, se envio tipo a una baulera o parqueo, o cuotaMensual en un departamento o invalida) }
@@ -94,6 +95,9 @@ router.post("/", autenticar, GESTION, controller.crear);
  *               tipoInmuebleId: { type: string, description: "Solo departamentos: id de un registro en /api/tipos-inmueble. Al pasar a baulera o parqueo el tipo se quita." }
  *               piso: { type: string }
  *               areaM2: { type: number }
+ *               descripcion: { type: string, nullable: true, description: "Solo departamentos; null para quitar." }
+ *               parqueoId: { type: string, nullable: true, description: "Solo departamentos; null para desvincular." }
+ *               bauleraId: { type: string, nullable: true, description: "Solo departamentos; null para desvincular." }
  *               activo: { type: boolean }
  *               cuotaMensual: { type: number, nullable: true, description: "Solo baulera y parqueo. Monto propio mensual (0 = exento); null lo quita y vuelve a la tarifa de la clase. Rige desde la proxima expensa." }
  *     responses:
@@ -121,7 +125,7 @@ router.put("/:id", autenticar, GESTION, controller.actualizar);
  *       200: { description: OK }
  *       404: { description: Inmueble no encontrado }
  *   post:
- *     summary: Asigna un copropietario (propietario o inquilino) a un inmueble. Si ya habia un ocupante activo del mismo tipo (propietario/inquilino), se cierra automaticamente su fechaFin.
+ *     summary: Asigna un copropietario (propietario o inquilino) solo a un departamento. Si ya habia un ocupante activo del mismo tipo (propietario/inquilino), se cierra automaticamente su fechaFin.
  *     tags: [Inmuebles]
  *     security: [{ bearerAuth: [] }]
  *     parameters:

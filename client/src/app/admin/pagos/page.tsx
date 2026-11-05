@@ -198,8 +198,14 @@ export default function PagosPage() {
         if (exp.estado === "VENCIDA") vencidaPorInmueble.add(exp.inmuebleId);
       });
 
+      // Solo los departamentos generan expensas. Los parqueos y las bauleras
+      // son accesorios informativos y no deben aparecer como cuentas para cobrar.
+      const departamentos = inmuebles
+        .filter((inmueble) => inmueble.clase === "DEPARTAMENTO")
+        .sort((a, b) => a.codigo.localeCompare(b.codigo, "es", { numeric: true }));
+
       setFilas(
-        inmuebles.map((inmueble) => {
+        departamentos.map((inmueble) => {
           const deuda = deudaPorInmueble.get(inmueble.id) ?? { sinMora: 0, mora: 0 };
           return {
             inmueble,
@@ -437,7 +443,7 @@ export default function PagosPage() {
     <div className="px-4 py-6 sm:px-6">
       <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-start">
         <p className="max-w-2xl text-[13px] leading-[1.45] text-muted-foreground">
-          Registro de pagos regulares y anticipados por inmueble. El monto se aplica primero a la
+          Registro de pagos regulares y anticipados por departamento. El monto se aplica primero a la
           deuda más antigua; el excedente queda como saldo a favor para la siguiente expensa.
         </p>
 
@@ -470,7 +476,7 @@ export default function PagosPage() {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="shadow-sm">
           <CardContent className="p-5">
-            <p className={CLASE_LABEL_CAMPO}>Inmuebles con deuda</p>
+            <p className={CLASE_LABEL_CAMPO}>Departamentos con deuda</p>
             <h3 className="font-title mt-2 text-[24px] font-bold leading-[1.2] tracking-[-0.015em] tabular-nums text-accent-secondary">
               {totales.intConDeuda}
             </h3>
@@ -518,7 +524,7 @@ export default function PagosPage() {
       <Card className="shadow-sm">
         <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
-            Cuentas por inmueble
+            Cuentas por departamento
           </CardTitle>
 
           <div className="relative w-full sm:w-[260px]">
@@ -544,7 +550,7 @@ export default function PagosPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className={CLASE_HEADER_TABLA}>Inmueble</TableHead>
+                      <TableHead className={CLASE_HEADER_TABLA}>Departamento</TableHead>
                       <TableHead className={CLASE_HEADER_TABLA}>Tipo</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Deuda sin mora</TableHead>
                       <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
@@ -597,7 +603,7 @@ export default function PagosPage() {
                     {filasFiltradas.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={7} className="py-8 text-center text-[13px] text-muted-foreground">
-                          No hay inmuebles que coincidan con la búsqueda.
+                          No hay departamentos que coincidan con la búsqueda.
                         </TableCell>
                       </TableRow>
                     )}
@@ -659,7 +665,7 @@ export default function PagosPage() {
                 ))}
                 {filasFiltradas.length === 0 && (
                   <p className="py-8 text-center text-[13px] text-muted-foreground">
-                    No hay inmuebles que coincidan con la búsqueda.
+                    No hay departamentos que coincidan con la búsqueda.
                   </p>
                 )}
               </div>
@@ -685,10 +691,10 @@ export default function PagosPage() {
           {!resultadoRegistro ? (
             <div className="flex flex-col gap-3">
               <div className="grid gap-1">
-                <label className="text-[12px] font-medium text-foreground">Inmueble</label>
+                <label className="text-[12px] font-medium text-foreground">Departamento</label>
                 <Select value={strInmuebleElegido} onValueChange={handleSeleccionarInmuebleEnDialogo}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Selecciona un inmueble..." />
+                    <SelectValue placeholder="Selecciona un departamento..." />
                   </SelectTrigger>
                   <SelectContent>
                     {filas.map((fila) => (
