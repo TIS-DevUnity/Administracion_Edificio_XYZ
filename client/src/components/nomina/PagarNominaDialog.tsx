@@ -5,6 +5,7 @@ import { useSesionActual } from "@/lib/session";
 import { normalizarRol } from "@/lib/permissions";
 import { cajaBancosService } from "@/services/caja-bancos.service";
 import { nominaService, mensajeErrorNomina } from "@/services/nomina.service";
+import { empleadosService } from "@/services/personal.service";
 import type { Nomina, MetodoPagoNomina } from "@/types/nomina";
 import { dinero, fechaActualBolivia, nombreEmpleado } from "./nomina-utils";
 import { abrirCalendario } from "@/components/personal/PersonalUI";
@@ -33,16 +34,37 @@ export function PagarNominaDialog({ nomina, abierto, onCerrar, onPagada }: {
   const tipo = metodo === "EFECTIVO" ? "CAJA" : "BANCO";
   const compatibles = (cuentas.data ?? []).filter((cuenta) => cuenta.tipo === tipo && cuenta.activa !== false);
   const neto = Number(nomina?.sueldoNeto ?? 0);
+  const detalleEmpleado = useQuery({
+    queryKey: ["hu8", "empleado", nomina?.empleado.id],
+    queryFn: () => empleadosService.detalle(nomina!.empleado.id),
+    enabled: abierto && Boolean(nomina?.empleado.id),
+  });
+  // La fecha no puede anteceder ni al mes de la nómina ni al ingreso del empleado.
+  const primerDiaPeriodo = nomina ? `${nomina.periodo}-01` : "";
+  const ingreso = detalleEmpleado.data?.empleado.fechaIngreso.slice(0, 10) ?? "";
+  const fechaMinima = ingreso > primerDiaPeriodo ? ingreso : primerDiaPeriodo;
+  const fechaVerificada = detalleEmpleado.isSuccess && !detalleEmpleado.isFetching;
 
   async function confirmar() {
     if (!nomina || enviando || !administrador || nomina.estado !== "PENDIENTE") return;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > fechaActualBolivia()) {
-      setError("Selecciona una fecha válida que no sea futura.");
+    if (!fechaVerificada) {
+      setError("No se pudo verificar la fecha de ingreso del empleado. Reintenta la consulta antes de pagar.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > fechaActualBolivia() || fecha < fechaMinima) {
+      setError(`Selecciona una fecha entre ${fechaMinima} y ${fechaActualBolivia()} (no anterior al periodo ni al ingreso).`);
       return;
     }
     setEnviando(true);
     setError("");
     try {
+      // Evita usar un sueldo neto obsoleto si otra operación modificó la nómina.
+      const nominaActual = await nominaService.detalle(nomina.id);
+      if (nominaActual.estado !== "PENDIENTE" || nominaActual.sueldoNeto !== nomina.sueldoNeto) {
+        await queryClient.invalidateQueries({ queryKey: ["hu8"] });
+        setError("La nómina cambió desde que abriste el formulario. Cierra y vuelve a abrir el detalle para revisar el monto actualizado.");
+        return;
+      }
       const resultado = await nominaService.pagar(nomina.id, {
         fechaPago: fecha,
         monto: neto,
@@ -79,7 +101,7 @@ export function PagarNominaDialog({ nomina, abierto, onCerrar, onPagada }: {
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1"><span className={CLASE_LABEL}>Fecha de pago</span>
-            <Input type="date" className="cursor-pointer" onClick={abrirCalendario} value={fecha} max={fechaActualBolivia()} onChange={(e) => setFecha(e.target.value)} disabled={enviando} />
+            <Input type="date" className="cursor-pointer" onClick={abrirCalendario} value={fecha} min={detalleEmpleado.isSuccess ? fechaMinima : primerDiaPeriodo} max={fechaActualBolivia()} onChange={(e) => { setFecha(e.target.value); setError(""); }} disabled={enviando || !fechaVerificada} />
           </label>
           <div className="space-y-1"><span className={CLASE_LABEL}>Método de pago</span>
             <Select value={metodo} onValueChange={(v) => { setMetodo(v as MetodoPagoNomina); setCuentaId("predeterminada"); }} disabled={enviando}>
@@ -103,13 +125,16 @@ export function PagarNominaDialog({ nomina, abierto, onCerrar, onPagada }: {
           </Select>
           <p className="font-caption text-[11px] text-muted-foreground">La contabilización en Caja y Bancos depende de la configuración del servidor. Seleccionar cuenta no activa los asientos.</p>
         </div>
+        {detalleEmpleado.isPending && <p className="text-[12px] text-muted-foreground">Verificando fecha de ingreso del empleado...</p>}
+        {detalleEmpleado.isError && <ErrorNomina mensaje="No se pudo consultar la fecha de ingreso. No se confirmará el pago sin validarla." reintentar={() => void detalleEmpleado.refetch()} />}
+        {detalleEmpleado.isSuccess && <p className="text-[12px] text-muted-foreground">Fecha mínima de pago: {fechaMinima}. Debe corresponder al periodo o ser posterior.</p>}
         {cuentas.isError && <p className="font-caption text-[11px] text-muted-foreground">No se pudieron consultar las cuentas. Puedes usar la predeterminada si existe en el backend.</p>}
         {neto === 0 && <p className="rounded-lg bg-muted p-3 text-[12px] text-muted-foreground">El sueldo neto es cero. El backend permite confirmar el pago sin crear egreso de Caja y Bancos.</p>}
         {error && <ErrorNomina mensaje={error} />}
       </div>}
       <DialogFooter>
         <Button variant="outline" onClick={onCerrar} disabled={enviando}>Cancelar</Button>
-        <Button onClick={confirmar} cargando={enviando} disabled={!nomina || !administrador || nomina.estado !== "PENDIENTE"}>Confirmar pago definitivo</Button>
+        <Button onClick={confirmar} cargando={enviando} disabled={!nomina || !administrador || nomina.estado !== "PENDIENTE" || !fechaVerificada || fecha < fechaMinima || fecha > fechaActualBolivia()}>Confirmar pago definitivo</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

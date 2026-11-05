@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { ExpensaDTO, ConfiguracionMoraDTO, EstadoExpensa } from "@/types/finance";
+import { ExtraEditable } from "./ExtraEditable";
 import { formatCurrency, formatearFecha, formatearFechaCalendario, estaEnPeriodoGracia, pagadaConAguaCargada, tieneMoraAplicada, obtenerMensajeError, resumenSaldo } from "../utils/morosidad";
 
 const CLASE_HEADER_TABLA = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
@@ -191,22 +192,26 @@ interface Props {
   errorCarga: string;
   onDetalle: (exp: ExpensaDTO) => void;
   onGuardarAgua: (exp: ExpensaDTO, monto: number) => Promise<void>;
+  onGuardarExtra: (exp: ExpensaDTO, monto: number, concepto: string) => Promise<void>;
   onPago: (exp: ExpensaDTO) => void;
 }
 
 export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfiguracion,
-  bolPuedeGestionar, errorCarga, onDetalle, onGuardarAgua, onPago }: Props) {
+  bolPuedeGestionar, errorCarga, onDetalle, onGuardarAgua, onGuardarExtra, onPago }: Props) {
   const strVacio = errorCarga
     ? "No se pudo cargar la información."
     : totalCargadas === 0
       ? "No hay expensas para el mes y los filtros elegidos."
       : "Ninguna expensa coincide con los filtros de esta página.";
+  // Si todas las expensas con extra tienen el mismo concepto, la columna lo lleva en el encabezado.
+  const etiquetasExtra = [...new Set(filteredExpensas.map((exp) => exp.extraEtiqueta).filter(Boolean))];
+  const strEncabezadoExtra = etiquetasExtra.length === 1 ? etiquetasExtra[0] : "Extra";
 
   return (
     <>
       {/* Vista tabla (md en adelante) */}
       <div className="hidden w-full overflow-x-auto md:block">
-        <Table className="min-w-[1160px]">
+        <Table className="min-w-[1290px]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className={`${CLASE_HEADER_TABLA} pl-5`}>Departamento</TableHead>
@@ -214,6 +219,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
               <TableHead className={CLASE_HEADER_TABLA}>Vencimiento</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Expensa base</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Agua</TableHead>
+              <TableHead className={`${CLASE_HEADER_TABLA} max-w-[150px] whitespace-normal text-right`}>{strEncabezadoExtra}</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total antes de mora</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Mora</TableHead>
               <TableHead className={`${CLASE_HEADER_TABLA} text-right`}>Total final con mora</TableHead>
@@ -263,6 +269,10 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                     <AguaEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar} onGuardarAgua={onGuardarAgua} />
                   </TableCell>
 
+                  <TableCell className="py-3 text-right">
+                    <ExtraEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar} onGuardarExtra={onGuardarExtra} />
+                  </TableCell>
+
                   <TableCell className="py-3 text-right text-[13px] font-medium tabular-nums text-foreground">
                     {formatCurrency(totalAntesMora)}
                   </TableCell>
@@ -305,7 +315,7 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
             })}
             {filteredExpensas.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={11} className="py-10 text-center text-[13px] text-muted-foreground">
+                <TableCell colSpan={12} className="py-10 text-center text-[13px] text-muted-foreground">
                   {strVacio}
                 </TableCell>
               </TableRow>
@@ -360,6 +370,11 @@ export function TablaExpensas({ filteredExpensas, totalCargadas, historialConfig
                   <p className={CLASE_LABEL_CAMPO}>Agua</p>
                   <AguaEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar}
                     onGuardarAgua={onGuardarAgua} compacto />
+                </div>
+                <div>
+                  <p className={CLASE_LABEL_CAMPO}>Extra</p>
+                  <ExtraEditable exp={exp} bolPuedeGestionar={bolPuedeGestionar}
+                    onGuardarExtra={onGuardarExtra} compacto />
                 </div>
                 <div>
                   <p className={CLASE_LABEL_CAMPO}>Total antes de mora</p>

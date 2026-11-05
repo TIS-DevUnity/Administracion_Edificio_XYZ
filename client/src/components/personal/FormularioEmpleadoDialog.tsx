@@ -140,13 +140,13 @@ export function FormularioEmpleadoDialog({ abierto, empleado, onCerrar, onGuarda
       </DialogHeader>
       <form onSubmit={guardar} noValidate className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          {campo("nombres", { maxLength: 80, placeholder: "Juan Carlos" })}
-          {campo("apellidos", { maxLength: 80, placeholder: "Mamani Quispe" })}
-          {campo("documento", { maxLength: 20, placeholder: "1234567 LP" })}
-          {campo("cargo", { maxLength: 60, placeholder: "Conserje" })}
+          {campo("nombres", { maxLength: 80, placeholder: "Ingrese los nombres" })}
+          {campo("apellidos", { maxLength: 80, placeholder: "Ingrese los apellidos" })}
+          {campo("documento", { maxLength: 20, placeholder: "Ingrese el documento" })}
+          {campo("cargo", { maxLength: 60, placeholder: "Ingrese el cargo" })}
           {campo("fechaIngreso", { type: "date", max: fechaActualBolivia(), className: "cursor-pointer", onClick: abrirCalendario })}
-          {campo("telefono", { maxLength: 20, inputMode: "tel", placeholder: "71234567" })}
-          {campo("sueldoBase", { type: "number", min: "0.01", step: "0.01", inputMode: "decimal", placeholder: "2500.00" })}
+          {campo("telefono", { maxLength: 20, inputMode: "tel", placeholder: "Ingrese el teléfono" })}
+          {campo("sueldoBase", { type: "number", min: "0.01", step: "0.01", inputMode: "decimal", placeholder: "Ingrese el sueldo base" })}
         </div>
         {cambiaSueldo && <p className="rounded-lg border border-accent-secondary/30 bg-accent-secondary/10 px-3 py-2 text-[12px] text-foreground">
           El nuevo sueldo base se aplicará a las nóminas que se generen desde ahora. Las nóminas y pagos anteriores conservan su monto.

@@ -1,9 +1,9 @@
 /**
  * Motor del entorno de simulación de Morosidad y Expensas. Es una copia en el navegador de las
  * reglas del backend (expensas.service.js, saldo.util.js, mora.util.js, reglas-pago.util.js,
- * cargos.util.js, configuracion-mora.service.js, generacion-automatica.job.js, estado-cuenta.util.js
- * y cuenta-inmueble.service.js): si esas reglas cambian, hay que cambiarlas también aquí.
- * Excepción: el día de descuento del saldo a favor (diaDescuentoSaldo) está aquí antes que en el backend.
+ * cargos.util.js, descuento-saldo.util.js, extra.util.js, configuracion-mora.service.js,
+ * generacion-automatica.job.js, estado-cuenta.util.js y cuenta-inmueble.service.js): si esas reglas
+ * cambian, hay que cambiarlas también aquí.
  * Solo trabaja sobre `EstadoSimulacion`: no conoce la red ni el almacenamiento.
  * Los importes se guardan en centavos para no acumular errores de redondeo.
  */
@@ -44,7 +44,7 @@ export interface ConfigSim {
   id: string;
   diaGeneracion: number;
   diaVencimiento: number;
-  diaDescuentoSaldo?: number; // puede faltar en configuraciones capturadas antes de ese campo
+  diaDescuentoSaldo?: number; // si falta, rige el 9
   diasGracia: number;
   modoMora: "UNICA" | "MENSUAL";
   tipoValor: "PORCENTAJE" | "MONTO_FIJO";
@@ -99,6 +99,8 @@ export interface ExpensaSim {
   periodo: string;
   montoBase: number;
   montoAgua: number;
+  montoExtra: number;
+  extraConcepto: string | null;
   montoTotal: number;
   montoMora: number;
   tipoNombre: string;
@@ -218,9 +220,24 @@ export function sumarMeses(fechaIso: string, meses: number) {
   return `${anioFinal}-${String(mesFinal + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
 }
 
-/** Día desde el que el saldo a favor puede descontarse de una expensa del período. */
-function fechaDescuentoSaldo(periodo: string, config: ConfigSim | null) {
-  return `${periodo}-${String(config?.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO).padStart(2, "0")}`;
+const esDiaDelMes = (valor: unknown): valor is number => Number.isInteger(valor) && Number(valor) >= 1 && Number(valor) <= 28;
+
+function ajustarAlRango(dia: number, rango: { diaGeneracion?: unknown; diaVencimiento?: unknown }) {
+  let ajustado = dia;
+  if (esDiaDelMes(rango.diaGeneracion)) ajustado = Math.max(ajustado, rango.diaGeneracion);
+  if (esDiaDelMes(rango.diaVencimiento)) ajustado = Math.min(ajustado, rango.diaVencimiento);
+  return ajustado;
+}
+
+/** El día configurado o, si falta la configuración o el campo, el 9. Siempre entre generación y vencimiento. */
+export function diaDescuentoEfectivo(config: Partial<ConfigSim> | null) {
+  const dia = config && esDiaDelMes(config.diaDescuentoSaldo) ? config.diaDescuentoSaldo : DIA_DESCUENTO_POR_DEFECTO;
+  return ajustarAlRango(dia, config ?? {});
+}
+
+/** El día simulado ya es el de descuento de la configuración vigente, o uno posterior. */
+function yaPuedeDescontar(estado: EstadoSimulacion, config: ConfigSim | null) {
+  return Number(estado.fecha.slice(8, 10)) >= diaDescuentoEfectivo(config);
 }
 
 function vencimientoDelPeriodo(periodo: string, dia: number) {
@@ -421,6 +438,19 @@ export function historialConfig(estado: EstadoSimulacion) {
   return [...estado.configuraciones].sort((a, b) => Date.parse(b.vigenteDesde) - Date.parse(a.vigenteDesde));
 }
 
+export function resolverDiaDescuento(valor: unknown, diaGeneracion: number, diaVencimiento: number, anterior?: number) {
+  if (valor === undefined || valor === null) {
+    return ajustarAlRango(esDiaDelMes(anterior) ? anterior : DIA_DESCUENTO_POR_DEFECTO, { diaGeneracion, diaVencimiento });
+  }
+  if (!esDiaDelMes(valor)) throw error("diaDescuentoSaldo debe ser un entero entre 1 y 28", 400);
+  if (valor < diaGeneracion || valor > diaVencimiento) {
+    throw error(
+      `diaDescuentoSaldo debe estar entre el dia de generacion (${diaGeneracion}) y el de vencimiento (${diaVencimiento})`,
+      400, "DIA_DESCUENTO_FUERA_DE_RANGO", { diaGeneracion, diaVencimiento });
+  }
+  return valor;
+}
+
 export function crearConfig(estado: EstadoSimulacion, datos: Record<string, unknown>) {
   const { diaGeneracion, diasGracia, tipoValor, valor } = datos;
   const modoMora = datos.modoMora ?? "MENSUAL";
@@ -446,13 +476,7 @@ export function crearConfig(estado: EstadoSimulacion, datos: Record<string, unkn
   if (!Number.isInteger(dia) || dia < 1 || dia > 28) throw error("diaVencimiento debe ser un entero entre 1 y 28", 400);
   if (dia < Number(diaGeneracion)) throw error("diaVencimiento no puede ser anterior al dia de generacion", 400);
 
-  let diaDescuento = datos.diaDescuentoSaldo as number | null | undefined;
-  if (diaDescuento === undefined || diaDescuento === null) {
-    diaDescuento = Math.min(Math.max(historialConfig(estado)[0]?.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO, Number(diaGeneracion)), dia);
-  }
-  if (!Number.isInteger(diaDescuento) || diaDescuento < Number(diaGeneracion) || diaDescuento > dia) {
-    throw error("diaDescuentoSaldo debe ser un entero entre el dia de generacion y el de vencimiento", 400);
-  }
+  const diaDescuento = resolverDiaDescuento(datos.diaDescuentoSaldo, Number(diaGeneracion), dia, historialConfig(estado)[0]?.diaDescuentoSaldo);
 
   const momento = ahora(estado);
   let desde = momento;
@@ -544,7 +568,7 @@ export function generar(estado: EstadoSimulacion, datos: { inmuebleId: string; p
   const montoBase = cuota + sumar(extras, (extra) => extra.monto);
   const id = nuevoId(estado, "exp");
   const expensa: ExpensaSim = {
-    id, inmuebleId, periodo, montoBase, montoAgua: 0, montoTotal: montoBase, montoMora: 0, tipoNombre: tipo.nombre,
+    id, inmuebleId, periodo, montoBase, montoAgua: 0, montoExtra: 0, extraConcepto: null, montoTotal: montoBase, montoMora: 0, tipoNombre: tipo.nombre,
     estado: "PENDIENTE", fechaVencimiento: vencimiento, configuracionMoraId: config?.id ?? null,
     responsableId: responsable.copropietario.id,
     responsableNombre: `${responsable.copropietario.nombre} ${responsable.copropietario.apellido}`,
@@ -557,9 +581,9 @@ export function generar(estado: EstadoSimulacion, datos: { inmuebleId: string; p
   };
   estado.expensas.push(expensa);
 
-  // El saldo a favor se descuenta desde el día configurado, para dar tiempo a cargar el agua. Aquí solo se
-  // usa si la expensa se genera con ese día ya alcanzado y es la deuda más antigua del inmueble.
-  const aplicado = hayDeudaAnterior(estado, expensa) || estado.fecha < fechaDescuentoSaldo(periodo, config) ? 0 : aplicarSaldoAExpensa(estado, expensa);
+  // El saldo a favor solo se usa si esta es la deuda más antigua del inmueble y ya es el día de descuento:
+  // antes de ese día el administrador todavía carga el agua, y lo descuenta después ejecutarDescuentoSaldos.
+  const aplicado = !hayDeudaAnterior(estado, expensa) && yaPuedeDescontar(estado, config) ? aplicarSaldoAExpensa(estado, expensa) : 0;
   return { expensa, aplicado };
 }
 
@@ -677,29 +701,41 @@ export function aplicarMora(estado: EstadoSimulacion, expensaId: string) {
   return { expensa, moraActualizada: true };
 }
 
-/** Igual que ejecutarDescuentoSaldos del backend: de la expensa más antigua a la más nueva por inmueble. */
+/**
+ * Igual que planificarDescuentos del backend: de la deuda más antigua a la más nueva. Un mes atrasado no se
+ * cubre en parte: si el saldo no lo completa, se detiene ahí. La expensa actual admite descuento parcial.
+ */
+function planificarDescuentos(deudas: Deuda[], saldo: number) {
+  let restante = saldo;
+  const plan: ExpensaSim[] = [];
+  for (const deuda of deudas) {
+    if (restante <= 0) break;
+    if (deuda.pendiente.total <= 0) continue;
+    if (deuda.atrasada && restante < deuda.pendiente.total) break;
+    plan.push(deuda.expensa);
+    restante -= Math.min(restante, deuda.pendiente.total);
+  }
+  return plan;
+}
+
+/** Igual que ejecutarDescuentoSaldos del backend. No hace nada antes del día de descuento. */
 export function ejecutarDescuentoSaldos(estado: EstadoSimulacion) {
+  if (!yaPuedeDescontar(estado, configVigente(estado))) return { aplicados: 0 };
   let aplicados = 0;
   for (const inmueble of estado.inmuebles) {
-    if (saldoFavorDe(estado, inmueble.id) <= 0) continue;
-    for (const { expensa } of cargarDeudas(estado, inmueble.id)) {
-      if (estado.fecha < fechaDescuentoSaldo(expensa.periodo, configDeLaExpensa(estado, expensa))) break;
-      try {
-        aplicarSaldoFavor(estado, expensa.id);
-      } catch (err) {
-        if (!(err instanceof ErrorSimulacion)) throw err;
-        break;
-      }
+    const saldo = saldoFavorDe(estado, inmueble.id);
+    if (saldo <= 0) continue;
+    for (const expensa of planificarDescuentos(cargarDeudas(estado, inmueble.id), saldo)) {
+      if (aplicarSaldoAExpensa(estado, expensa) <= 0) break;
       aplicados += 1;
-      if (expensa.estado !== "PAGADA") break;
     }
   }
   return { aplicados };
 }
 
 export function ejecutarMora(estado: EstadoSimulacion) {
-  if (!configVigente(estado)) return { aplicadas: 0, saldosAplicados: 0 };
   const saldosAplicados = ejecutarDescuentoSaldos(estado).aplicados;
+  if (!configVigente(estado)) return { aplicadas: 0, saldosAplicados };
   let aplicadas = 0;
   for (const expensa of estado.expensas) {
     if (expensa.estado === "PAGADA") continue;
@@ -764,6 +800,10 @@ export function registrarPago(estado: EstadoSimulacion, expensaId: string, datos
 export function aplicarSaldoFavor(estado: EstadoSimulacion, expensaId: string) {
   const expensa = buscarExpensa(estado, expensaId);
   if (expensa.estado === "PAGADA") throw error("La expensa ya esta pagada", 409);
+  // El saldo no cubre una expensa a medias: primero hay que cargar el agua (aunque sea 0).
+  if (!expensa.aguaRegistradaEn) {
+    throw error("El agua de esta expensa todavia no esta cargada: cargue el agua antes de aplicar el saldo a favor", 409, "AGUA_SIN_CARGAR");
+  }
   const saldo = saldoFavorDe(estado, expensa.inmuebleId);
   if (saldo <= 0) throw error("El inmueble no tiene saldo a favor disponible", 409);
 
@@ -825,7 +865,8 @@ export function cargarAgua(estado: EstadoSimulacion, expensaId: string, montoAgu
   const aguaAnterior = expensa.montoAgua;
   if (expensa.aguaRegistradaEn && aguaAnterior === agua) throw error("El agua de esta expensa ya es ese monto", 409, "SIN_CAMBIO");
 
-  const montoTotal = expensa.montoBase + agua;
+  // El total conserva el extra que la expensa ya tenga: base + agua + extra.
+  const montoTotal = expensa.montoBase + agua + expensa.montoExtra;
   const pagadoExpensa = sumar(expensa.pagos, (p) => p.montoExpensa);
   const codigo = buscarInmueble(estado, expensa.inmuebleId).codigo;
   if (montoTotal < pagadoExpensa) {
@@ -839,8 +880,55 @@ export function cargarAgua(estado: EstadoSimulacion, expensaId: string, montoAgu
   expensa.estado = calcularEstado(expensa, expensa.estado === "VENCIDA");
   expensa.aguaRegistradaEn = ahora(estado);
 
-  const bolDiaDescuento = estado.fecha >= fechaDescuentoSaldo(expensa.periodo, configDeLaExpensa(estado, expensa));
-  const aplicado = agua > aguaAnterior && bolDiaDescuento && !hayDeudaAnterior(estado, expensa) ? aplicarSaldoAExpensa(estado, expensa) : 0;
+  const aplicado = agua > aguaAnterior && !hayDeudaAnterior(estado, expensa) && yaPuedeDescontar(estado, configVigente(estado))
+    ? aplicarSaldoAExpensa(estado, expensa)
+    : 0;
+  return { expensa, aplicado };
+}
+
+/** Igual que validarExtra del backend: con monto 0 se quita el extra y se limpia el concepto. */
+export function validarExtra(montoExtra: unknown, concepto: unknown) {
+  const monto = parsearMonto(montoExtra, "montoExtra", true);
+  if (monto === 0) return { monto: 0, concepto: null };
+
+  if (concepto === undefined || concepto === null || (typeof concepto === "string" && concepto.trim() === "")) {
+    throw error("concepto es obligatorio cuando el extra es mayor que cero", 400, "CONCEPTO_REQUERIDO");
+  }
+  if (typeof concepto !== "string") throw error("concepto debe ser un texto", 400);
+  if (/[\u0000-\u001f\u007f]/.test(concepto)) throw error("concepto no puede tener saltos de linea ni caracteres de control", 400);
+  const limpio = concepto.trim().replace(/\s+/g, " ");
+  if (limpio.length > 100) throw error("concepto no puede superar 100 caracteres", 400);
+  return { monto, concepto: limpio };
+}
+
+export function cargarExtra(estado: EstadoSimulacion, expensaId: string, datos: { montoExtra?: unknown; concepto?: unknown }) {
+  if (datos.montoExtra === undefined) throw error("montoExtra es requerido", 400);
+  const nuevo = validarExtra(datos.montoExtra, datos.concepto);
+  const expensa = buscarExpensa(estado, expensaId);
+  if (expensa.moras.length > 0) throw error("La expensa ya tiene mora generada: no se puede cambiar el extra", 409, "EXPENSA_CON_MORA");
+
+  const extraAnterior = expensa.montoExtra;
+  if (nuevo.monto === extraAnterior && nuevo.concepto === expensa.extraConcepto) {
+    throw error("El extra de esta expensa ya es ese monto y concepto", 409, "SIN_CAMBIO");
+  }
+
+  const montoTotal = expensa.montoBase + expensa.montoAgua + nuevo.monto;
+  const pagadoExpensa = sumar(expensa.pagos, (p) => p.montoExpensa);
+  const codigo = buscarInmueble(estado, expensa.inmuebleId).codigo;
+  if (montoTotal < pagadoExpensa) {
+    throw error(
+      `No se puede cargar ese extra: la expensa de ${codigo} quedaria en Bs ${dinero(montoTotal)} y ya se pago Bs ${dinero(pagadoExpensa)}`,
+      409, "EXTRA_MENOR_A_LO_PAGADO", { inmueble: codigo });
+  }
+
+  expensa.montoExtra = nuevo.monto;
+  expensa.extraConcepto = nuevo.concepto;
+  expensa.montoTotal = montoTotal;
+  expensa.estado = calcularEstado(expensa, expensa.estado === "VENCIDA");
+
+  const aplicado = nuevo.monto > extraAnterior && !hayDeudaAnterior(estado, expensa) && yaPuedeDescontar(estado, configVigente(estado))
+    ? aplicarSaldoAExpensa(estado, expensa)
+    : 0;
   return { expensa, aplicado };
 }
 
@@ -956,6 +1044,8 @@ export function expensaDTO(estado: EstadoSimulacion, expensa: ExpensaSim) {
     ...expensa,
     montoBase: dinero(expensa.montoBase),
     montoAgua: dinero(expensa.montoAgua),
+    montoExtra: dinero(expensa.montoExtra),
+    extraEtiqueta: expensa.montoExtra > 0 ? `Extra ${expensa.extraConcepto}` : null,
     montoTotal: dinero(expensa.montoTotal),
     montoMora: dinero(expensa.montoMora),
     planPagoId: null,
@@ -1069,7 +1159,7 @@ interface EventoLibro {
   folio?: string | null;
   desglose?: { concepto: string; monto: string }[];
   fechaGeneracion?: string;
-  detalle: Record<string, string>;
+  detalle: Record<string, string | null>;
 }
 const grupoEvento = (evento: EventoLibro) => (ORDEN_EVENTO[evento.tipo] <= 2 ? ORDEN_EVENTO[evento.tipo] : 3);
 
@@ -1087,9 +1177,14 @@ function eventosDelLibro(expensas: ExpensaSim[], abonos: MovimientoSim[]) {
           monto: dinero(cargo.monto),
         })),
         { concepto: "Agua", monto: dinero(expensa.montoAgua) },
+        // Solo aparece cuando la expensa lo tiene: así las líneas siguen sumando el total.
+        ...(expensa.montoExtra > 0 ? [{ concepto: `Extra ${expensa.extraConcepto}`, monto: dinero(expensa.montoExtra) }] : []),
       ],
       fechaGeneracion: fechaEnZona(expensa.createdAt),
-      detalle: { tarifaFija: dinero(expensa.montoBase), agua: dinero(expensa.montoAgua), total: dinero(expensa.montoTotal) },
+      detalle: {
+        tarifaFija: dinero(expensa.montoBase), agua: dinero(expensa.montoAgua), extra: dinero(expensa.montoExtra),
+        extraConcepto: expensa.extraConcepto, total: dinero(expensa.montoTotal),
+      },
     });
     for (const mora of expensa.moras) {
       eventos.push({
@@ -1257,6 +1352,8 @@ export function obtenerEstadoCuenta(estado: EstadoSimulacion, inmuebleId: string
         cargos: [...e.cargos].sort((a, b) => ORDEN_CLASE_CARGO[a.clase] - ORDEN_CLASE_CARGO[b.clase] || compararCodigo(a, b)).map((c) => ({ ...c, monto: dinero(c.monto) })),
         montoAgua: dinero(e.montoAgua),
         aguaRegistradaEn: e.aguaRegistradaEn,
+        montoExtra: dinero(e.montoExtra),
+        extraConcepto: e.extraConcepto,
         montoTotal: dinero(e.montoTotal),
         montoMora: dinero(e.montoMora),
         planPagoId: null,
@@ -1282,6 +1379,7 @@ export function obtenerEstadoCuenta(estado: EstadoSimulacion, inmuebleId: string
     resumen: {
       totalFacturado: dinero(sumar(expensas, (e) => e.montoTotal)),
       totalAgua: dinero(sumar(expensas, (e) => e.montoAgua)),
+      totalExtra: dinero(sumar(expensas, (e) => e.montoExtra)),
       totalMora: dinero(sumar(expensas, (e) => e.montoMora)),
       totalPagado: dinero(sumar(expensas, (e) => sumar(e.pagos, (p) => p.monto))),
       deudaPendiente: dinero(deudaPendiente),
