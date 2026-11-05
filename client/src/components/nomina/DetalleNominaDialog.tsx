@@ -5,11 +5,12 @@ import { Download, Printer } from "lucide-react";
 import { useSesionActual } from "@/lib/session";
 import { normalizarRol } from "@/lib/permissions";
 import { nominaService, mensajeErrorNomina } from "@/services/nomina.service";
+import { anticiposService } from "@/services/personal.service";
 import { dinero, descargarBlob, fechaCorta, imprimirBlob, nombreEmpleado } from "./nomina-utils";
 import { CLASE_LABEL, CLASE_SUBTITULO, CLASE_TITULO_DIALOGO, CargandoNomina, ErrorNomina, EstadoBadge } from "./NominaUI";
 import { GestionConceptosSlot } from "./front1/GestionConceptosSlot";
 import { PagarNominaDialog } from "./PagarNominaDialog";
-import { ETIQUETA_METODO } from "@/components/personal/PersonalUI";
+import { ETIQUETA_METODO, EstadoAnticipoBadge } from "@/components/personal/PersonalUI";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -27,6 +28,15 @@ export function DetalleNominaDialog({ nominaId, onCerrar }: { nominaId: string |
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
   const n = consulta.data;
+  // Consulta independiente: la nómina solo incluye anticipos YA aplicados.
+  const anticiposEmpleado = useQuery({
+    queryKey: ["hu8", "nomina-anticipos-empleado", n?.empleado.id],
+    queryFn: () => anticiposService.listar({ empleadoId: n!.empleado.id, porPagina: 200 }),
+    enabled: Boolean(nominaId && n?.empleado.id),
+  });
+  const pendientes = (anticiposEmpleado.data?.anticipos ?? []).filter((a) => a.estado !== "DESCONTADO");
+  const totalPendiente = Number(anticiposEmpleado.data?.resumen.totalPendiente ?? 0);
+  const anticiposVigentes = pendientes.filter((a) => a.fecha.slice(0, 7) <= (n?.periodo ?? ""));
 
   async function descargar() {
     if (!n || accionPdf) return;
@@ -77,10 +87,30 @@ export function DetalleNominaDialog({ nominaId, onCerrar }: { nominaId: string |
             </div>) : <p className="text-[12px] text-muted-foreground">Sin bonos, horas extra ni descuentos registrados.</p>}
             <GestionConceptosSlot nomina={n} onActualizada={() => { void client.invalidateQueries({ queryKey: ["hu8"] }); }} />
           </div>
-          <div className="space-y-2"><p className={CLASE_SUBTITULO}>Anticipos descontados</p>
+          <div className="space-y-2">
+            <p className={CLASE_SUBTITULO}>Anticipos descontados en esta nómina</p>
             {n.anticiposAplicados?.length ? n.anticiposAplicados.map((a) => <div className="flex justify-between gap-3 border-b border-border py-2 text-[12px]" key={a.id}>
               <span className="text-muted-foreground">Anticipo del {fechaCorta(a.fecha)}</span><span>{dinero(a.montoAplicado)}</span>
-            </div>) : <p className="text-[12px] text-muted-foreground">Sin anticipos aplicados a esta nómina.</p>}
+            </div>) : <p className="text-[12px] text-muted-foreground">No hay descuentos de anticipos registrados en esta nómina.</p>}
+          </div>
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <p className={CLASE_SUBTITULO}>Historial de anticipos del empleado</p>
+            {anticiposEmpleado.isPending ? <CargandoNomina /> : anticiposEmpleado.isError
+              ? <ErrorNomina mensaje="No se pudo consultar el historial de anticipos." reintentar={() => void anticiposEmpleado.refetch()} />
+              : <>
+                <p className="text-[12px] text-muted-foreground">Saldo total pendiente: <strong className="text-foreground">{dinero(totalPendiente)}</strong>. Este saldo no está necesariamente descontado del periodo actual.</p>
+                {anticiposEmpleado.data?.anticipos.length ? anticiposEmpleado.data.anticipos.map((a) => <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-2 text-[12px]">
+                  <div className="space-y-1"><p>{fechaCorta(a.fecha)} · {a.descripcion}</p>
+                    <p className="text-muted-foreground">Otorgado: {dinero(a.monto)} · Descontado: {dinero(a.montoDescontado)} · Pendiente: {dinero(a.saldoPendiente)}</p>
+                  </div>
+                  <EstadoAnticipoBadge estado={a.estado} />
+                </div>) : <p className="text-[12px] text-muted-foreground">Este empleado no tiene anticipos registrados.</p>}
+                {(anticiposEmpleado.data?.paginacion.total ?? 0) > (anticiposEmpleado.data?.anticipos.length ?? 0) &&
+                  <p className="text-[12px] text-muted-foreground">Se muestran los primeros 200 anticipos. El saldo total incluye todos los registros.</p>}
+              </>}
+            {n.estado === "PENDIENTE" && anticiposVigentes.length > 0 && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-[12px] text-destructive">
+              Atención: existen anticipos con saldo pendiente registrados hasta este periodo. El neto de la nómina proviene del servidor y podría no incluirlos. Solicita verificar el cálculo antes de confirmar el pago; esta pantalla no aplica descuentos por sí sola.
+            </p>}
           </div>
           {n.estado === "PAGADA" && <div className="rounded-lg bg-success-subtle p-3 text-[12px]">
             <p className="font-medium text-success">Pago confirmado</p>
