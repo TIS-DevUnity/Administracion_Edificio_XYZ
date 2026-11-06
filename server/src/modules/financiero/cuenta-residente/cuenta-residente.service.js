@@ -19,7 +19,7 @@ function situacionDe(saldoNeto) {
  *
  * - `cargoMensual.conceptos` es lo que se le cobrara en la proxima expensa, con las mismas
  *   reglas que la generacion (cargos.util.js): la cuota de cada departamento a su cargo y, en
- *   el primero de ellos, la de sus bauleras y parqueos con cobro.
+ *   los parqueos y bauleras son informativos y no tienen cobro.
  * - La deuda y el saldo a favor suman solo los departamentos a su cargo (de los que es la
  *   persona responsable); los demas se listan en `inmuebles` pero no cuentan.
  */
@@ -43,7 +43,7 @@ async function obtenerCuenta(copropietarioId) {
   const idsACargo = new Set(aCargo.map((departamento) => departamento.id))
   const ancla = aCargo[0] ?? null
 
-  const extrasConCobro = await cargosUtil.extrasDePersona(prisma, copropietarioId, ahora)
+  const extrasConCobro = await cargosUtil.extrasDePersona(prisma, copropietarioId, ahora) // siempre [] en DEMO
   const idsExtrasCobrados = new Set(ancla ? extrasConCobro.map((extra) => extra.inmuebleId) : [])
 
   // Inmuebles que tiene asociados hoy, departamentos primero y luego por codigo.
