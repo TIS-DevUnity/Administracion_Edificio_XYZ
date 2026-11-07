@@ -52,6 +52,7 @@ model Usuario {
   nominasPersonalRegistradas     Nomina[]           @relation("NominaRegistradaPor")
   nominasPersonalPagadas         Nomina[]           @relation("NominaPagadaPor")
   anticiposSalarialesRegistrados AnticipoSalarial[] @relation("AnticipoRegistradoPor")
+  comunicadosCreados             Comunicado[]
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -255,6 +256,45 @@ model Documento {
   @@map("documentos")
   @@index([categoria])
   @@index([entidad, entidadId])
+}
+
+// ---------------------------------------------------------------------------
+// Comunicados (Requisito 7 del documento de requerimientos, HU10)
+// Elaboracion y registro historico. El envio real por correo/WhatsApp se conecta despues:
+// por eso ya existen los estados ENVIADO/FALLIDO y los campos de envio.
+// ---------------------------------------------------------------------------
+
+enum CanalComunicado {
+  CORREO
+  WHATSAPP
+}
+
+enum EstadoComunicado {
+  BORRADOR
+  ENVIADO
+  FALLIDO
+}
+
+model Comunicado {
+  id                 String           @id @default(uuid())
+  titulo             String
+  cuerpo             String
+  canales            CanalComunicado[]
+  estado             EstadoComunicado @default(BORRADOR)
+
+  // Se completan cuando se conecte el envio real.
+  causaFallo         String?
+  totalDestinatarios Int?
+  enviadoEn          DateTime?        @db.Timestamptz(3)
+
+  creadoPor          Usuario?         @relation(fields: [creadoPorId], references: [id])
+  creadoPorId        String?
+
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@map("comunicados")
+  @@index([estado, createdAt])
 }
 
 // ---------------------------------------------------------------------------

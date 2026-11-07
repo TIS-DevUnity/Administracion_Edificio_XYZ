@@ -13,6 +13,7 @@ const MODULOS = {
   Copropietarios: ["Copropietario"],
   Inmuebles: ["Inmueble", "OcupanteInmueble", "TipoInmueble", "TarifaClase"],
   Documentos: ["Documento"],
+  Comunicados: ["Comunicado"],
 };
 
 const MODULO_POR_ENTIDAD = Object.fromEntries(
