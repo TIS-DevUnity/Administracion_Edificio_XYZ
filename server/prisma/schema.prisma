@@ -123,8 +123,21 @@ model Inmueble {
   areaM2         Decimal?     @db.Decimal(8, 2)
   activo         Boolean      @default(true)
 
-  // Solo baulera y parqueo: monto propio que reemplaza a la tarifa de su clase (TarifaClase).
-  // null = usa la tarifa de la clase; 0 = exento (no se cobra).
+  // Caracteristicas opcionales del departamento. No incluye habitantes ni datos familiares.
+  descripcion    String?      @db.Text
+
+  // Cada departamento puede tener un parqueo y una baulera. UNIQUE impide compartir
+  // el mismo accesorio entre dos departamentos. La clase se valida en el servicio.
+  parqueoId      String?      @unique @map("parqueo_id")
+  parqueo        Inmueble?    @relation("DepartamentoParqueo", fields: [parqueoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  esParqueoDe    Inmueble?    @relation("DepartamentoParqueo")
+
+  bauleraId      String?      @unique @map("baulera_id")
+  baulera        Inmueble?    @relation("DepartamentoBaulera", fields: [bauleraId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  esBauleraDe    Inmueble?    @relation("DepartamentoBaulera")
+
+  // Campo legado para mantener compatibilidad con otras HU.
+  // En DEMO no genera cobro: parqueo y baulera son informativos.
   cuotaMensual   Decimal?     @db.Decimal(10, 2)
 
   ocupaciones    OcupanteInmueble[]
@@ -176,6 +189,10 @@ model ConfiguracionMora {
   tipoValor      TipoValorMora @default(PORCENTAJE)
   valor          Decimal       @db.Decimal(10, 2)
   modoMora       ModoMora      @default(MENSUAL)
+  // Dia del mes (1-28) en que se descuenta el saldo a favor de las expensas pendientes. Va entre
+  // diaGeneracion y diaVencimiento (lo valida la aplicacion). Antes de ese dia, generar la expensa y
+  // cargar el agua no usan el saldo.
+  diaDescuentoSaldo Int        @default(9)
   // Desde cuando rige. La vigente en una fecha es la mas reciente con vigenteDesde <= fecha;
   // una con fecha futura queda programada y no cambia lo que ya esta generado.
   vigenteDesde   DateTime      @default(now()) @db.Timestamptz(3)
@@ -381,12 +398,16 @@ model Expensa {
   periodo          String        // formato "YYYY-MM"
 
   // montoTotal = montoBase (expensa fija del tipo + baulera y parqueo) + montoAgua (agua que el
-  // administrador carga a mano para este departamento). No incluye la mora, que se lleva aparte
-  // en `moras` y se resume en `montoMora`.
+  // administrador carga a mano para este departamento) + montoExtra (cobro opcional y ocasional, con
+  // su concepto). No incluye la mora, que se lleva aparte en `moras` y se resume en `montoMora`.
   montoBase        Decimal       @default(0) @db.Decimal(10, 2)
   montoAgua        Decimal       @default(0) @db.Decimal(10, 2)
   // Cuando se cargo el agua. null = todavia no se carga (distinto de haber cargado 0).
   aguaRegistradaEn DateTime?     @db.Timestamptz(3)
+  // Cobro extra opcional (pintura del edificio, reparaciones...). Nace en 0 y sin concepto; el concepto es
+  // obligatorio mientras el monto sea mayor que cero.
+  montoExtra       Decimal       @default(0) @db.Decimal(10, 2)
+  extraConcepto    String?
   montoTotal       Decimal       @db.Decimal(10, 2)
   montoMora        Decimal       @default(0) @db.Decimal(10, 2) // suma de las lineas de `moras`
 

@@ -221,9 +221,6 @@ function ContenidoMorosidad() {
   const expensas = expensasQuery.data?.expensas ?? EXPENSAS_VACIAS;
   const paginacion = expensasQuery.data?.paginacion;
   const configMora = configQuery.data ?? null;
-  // El día de descuento de anticipados solo existe en la simulación hasta que el servidor lo envíe:
-  // sin ese campo el backend sigue descontando al generar la expensa, y no se debe mostrar otra cosa.
-  const bolMostrarDiaDescuento = bolEnSimulacion || configMora?.diaDescuentoSaldo !== undefined;
   const historialConfiguracion = historialQuery.data ?? [];
   const inmuebles = inmueblesQuery.data ?? [];
   const tiposInmueble = tiposQuery.data ?? [];
@@ -330,31 +327,21 @@ function ContenidoMorosidad() {
     }
   }
 
-  // Guardado desde la celda Agua (sin abrir el detalle). Reutiliza el endpoint existente.
-  async function guardarAguaEnTabla(exp: ExpensaDTO, monto: number): Promise<void> {
-    const permiso = validarAccion(rol, "morosidad", "editar");
-    if (!permiso.permitido) throw new Error(permiso.mensaje);
-    if (pagadaConAguaCargada(exp)) throw new Error("No se puede editar agua de una expensa pagada.");
-    if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar agua con mora generada.");
-
-    // Confirmamos primero la operación en el servidor. Evita presentar un importe
-    // como guardado si el backend lo rechaza (por pagos, mora o plan de cuotas).
-    const resultado = await financeService.cargarAgua(exp.id, monto);
-
-    // El PATCH devuelve la expensa actualizada: reutilizamos esos valores para
-    // refrescar inmediatamente la fila sin esperar otro GET de 25 expensas.
+  // El PATCH devuelve la expensa actualizada: reutilizamos esos valores para
+  // refrescar inmediatamente la fila sin esperar otro GET de 25 expensas.
+  async function actualizarFilaExpensa(strId: string, resultado: ExpensaDTO) {
     // Cancelamos cualquier consulta anterior que pudiera sobrescribirlos.
     await queryClient.cancelQueries({ queryKey: ["morosidad", "expensas"] });
     queryClient.setQueriesData<PaginaExpensasDTO>(
       { queryKey: ["morosidad", "expensas"] },
       (paginaAnterior) => {
-        if (!paginaAnterior?.expensas.some((item) => item.id === exp.id)) {
+        if (!paginaAnterior?.expensas.some((item) => item.id === strId)) {
           return paginaAnterior;
         }
         return {
           ...paginaAnterior,
           expensas: paginaAnterior.expensas.map((item) =>
-            item.id === exp.id
+            item.id === strId
               ? {
                   ...item,
                   ...resultado,
@@ -372,9 +359,39 @@ function ContenidoMorosidad() {
 
     // Reconciliación en segundo plano: no bloquea el formulario ni otra edición.
     void queryClient.invalidateQueries({ queryKey: ["morosidad", "expensas"] });
+  }
+
+  // Guardado desde la celda Agua (sin abrir el detalle). Reutiliza el endpoint existente.
+  async function guardarAguaEnTabla(exp: ExpensaDTO, monto: number): Promise<void> {
+    const permiso = validarAccion(rol, "morosidad", "editar");
+    if (!permiso.permitido) throw new Error(permiso.mensaje);
+    if (pagadaConAguaCargada(exp)) throw new Error("No se puede editar agua de una expensa pagada.");
+    if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar agua con mora generada.");
+
+    // Confirmamos primero la operación en el servidor. Evita presentar un importe
+    // como guardado si el backend lo rechaza (por pagos, mora o plan de cuotas).
+    const resultado = await financeService.cargarAgua(exp.id, monto);
+    await actualizarFilaExpensa(exp.id, resultado);
     const aplicado = Number(resultado.saldoFavorAplicado ?? 0);
     setStrExito(
       `Agua de ${exp.inmueble.codigo} (${exp.periodo}) guardada: ${formatCurrency(monto)}.` +
+        (aplicado > 0 ? ` Se aplicaron ${formatCurrency(aplicado)} de crédito disponible.` : "")
+    );
+  }
+
+  // Mismas reglas que el agua, salvo que una expensa pagada sí admite un extra nuevo (vuelve a tener deuda).
+  async function guardarExtraEnTabla(exp: ExpensaDTO, monto: number, concepto: string): Promise<void> {
+    const permiso = validarAccion(rol, "morosidad", "editar");
+    if (!permiso.permitido) throw new Error(permiso.mensaje);
+    if ((exp.moras?.length ?? 0) > 0) throw new Error("No se puede editar el extra con mora generada.");
+
+    const resultado = await financeService.cargarExtra(exp.id, { montoExtra: monto, ...(monto > 0 ? { concepto } : {}) });
+    await actualizarFilaExpensa(exp.id, resultado);
+    const aplicado = Number(resultado.saldoFavorAplicado ?? 0);
+    setStrExito(
+      (monto > 0
+        ? `Extra de ${exp.inmueble.codigo} (${exp.periodo}) guardado: ${concepto}, ${formatCurrency(monto)}.`
+        : `Se quitó el extra de ${exp.inmueble.codigo} (${exp.periodo}).`) +
         (aplicado > 0 ? ` Se aplicaron ${formatCurrency(aplicado)} de crédito disponible.` : "")
     );
   }
@@ -397,8 +414,8 @@ function ContenidoMorosidad() {
       setStrErrorConfig("El vencimiento debe estar entre 1 y 28 y no puede preceder a la generación.");
       return;
     }
-    if (bolMostrarDiaDescuento && (formData.diaDescuentoSaldo === "" || !Number.isInteger(formData.diaDescuentoSaldo) ||
-        formData.diaDescuentoSaldo < Number(formData.diaGeneracion) || formData.diaDescuentoSaldo > Number(formData.diaVencimiento))) {
+    if (formData.diaDescuentoSaldo === "" || !Number.isInteger(formData.diaDescuentoSaldo) ||
+        formData.diaDescuentoSaldo < Number(formData.diaGeneracion) || formData.diaDescuentoSaldo > Number(formData.diaVencimiento)) {
       setStrErrorConfig("El día de descuento de pagos anticipados debe estar entre el de generación y el de vencimiento.");
       return;
     }
@@ -426,7 +443,7 @@ function ContenidoMorosidad() {
       await financeService.actualizarConfiguracion({
         diaGeneracion: Number(formData.diaGeneracion),
         diaVencimiento: Number(formData.diaVencimiento),
-        ...(bolMostrarDiaDescuento ? { diaDescuentoSaldo: Number(formData.diaDescuentoSaldo) } : {}),
+        diaDescuentoSaldo: Number(formData.diaDescuentoSaldo),
         diasGracia: Number(formData.diasGracia),
         tipoValor: formData.tipoValor,
         modoMora: formData.modoMora,
@@ -739,17 +756,15 @@ function ContenidoMorosidad() {
                     onChange={(e) => setFormData((prev) => ({ ...prev, diaVencimiento: e.target.value === "" ? "" : Number(e.target.value) }))}
                   />
                 </div>
-                {bolMostrarDiaDescuento && (
-                  <div className="grid gap-1">
-                    <label htmlFor="diaDescuentoSaldo" className={CLASE_LABEL_CAMPO}>Día de descuento de pagos anticipados</label>
-                    <Input
-                      id="diaDescuentoSaldo" type="number" min="1" max="28"
-                      value={formData.diaDescuentoSaldo}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, diaDescuentoSaldo: e.target.value === "" ? "" : Number(e.target.value) }))}
-                    />
-                    <p className={CLASE_AYUDA}>Da tiempo a cargar el agua del mes antes de descontar el saldo a favor. Debe estar entre el día de generación y el de vencimiento.</p>
-                  </div>
-                )}
+                <div className="grid gap-1">
+                  <label htmlFor="diaDescuentoSaldo" className={CLASE_LABEL_CAMPO}>Día de descuento de pagos anticipados</label>
+                  <Input
+                    id="diaDescuentoSaldo" type="number" min="1" max="28"
+                    value={formData.diaDescuentoSaldo}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, diaDescuentoSaldo: e.target.value === "" ? "" : Number(e.target.value) }))}
+                  />
+                  <p className={CLASE_AYUDA}>Da tiempo a cargar el agua del mes antes de descontar el saldo a favor. Debe estar entre el día de generación y el de vencimiento.</p>
+                </div>
                 <div className="grid gap-1">
                   <label className={CLASE_LABEL_CAMPO}>Días de gracia</label>
                   <Input
@@ -831,7 +846,7 @@ function ContenidoMorosidad() {
                     {historialConfiguracion.map((regla) => (
                       <div key={regla.id} className="border-b border-border pb-2 text-[12px] leading-[1.45] text-foreground last:border-0">
                         <span className="font-medium">{formatearFecha(regla.vigenteDesde)}</span> · {regla.modoMora === "UNICA" ? "Única" : "Mensual"} · {Number(regla.valor)}{regla.tipoValor === "PORCENTAJE" ? "%" : " Bs"}
-                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, {bolMostrarDiaDescuento && <>descuento de anticipados día {regla.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}, </>}vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
+                        <div className="text-muted-foreground">Generación día {regla.diaGeneracion}, descuento de anticipados día {regla.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}, vence día {regla.diaVencimiento}, gracia {regla.diasGracia} días</div>
                       </div>
                     ))}
                   </div>
@@ -937,13 +952,8 @@ function ContenidoMorosidad() {
             <span className="font-medium text-foreground">{configMora.diaGeneracion}</span> de cada mes. El
             vencimiento está configurado para el día{" "}
             <span className="font-medium text-foreground">{configMora.diaVencimiento}</span>
-            {bolMostrarDiaDescuento && (
-              <>
-                , los pagos anticipados se descuentan el día{" "}
-                <span className="font-medium text-foreground">{configMora.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}</span>
-              </>
-            )}{" "}
-            y el recargo por mora es
+            , los pagos anticipados se descuentan desde el día{" "}
+            <span className="font-medium text-foreground">{configMora.diaDescuentoSaldo ?? DIA_DESCUENTO_POR_DEFECTO}</span> y el recargo por mora es
             de{" "}
             <span className="font-medium text-foreground">
               {Number(configMora.valor)}
@@ -1182,6 +1192,7 @@ function ContenidoMorosidad() {
               errorCarga={errorCarga}
               onDetalle={(exp) => abrirDetalleExpensa(exp)}
               onGuardarAgua={guardarAguaEnTabla}
+              onGuardarExtra={guardarExtraEnTabla}
               onPago={abrirDialogoPago}
             />
           )}
@@ -1452,9 +1463,15 @@ function ContenidoMorosidad() {
                       </div>
                       {errorAgua && <p role="alert" className={CLASE_AVISO_ERROR}>{errorAgua}</p>}
                       <p className={CLASE_AYUDA}>
-                        Se suma a la tarifa fija y recalcula el total. Si el inmueble tiene saldo a favor, cubre el aumento.
+                        Se suma a la tarifa fija y recalcula el total. Desde el día de descuento, el saldo a favor del inmueble cubre el aumento.
                       </p>
                     </form>
+                  )}
+                  {Number(expensaDetalle.montoExtra ?? 0) > 0 && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">{expensaDetalle.extraEtiqueta ?? "Extra"}</span>
+                      <span className="text-foreground">{formatCurrency(Number(expensaDetalle.montoExtra))}</span>
+                    </div>
                   )}
                   <div className="flex items-center justify-between gap-2 border-t border-border pt-2">
                     <span className="font-medium text-foreground">Total expensa (sin mora)</span>

@@ -78,7 +78,9 @@ export interface ExpensaEstadoCuenta {
   atrasada: boolean;
   montoBase: string;
   montoAgua: string;
-  /** Expensa fija + agua, sin mora. */
+  montoExtra?: string;
+  extraConcepto?: string | null;
+  /** Expensa fija + agua + extra, sin mora. */
   montoTotal: string;
   montoMora: string;
   pagado: string;
@@ -94,6 +96,7 @@ export interface ExpensaEstadoCuenta {
 export interface ResumenEstadoCuenta {
   totalFacturado: string;
   totalAgua: string;
+  totalExtra?: string;
   totalMora: string;
   totalPagado: string;
   deudaPendiente: string;

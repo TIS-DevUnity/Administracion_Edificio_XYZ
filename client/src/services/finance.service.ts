@@ -107,6 +107,18 @@ export const financeService = {
     return data;
   },
 
+  /** Carga, corrige o quita (montoExtra 0) el cobro extra opcional de una expensa. */
+  async cargarExtra(
+    expensaId: string,
+    datos: { montoExtra: number; concepto?: string }
+  ): Promise<ExpensaDTO & { saldoFavorAplicado?: string }> {
+    const { data } = await api.patch<ExpensaDTO & { saldoFavorAplicado?: string }>(
+      `/financiero/expensas/${expensaId}/extra`,
+      datos
+    );
+    return data;
+  },
+
   async ejecutarGeneracionJob(forzar = true): Promise<ResultadoGeneracionDTO> {
     const response = await api.post<ResultadoGeneracionDTO>(
       `/financiero/jobs/ejecutar-generacion?forzar=${forzar}`

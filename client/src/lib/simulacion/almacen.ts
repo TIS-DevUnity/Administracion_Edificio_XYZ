@@ -9,6 +9,9 @@ export function enRutaSimulacion() {
   return pathname === RUTA_SIMULACION || pathname.startsWith(`${RUTA_SIMULACION}/`);
 }
 
+// Subir la versión descarta las simulaciones guardadas cuando cambia la forma de los datos.
+const VERSION_DATOS = "v2";
+
 function claveEstado() {
   let usuarioId = "anonimo";
   try {
@@ -16,7 +19,7 @@ function claveEstado() {
   } catch {
     // Sin sesión legible los datos quedan bajo la clave genérica.
   }
-  return `simulacion-morosidad:v1:${usuarioId}`;
+  return `simulacion-morosidad:${VERSION_DATOS}:${usuarioId}`;
 }
 
 // Se reutiliza lo ya interpretado mientras el texto guardado no cambie.
@@ -60,6 +63,7 @@ export function iniciarEstado(...datos: Parameters<typeof crearEstado>) {
 
 export function borrarEstado() {
   localStorage.removeItem(claveEstado());
+  localStorage.removeItem(claveEstado().replace(VERSION_DATOS, "v1"));
   cache = null;
 }
 

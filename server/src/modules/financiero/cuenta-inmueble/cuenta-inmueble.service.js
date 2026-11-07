@@ -216,7 +216,7 @@ async function registrarPagoAnticipado({ inmuebleId, monto, metodoPago, referenc
     saldoFavor: saldoFavor.toFixed(2),
     tipoPago: 'ANTICIPADO',
     mensaje:
-      'Pago anticipado registrado como saldo a favor. Se descuenta solo en la proxima expensa que se genere, o a mano con POST /api/financiero/expensas/{id}/aplicar-saldo'
+      'Pago anticipado registrado como saldo a favor. Se descuenta solo, a partir del dia de descuento configurado de cada mes (diaDescuentoSaldo, por defecto el 9), en las expensas pendientes, o a mano con POST /api/financiero/expensas/{id}/aplicar-saldo (la expensa debe tener el agua cargada)'
   }
 }
 
@@ -624,6 +624,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
 
   let totalFacturado = new Decimal(0)
   let totalAgua = new Decimal(0)
+  let totalExtra = new Decimal(0)
   let totalMora = new Decimal(0)
   let totalPagado = new Decimal(0)
   let deudaPendiente = new Decimal(0)
@@ -635,6 +636,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
       const pendientes = pendientesDe(e)
       totalFacturado = totalFacturado.plus(e.montoTotal)
       totalAgua = totalAgua.plus(e.montoAgua)
+      totalExtra = totalExtra.plus(e.montoExtra ?? 0)
       totalMora = totalMora.plus(e.montoMora)
       totalPagado = totalPagado.plus(pagado)
       deudaPendiente = deudaPendiente.plus(pendientes.total)
@@ -662,7 +664,9 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
         })),
         montoAgua: e.montoAgua,
         aguaRegistradaEn: e.aguaRegistradaEn,
-        montoTotal: e.montoTotal, // expensa fija + agua (sin mora)
+        montoExtra: e.montoExtra, // cobro extra opcional (0 si no tiene)
+        extraConcepto: e.extraConcepto ?? null,
+        montoTotal: e.montoTotal, // expensa fija + agua + extra (sin mora)
         montoMora: e.montoMora,
         planPagoId: e.planPagoId,
         pagado: pagado.toFixed(2),
@@ -724,6 +728,7 @@ async function obtenerEstadoCuenta(inmuebleId, { desde, hasta, mes } = {}) {
     resumen: {
       totalFacturado: totalFacturado.toFixed(2),
       totalAgua: totalAgua.toFixed(2),
+      totalExtra: totalExtra.toFixed(2),
       totalMora: totalMora.toFixed(2),
       totalPagado: totalPagado.toFixed(2),
       deudaPendiente: deudaPendiente.toFixed(2),
