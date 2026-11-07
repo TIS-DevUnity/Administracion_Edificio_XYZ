@@ -32,8 +32,8 @@ const LECTURA = permitir("auditoria", "ver");
  *         schema: { type: string }
  *       - in: query
  *         name: modulo
- *         description: "Agrupa entidades por modulo: Financiero (Expensa, Pago, Recibo, MovimientoSaldo, ConfiguracionMora), Seguridad (Usuario), Copropietarios, Inmuebles (Inmueble, OcupanteInmueble), Documentos. Cada evento devuelto trae su campo modulo"
- *         schema: { type: string, enum: [Financiero, Seguridad, Copropietarios, Inmuebles, Documentos] }
+ *         description: "Agrupa entidades por modulo: Financiero (Expensa, Pago, Recibo, MovimientoSaldo, ConfiguracionMora), Seguridad (Usuario), Copropietarios, Inmuebles (Inmueble, OcupanteInmueble), Documentos, Comunicados. Cada evento devuelto trae su campo modulo"
+ *         schema: { type: string, enum: [Financiero, Seguridad, Copropietarios, Inmuebles, Documentos, Comunicados] }
  *       - in: query
  *         name: desde
  *         description: Inicio del dia indicado, hora de Bolivia
