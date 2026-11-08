@@ -23,6 +23,7 @@ jobs:
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          set -o pipefail # Si pg_dump falla, no lo oculta gzip
           FECHA=$(date +'%Y-%m-%d_%H%M%S')
           
           # Respaldamos:
