@@ -13,6 +13,7 @@ export type SeccionId =
   | "roles"
   | "morosidad"
   | "documentos"
+  | "comunicados"
   | "finanzas"
   | "personal"
   | "auditoria";
@@ -50,6 +51,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     roles: ["ver", "editar"],
     morosidad: ["ver", "crear", "editar", "eliminar"],
     documentos: ["ver", "crear", "eliminar"],
+    comunicados: ["ver", "crear", "editar", "eliminar"],
     finanzas: ["ver", "crear", "editar", "eliminar"],
     personal: ["ver", "crear", "editar"],
     // "auditoria" no aparece a propósito: la HU la define como exclusiva de
@@ -69,6 +71,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     usuarios: ["ver"],
     morosidad: ["ver"],
     documentos: ["ver", "crear"],
+    comunicados: ["ver"],
     auditoria: ["ver"],
     finanzas: ["ver", "crear", "editar"],
     personal: ["ver"],
@@ -81,6 +84,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
+    comunicados: ["ver"],
     // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
     // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
@@ -134,6 +138,7 @@ export const SECCIONES_NAV: SeccionNav[] = [
   { id: "pagos", label: "Pagos", href: "/admin/pagos" },
   { id: "morosidad", label: "Morosidad y Expensas", href: "/admin/morosidad" },
   { id: "documentos", label: "Gestión Documental", href: "/admin/documentos" },
+  { id: "comunicados", label: "Comunicados", href: "/admin/comunicados" },
   { id: "auditoria", label: "Bitácora de Auditoría", href: "/admin/auditoria" },
   { id: "mantenimiento", label: "Mantenimiento", href: "/admin/mantenimiento" },
   { id: "usuarios", label: "Usuarios", href: "/admin/usuarios" },

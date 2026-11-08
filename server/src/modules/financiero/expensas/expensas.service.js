@@ -79,8 +79,8 @@ async function resolverVencimiento(periodo, fechaVencimiento, config) {
  * Genera la expensa de un departamento para un periodo.
  *
  * Solo pagan expensa los departamentos activos que tienen a alguien asignado (propietario o
- * inquilino); baulera y parqueo no. El monto es la expensa fija del tipo (mas baulera y
- * parqueo); el agua nace en 0 y el administrador la carga despues con `cargarAgua`.
+ * inquilino); baulera y parqueo no. El monto es la expensa fija del tipo; parqueo y baulera no se cobran.
+ * El agua nace en 0 y el administrador la carga despues con `cargarAgua`.
  *
  * Cada expensa guarda la configuracion de mora vigente al generarla (la de su periodo) y la
  * persona responsable en ese momento (propietario vigente; si no hay, el inquilino).
@@ -153,7 +153,7 @@ async function generar({
       }
       const responsable = ocupantes[0]
 
-      // Cuota del departamento + la de cada baulera y parqueo que paga el responsable
+      // Cuota fija del departamento. Accesorios informativos sin cobro (extras = []).
       // (ver cargos.util.js). `montoBase` es la suma; el agua va aparte (`montoAgua`).
       const extras = await cargosUtil.extrasParaExpensa(tx, {
         inmuebleId,

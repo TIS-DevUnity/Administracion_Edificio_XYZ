@@ -178,6 +178,9 @@ export default function InmueblesPage() {
     const strCodigo = String(objFormulario.get("codigo") ?? "").trim();
     const strPiso = String(objFormulario.get("piso") ?? "").trim();
     const strAreaM2 = String(objFormulario.get("areaM2") ?? "").trim();
+    const strDescripcion = String(objFormulario.get("descripcion") ?? "").trim();
+    const strParqueo = String(objFormulario.get("parqueoId") ?? "").trim();
+    const strBaulera = String(objFormulario.get("bauleraId") ?? "").trim();
     const bolDepto = strClase === "DEPARTAMENTO";
 
     const camposFaltantes = new Set<string>();
@@ -189,6 +192,14 @@ export default function InmueblesPage() {
     if (bolDepto && !strTipoId) {
       camposFaltantes.add("tipoInmuebleId");
       arrNombresFaltantes.push("clasificación (Tipo A, B o C)");
+    }
+    if (bolDepto && !strParqueo) {
+      camposFaltantes.add("parqueoId");
+      arrNombresFaltantes.push("parqueo");
+    }
+    if (bolDepto && !strBaulera) {
+      camposFaltantes.add("bauleraId");
+      arrNombresFaltantes.push("baulera");
     }
     if (!strPiso) {
       camposFaltantes.add("piso");
@@ -218,6 +229,9 @@ export default function InmueblesPage() {
         tipoInmuebleId: bolDepto ? strTipoId : undefined,
         piso: strPiso,
         areaM2: strAreaM2 ? Number(strAreaM2) : undefined,
+        descripcion: bolDepto ? strDescripcion || null : undefined,
+        parqueoId: bolDepto ? strParqueo : undefined,
+        bauleraId: bolDepto ? strBaulera : undefined,
       });
 
       setCamposError(new Set());
@@ -542,6 +556,43 @@ export default function InmueblesPage() {
                 />
               </div>
             </div>
+
+            {strClase === "DEPARTAMENTO" && (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="descripcion" className="text-[12px] font-medium text-foreground">
+                  Descripción del departamento <span className="text-muted-foreground">(opcional)</span>
+                </label>
+                <textarea
+                  id="descripcion" name="descripcion" maxLength={1000} rows={2}
+                  placeholder="Ej. Dos dormitorios, cocina, sala-comedor y balcón"
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-primary focus:ring-4 focus:ring-primary/15"
+                />
+              </div>
+            )}
+
+            {strClase === "DEPARTAMENTO" && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="nuevoParqueo" className="mb-1 block text-[12px] font-medium text-foreground">Parqueo asignado</label>
+                  <select id="nuevoParqueo" name="parqueoId" required onChange={() => limpiarError("parqueoId")} className={claseCampo(camposError.has("parqueoId"))} defaultValue="">
+                    <option value="" disabled>Selecciona un parqueo disponible</option>
+                    {inmuebles.filter((item) => item.clase === "PARQUEO" && item.activo && !item.departamentoAsociado).map((item) => (
+                      <option key={item.id} value={item.id}>{item.codigo}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="nuevaBaulera" className="mb-1 block text-[12px] font-medium text-foreground">Baulera asignada</label>
+                  <select id="nuevaBaulera" name="bauleraId" required onChange={() => limpiarError("bauleraId")} className={claseCampo(camposError.has("bauleraId"))} defaultValue="">
+                    <option value="" disabled>Selecciona una baulera disponible</option>
+                    {inmuebles.filter((item) => item.clase === "BAULERA" && item.activo && !item.departamentoAsociado).map((item) => (
+                      <option key={item.id} value={item.id}>{item.codigo}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="col-span-full text-[11px] text-muted-foreground">Parqueo y baulera son asignaciones informativas; no incrementan la expensa.</p>
+              </div>
+            )}
 
             <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[12px] leading-[1.45] text-muted-foreground">
               {strClase !== "DEPARTAMENTO" ? (

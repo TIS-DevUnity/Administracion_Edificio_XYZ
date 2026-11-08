@@ -52,6 +52,7 @@ model Usuario {
   nominasPersonalRegistradas     Nomina[]           @relation("NominaRegistradaPor")
   nominasPersonalPagadas         Nomina[]           @relation("NominaPagadaPor")
   anticiposSalarialesRegistrados AnticipoSalarial[] @relation("AnticipoRegistradoPor")
+  comunicadosCreados             Comunicado[]
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -122,8 +123,21 @@ model Inmueble {
   areaM2         Decimal?     @db.Decimal(8, 2)
   activo         Boolean      @default(true)
 
-  // Solo baulera y parqueo: monto propio que reemplaza a la tarifa de su clase (TarifaClase).
-  // null = usa la tarifa de la clase; 0 = exento (no se cobra).
+  // Caracteristicas opcionales del departamento. No incluye habitantes ni datos familiares.
+  descripcion    String?      @db.Text
+
+  // Cada departamento puede tener un parqueo y una baulera. UNIQUE impide compartir
+  // el mismo accesorio entre dos departamentos. La clase se valida en el servicio.
+  parqueoId      String?      @unique @map("parqueo_id")
+  parqueo        Inmueble?    @relation("DepartamentoParqueo", fields: [parqueoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  esParqueoDe    Inmueble?    @relation("DepartamentoParqueo")
+
+  bauleraId      String?      @unique @map("baulera_id")
+  baulera        Inmueble?    @relation("DepartamentoBaulera", fields: [bauleraId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  esBauleraDe    Inmueble?    @relation("DepartamentoBaulera")
+
+  // Campo legado para mantener compatibilidad con otras HU.
+  // En DEMO no genera cobro: parqueo y baulera son informativos.
   cuotaMensual   Decimal?     @db.Decimal(10, 2)
 
   ocupaciones    OcupanteInmueble[]
@@ -242,6 +256,45 @@ model Documento {
   @@map("documentos")
   @@index([categoria])
   @@index([entidad, entidadId])
+}
+
+// ---------------------------------------------------------------------------
+// Comunicados (Requisito 7 del documento de requerimientos, HU10)
+// Elaboracion y registro historico. El envio real por correo/WhatsApp se conecta despues:
+// por eso ya existen los estados ENVIADO/FALLIDO y los campos de envio.
+// ---------------------------------------------------------------------------
+
+enum CanalComunicado {
+  CORREO
+  WHATSAPP
+}
+
+enum EstadoComunicado {
+  BORRADOR
+  ENVIADO
+  FALLIDO
+}
+
+model Comunicado {
+  id                 String           @id @default(uuid())
+  titulo             String
+  cuerpo             String
+  canales            CanalComunicado[]
+  estado             EstadoComunicado @default(BORRADOR)
+
+  // Se completan cuando se conecte el envio real.
+  causaFallo         String?
+  totalDestinatarios Int?
+  enviadoEn          DateTime?        @db.Timestamptz(3)
+
+  creadoPor          Usuario?         @relation(fields: [creadoPorId], references: [id])
+  creadoPorId        String?
+
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@map("comunicados")
+  @@index([estado, createdAt])
 }
 
 // ---------------------------------------------------------------------------
