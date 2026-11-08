@@ -33,7 +33,6 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" \
             --schema=public \
             --schema=auth \
-            --schema=storage \
             --no-owner \
             --clean \
             --if-exists | gzip > "backup_completo_${FECHA}.sql.gz"
