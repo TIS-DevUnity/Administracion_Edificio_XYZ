@@ -19,7 +19,7 @@ interface Props {
 export function DetalleComunicadoDialog({ abierto, cargando, comunicado, error, onCerrar }: Props) {
   return (
     <Dialog open={abierto} onOpenChange={(open) => { if (!open) onCerrar(); }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] min-w-0 overflow-x-hidden overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Detalle del comunicado</DialogTitle>
           <DialogDescription>Consulta de solo lectura. Los comunicados emitidos no se pueden editar ni eliminar.</DialogDescription>
@@ -27,10 +27,10 @@ export function DetalleComunicadoDialog({ abierto, cargando, comunicado, error, 
         {cargando ? <p className="py-8 text-center text-sm text-muted-foreground">Cargando comunicado...</p> : error ? (
           <p role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>
         ) : comunicado ? (
-          <div className="space-y-4 text-sm">
-            <div className="space-y-1"><p className="text-xs uppercase tracking-wide text-muted-foreground">Título</p><p className="break-words font-semibold">{comunicado.titulo}</p></div>
-            <div className="space-y-1"><p className="text-xs uppercase tracking-wide text-muted-foreground">Mensaje</p><div className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border bg-muted/30 p-3 leading-6">{comunicado.cuerpo}</div></div>
-            <div className="grid gap-4 sm:grid-cols-2">
+          <div className="min-w-0 max-w-full space-y-4 overflow-x-hidden text-sm">
+            <div className="space-y-1"><p className="text-xs uppercase tracking-wide text-muted-foreground">Título</p><p className="min-w-0 [overflow-wrap:anywhere] font-semibold">{comunicado.titulo}</p></div>
+            <div className="space-y-1"><p className="text-xs uppercase tracking-wide text-muted-foreground">Mensaje</p><div className="max-h-60 min-w-0 overflow-x-hidden overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg border bg-muted/30 p-3 leading-6">{comunicado.cuerpo}</div></div>
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               <div><p className="mb-1 text-xs text-muted-foreground">Estado</p><Badge variant="secondary">{ETIQUETAS_ESTADO[comunicado.estado]}</Badge></div>
               <div><p className="mb-1 text-xs text-muted-foreground">Destinatarios</p><p>{comunicado.totalDestinatarios ?? "No disponible"}</p></div>
               <div><p className="mb-1 text-xs text-muted-foreground">Creado por</p><p>{comunicado.creadoPor ? `${comunicado.creadoPor.nombre} ${comunicado.creadoPor.apellido}` : "No disponible"}</p></div>
@@ -41,7 +41,7 @@ export function DetalleComunicadoDialog({ abierto, cargando, comunicado, error, 
             {comunicado.estado === "FALLIDO" && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
                 <p className="flex items-center gap-2 font-medium text-destructive"><AlertTriangle className="size-4" /> Motivo del fallo</p>
-                <p className="mt-1 break-words text-muted-foreground">{comunicado.causaFallo || "El servidor no proporcionó una causa."}</p>
+                <p className="mt-1 min-w-0 text-muted-foreground [overflow-wrap:anywhere]">{comunicado.causaFallo || "El servidor no proporcionó una causa."}</p>
               </div>
             )}
           </div>
