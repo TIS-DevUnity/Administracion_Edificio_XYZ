@@ -56,7 +56,7 @@ export function HistorialComunicados({ comunicados, puedeGestionar, onVer, onEdi
           onChange={(event) => setEstado(event.target.value as FiltroEstado)}
         >
           <option value="TODOS">Todos los estados</option>
-          <option value="BORRADOR">Borradores</option>
+          {puedeGestionar && <option value="BORRADOR">Borradores</option>}
           <option value="ENVIADO">Enviados</option>
           <option value="FALLIDO">Fallidos</option>
         </select>
@@ -81,13 +81,13 @@ export function HistorialComunicados({ comunicados, puedeGestionar, onVer, onEdi
               </TableCell></TableRow>
             ) : visibles.map((comunicado) => (
               <TableRow key={comunicado.id}>
-                <TableCell className="max-w-60">
-                  <p className="truncate font-medium" title={comunicado.titulo}>{comunicado.titulo}</p>
-                  <p className="max-w-60 truncate text-xs text-muted-foreground">{comunicado.cuerpo}</p>
+                <TableCell className="max-w-60 min-w-0 whitespace-normal">
+                  <p className="line-clamp-2 max-w-60 [overflow-wrap:anywhere] font-medium" title={comunicado.titulo}>{comunicado.titulo}</p>
+                  <p className="line-clamp-2 max-w-60 whitespace-pre-wrap text-xs text-muted-foreground [overflow-wrap:anywhere]">{comunicado.cuerpo}</p>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-xs">{fechaComunicado(comunicado.enviadoEn ?? comunicado.createdAt)}</TableCell>
-                <TableCell className="whitespace-nowrap text-xs">{comunicado.creadoPor ? `${comunicado.creadoPor.nombre} ${comunicado.creadoPor.apellido}` : "No disponible"}</TableCell>
-                <TableCell className="text-xs">{comunicado.canales.map((canal) => ETIQUETAS_CANAL[canal]).join(" / ")}</TableCell>
+                <TableCell className="max-w-48 text-xs [overflow-wrap:anywhere]">{comunicado.creadoPor ? `${comunicado.creadoPor.nombre} ${comunicado.creadoPor.apellido}` : "No disponible"}</TableCell>
+                <TableCell className="max-w-40 text-xs [overflow-wrap:anywhere]">{comunicado.canales.map((canal) => ETIQUETAS_CANAL[canal]).join(" / ")}</TableCell>
                 <TableCell className="text-center text-xs">{comunicado.totalDestinatarios ?? "—"}</TableCell>
                 <TableCell><BadgeEstado estado={comunicado.estado} /></TableCell>
                 <TableCell>
@@ -106,7 +106,7 @@ export function HistorialComunicados({ comunicados, puedeGestionar, onVer, onEdi
           </TableBody>
         </Table>
       </div>
-      <p className="text-xs text-muted-foreground">Mostrando {visibles.length} de {comunicados.length} comunicados. Los borradores solo son visibles para Administrador.</p>
+      <p className="text-xs text-muted-foreground">Mostrando {visibles.length} de {comunicados.length} comunicados. {puedeGestionar ? "Solo el Administrador puede gestionar borradores." : "Solo se muestran comunicados emitidos; los borradores son privados."}</p>
     </div>
   );
 }

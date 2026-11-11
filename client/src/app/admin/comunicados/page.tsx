@@ -119,24 +119,29 @@ export default function ComunicadosPage() {
     }
   }
 
-  const borradores = comunicados.filter((comunicado) => comunicado.estado === "BORRADOR").length;
-  const enviados = comunicados.filter((comunicado) => comunicado.estado === "ENVIADO").length;
-  const fallidos = comunicados.filter((comunicado) => comunicado.estado === "FALLIDO").length;
+  // BUG-007: segunda barrera visual, además de las restricciones del backend.
+  // Consulta/Directorio pueden consultar ENVIADO y FALLIDO según HU10, nunca BORRADOR.
+  const comunicadosVisibles = puedeGestionar
+    ? comunicados
+    : comunicados.filter((comunicado) => comunicado.estado !== "BORRADOR");
+  const borradores = comunicadosVisibles.filter((comunicado) => comunicado.estado === "BORRADOR").length;
+  const enviados = comunicadosVisibles.filter((comunicado) => comunicado.estado === "ENVIADO").length;
+  const fallidos = comunicadosVisibles.filter((comunicado) => comunicado.estado === "FALLIDO").length;
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2"><Megaphone className="size-6 text-primary" /><h1 className="text-2xl font-bold tracking-tight">Comunicados</h1><Badge variant="outline"></Badge></div>
+          <div className="flex items-center gap-2"><Megaphone className="size-6 text-primary" /><h1 className="text-2xl font-bold tracking-tight">Comunicados</h1><Badge variant="outline">HU10</Badge></div>
           <p className="text-sm text-muted-foreground">Redacta avisos y consulta el historial de comunicaciones del edificio.</p>
         </div>
         {puedeGestionar && <Button onClick={abrirNuevo}><Plus /> Nuevo comunicado</Button>}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-3 sm:grid-cols-2 ${puedeGestionar ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
         {[
-          { titulo: "Total", numero: comunicados.length, icono: Megaphone },
-          { titulo: "Borradores", numero: borradores, icono: FilePenLine },
+          { titulo: puedeGestionar ? "Total" : "Total emitidos", numero: comunicadosVisibles.length, icono: Megaphone },
+          ...(puedeGestionar ? [{ titulo: "Borradores", numero: borradores, icono: FilePenLine }] : []),
           { titulo: "Enviados", numero: enviados, icono: Send },
           { titulo: "Fallidos", numero: fallidos, icono: AlertTriangle },
         ].map(({ titulo, numero, icono: Icono }) => (
@@ -161,7 +166,7 @@ export default function ComunicadosPage() {
         <CardContent className="space-y-4">
           {errorCarga && <div role="alert" className="flex flex-col gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><span>{errorCarga}</span><Button variant="outline" size="sm" className="self-start" onClick={() => void cargar()}>Reintentar</Button></div>}
           {cargando ? <div className="py-16 text-center text-sm text-muted-foreground">Cargando historial de comunicados...</div> : !errorCarga && (
-            <HistorialComunicados comunicados={comunicados} puedeGestionar={puedeGestionar} onVer={(id) => void abrirDetalle(id)} onEditar={abrirEdicion} onEliminar={pedirEliminacion} />
+            <HistorialComunicados comunicados={comunicadosVisibles} puedeGestionar={puedeGestionar} onVer={(id) => void abrirDetalle(id)} onEditar={abrirEdicion} onEliminar={pedirEliminacion} />
           )}
         </CardContent>
       </Card>
@@ -172,7 +177,7 @@ export default function ComunicadosPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Eliminar borrador</DialogTitle>
-            <DialogDescription>¿Deseas eliminar el comunicado «{borradorEliminar?.titulo}»? Esta acción no se puede deshacer.</DialogDescription>
+            <DialogDescription className="min-w-0 [overflow-wrap:anywhere]">¿Deseas eliminar el comunicado «{borradorEliminar?.titulo}»? Esta acción no se puede deshacer.</DialogDescription>
           </DialogHeader>
           {errorEliminar && <p role="alert" className="text-sm text-destructive">{errorEliminar}</p>}
           <DialogFooter>
