@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Eye, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,9 +20,10 @@ interface Props {
   onGuardar: (datos: DatosComunicado) => Promise<void>;
 }
 
-const claseTextarea = "min-h-36 w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition-colors focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/15 aria-invalid:border-destructive";
+const claseTextarea = "min-h-36 max-h-[45vh] w-full min-w-0 resize-none overflow-y-auto rounded-lg border border-input bg-background px-3 py-2 text-sm [overflow-wrap:anywhere] outline-none transition-colors focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/15 aria-invalid:border-destructive";
 
 export function FormularioComunicadoDialog({ abierto, comunicado, onCerrar, onGuardar }: Props) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [titulo, setTitulo] = useState(comunicado?.titulo ?? "");
   const [cuerpo, setCuerpo] = useState(comunicado?.cuerpo ?? "");
   const [canales, setCanales] = useState<CanalComunicado[]>(comunicado?.canales ?? []);
@@ -33,6 +34,19 @@ export function FormularioComunicadoDialog({ abierto, comunicado, onCerrar, onGu
 
   const datos: DatosComunicado = { titulo, cuerpo, canales };
   const limiteMensaje = canales.includes("WHATSAPP") ? MAX_WHATSAPP : MAX_CUERPO;
+
+  // BUG-004: crece con el texto hasta un límite seguro para la altura del modal.
+  // No se permite arrastrar el control manualmente.
+  useEffect(() => {
+    if (mostrarVistaPrevia) return;
+    const campo = textareaRef.current;
+    if (!campo) return;
+    campo.style.height = "auto";
+    const alturaMaxima = Math.max(144, Math.round(window.innerHeight * 0.45));
+    const alturaNecesaria = campo.scrollHeight;
+    campo.style.height = `${Math.min(alturaNecesaria, alturaMaxima)}px`;
+    campo.style.overflowY = alturaNecesaria > alturaMaxima ? "auto" : "hidden";
+  }, [cuerpo, mostrarVistaPrevia]);
 
   function alternarCanal(canal: CanalComunicado) {
     setCanales((actual) => actual.includes(canal) ? actual.filter((c) => c !== canal) : [...actual, canal]);
@@ -68,7 +82,7 @@ export function FormularioComunicadoDialog({ abierto, comunicado, onCerrar, onGu
 
   return (
     <Dialog open={abierto} onOpenChange={(open) => { if (!open && !guardando) onCerrar(); }}>
-      <DialogContent className="max-h-[90vh] w-full overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] w-full min-w-0 overflow-x-hidden overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{comunicado ? "Editar borrador" : "Nuevo comunicado"}</DialogTitle>
           <DialogDescription>Redacta un aviso para los residentes. Por ahora solo se puede guardar como borrador.</DialogDescription>
@@ -96,7 +110,7 @@ export function FormularioComunicadoDialog({ abierto, comunicado, onCerrar, onGu
                 <label htmlFor="comunicado-cuerpo" className="text-sm font-medium">Mensaje <span className="text-destructive">*</span></label>
                 <span className={`text-xs ${cuerpo.trim().length > limiteMensaje ? "text-destructive" : "text-muted-foreground"}`}>{cuerpo.trim().length}/{limiteMensaje}</span>
               </div>
-              <textarea id="comunicado-cuerpo" className={claseTextarea} placeholder="Escribe el comunicado..." value={cuerpo} aria-invalid={Boolean(errores.cuerpo)} onChange={(event) => { setCuerpo(event.target.value); setErrores((e) => ({ ...e, cuerpo: undefined })); }} />
+              <textarea id="comunicado-cuerpo" ref={textareaRef} wrap="soft" rows={5} className={claseTextarea} placeholder="Escribe el comunicado..." value={cuerpo} aria-invalid={Boolean(errores.cuerpo)} onChange={(event) => { setCuerpo(event.target.value); setErrores((e) => ({ ...e, cuerpo: undefined })); }} />
               {canales.includes("WHATSAPP") && <p className="text-xs text-muted-foreground">WhatsApp admite un máximo de 1024 caracteres, incluso si también seleccionas correo.</p>}
               {errores.cuerpo && <p role="alert" className="text-xs text-destructive">{errores.cuerpo}</p>}
             </div>
