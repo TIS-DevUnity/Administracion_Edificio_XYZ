@@ -31,6 +31,7 @@ const pagosInformadosRoutes = require('./modules/financiero/pagos-informados/pag
 const cajaBancosRoutes = require('./modules/financiero/caja-bancos/caja-bancos.routes')
 const empleadosRoutes = require('./modules/financiero/empleados/empleados.routes')
 const nominaRoutes = require('./modules/financiero/nomina/nomina.routes')
+const reportesRoutes = require('./modules/financiero/reportes/reportes.routes')
 const anticiposRoutes = require('./modules/financiero/anticipos/anticipos.routes')
 const saldosFavorRoutes = require('./modules/financiero/saldos-favor/saldos-favor.routes')
 
@@ -74,6 +75,7 @@ app.use('/api/financiero/caja-bancos', cajaBancosRoutes)
 app.use('/api/financiero/empleados', empleadosRoutes)
 app.use('/api/financiero/nomina', nominaRoutes)
 app.use('/api/financiero/anticipos', anticiposRoutes)
+app.use('/api/financiero/reportes', reportesRoutes)
 
 app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 app.use(manejarErrores)
