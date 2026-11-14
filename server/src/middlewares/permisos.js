@@ -41,10 +41,11 @@ const PERMISOS = {
     gestionar: [ADMINISTRADOR, DIRECTORIO],
     eliminar: [ADMINISTRADOR],
   },
-  // Comunicados (HU10): solo el ADMINISTRADOR redacta, edita y borra. Todos los roles consultan el
-  // historial; los borradores los filtra el servicio (solo el ADMINISTRADOR los ve).
+  // Comunicados (HU10): solo el ADMINISTRADOR redacta, edita y borra. El historial lo consultan
+  // ADMINISTRADOR y DIRECTORIO (CONSULTA no ve comunicados); los borradores los filtra el servicio
+  // (solo el ADMINISTRADOR los ve).
   comunicados: {
-    ver: TODOS,
+    ver: [ADMINISTRADOR, DIRECTORIO],
     gestionar: [ADMINISTRADOR],
   },
   // El frontend muestra la pantalla de auditoria solo a DIRECTORIO, pero la ficha de documentos
