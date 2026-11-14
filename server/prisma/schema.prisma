@@ -275,12 +275,23 @@ enum EstadoComunicado {
   FALLIDO
 }
 
+// TODOS: todos los residentes con ocupacion vigente en inmuebles activos (se resuelve al enviar).
+// SELECCIONADOS: solo los copropietarios de `Comunicado.destinatarioIds`.
+enum ModoDestinatarios {
+  TODOS
+  SELECCIONADOS
+}
+
 model Comunicado {
   id                 String           @id @default(uuid())
   titulo             String
   cuerpo             String
   canales            CanalComunicado[]
   estado             EstadoComunicado @default(BORRADOR)
+
+  // Destinatarios elegidos en el borrador (copropietarios). null = todavia no se eligieron.
+  destinatariosModo  ModoDestinatarios?
+  destinatarioIds    String[]         @default([])
 
   // Se completan cuando se conecte el envio real.
   causaFallo         String?

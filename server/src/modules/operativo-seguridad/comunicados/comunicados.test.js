@@ -3,7 +3,13 @@
 // Son funciones puras: no tocan la base de datos.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { validarComunicado, estaEmitido, estadosVisiblesPara, MAX_CUERPO_WHATSAPP } = require("./comunicados.util");
+const {
+  validarComunicado,
+  validarDestinatarios,
+  estaEmitido,
+  estadosVisiblesPara,
+  MAX_CUERPO_WHATSAPP,
+} = require("./comunicados.util");
 const { PERMISOS } = require("../../../middlewares/permisos");
 
 const valido = { titulo: "Corte de agua", cuerpo: "El sabado no habra agua.", canales: ["CORREO"] };
@@ -89,4 +95,36 @@ test("BUG-007: CONSULTA (y cualquier rol desconocido) no ve ningun estado", () =
 test("BUG-007: el permiso de ver comunicados excluye a CONSULTA y gestionar es solo del ADMINISTRADOR", () => {
   assert.deepEqual(PERMISOS.comunicados.ver, ["ADMINISTRADOR", "DIRECTORIO"]);
   assert.deepEqual(PERMISOS.comunicados.gestionar, ["ADMINISTRADOR"]);
+});
+
+test("BUG-005: modo TODOS no lleva ids", () => {
+  const { errores, datos } = validarDestinatarios({ modo: "todos", copropietarioIds: ["a", "b"] });
+  assert.deepEqual(errores, []);
+  assert.deepEqual(datos, { modo: "TODOS", ids: [] });
+});
+
+test("BUG-005: SELECCIONADOS acepta uno o varios ids y quita repetidos", () => {
+  assert.deepEqual(validarDestinatarios({ modo: "SELECCIONADOS", copropietarioIds: ["a"] }).datos.ids, ["a"]);
+  const { errores, datos } = validarDestinatarios({ modo: "SELECCIONADOS", copropietarioIds: [" a ", "b", "a"] });
+  assert.deepEqual(errores, []);
+  assert.deepEqual(datos, { modo: "SELECCIONADOS", ids: ["a", "b"] });
+});
+
+test("BUG-005: SELECCIONADOS exige al menos un destinatario", () => {
+  for (const copropietarioIds of [undefined, [], "a"]) {
+    const { errores } = validarDestinatarios({ modo: "SELECCIONADOS", copropietarioIds });
+    assert.match(errores[0], /al menos un destinatario/);
+  }
+});
+
+test("BUG-005: los destinatarios son ids de residentes, no correos ni telefonos a mano", () => {
+  assert.match(validarDestinatarios({ modo: "SELECCIONADOS", copropietarioIds: [1] }).errores[0], /copropietarioIds/);
+  assert.match(validarDestinatarios({ modo: "SELECCIONADOS", copropietarioIds: [""] }).errores[0], /copropietarioIds/);
+});
+
+test("BUG-005: un modo ausente o desconocido se rechaza", () => {
+  assert.match(validarDestinatarios({ modo: "ALGUNOS" }).errores[0], /TODOS o SELECCIONADOS/);
+  assert.match(validarDestinatarios({}).errores[0], /TODOS o SELECCIONADOS/);
+  assert.match(validarDestinatarios(null).errores[0], /modo/);
+  assert.match(validarDestinatarios(["a"]).errores[0], /modo/);
 });

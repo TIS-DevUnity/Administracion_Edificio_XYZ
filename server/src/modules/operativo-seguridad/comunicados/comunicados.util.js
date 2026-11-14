@@ -4,6 +4,7 @@ const CANALES_VALIDOS = ["CORREO", "WHATSAPP"];
 const MAX_TITULO = 150;
 const MAX_CUERPO = 5000;
 const MAX_CUERPO_WHATSAPP = 1024;
+const MODOS_DESTINATARIOS = ["TODOS", "SELECCIONADOS"];
 
 // Estados en los que el comunicado ya salio: no se pueden editar ni borrar.
 const ESTADOS_EMITIDOS = ["ENVIADO", "FALLIDO"];
@@ -67,6 +68,41 @@ function validarComunicado({ titulo, cuerpo, canales } = {}) {
   };
 }
 
+/**
+ * Valida la eleccion de destinatarios ({ modo, copropietarioIds }), que son residentes (copropietarios):
+ * nunca correos ni telefonos escritos a mano.
+ *  - TODOS: no lleva ids (se resuelven al enviar, con los residentes vigentes de ese momento).
+ *  - SELECCIONADOS: uno o varios ids de copropietario, sin repetir.
+ * Devuelve { errores, datos: { modo, ids } }. Que los ids existan y esten vigentes lo comprueba el servicio.
+ */
+function validarDestinatarios(destinatarios) {
+  const errores = [];
+  const vacio = { modo: null, ids: [] };
+
+  if (!destinatarios || typeof destinatarios !== "object" || Array.isArray(destinatarios)) {
+    return { errores: [`destinatarios debe indicar el modo (${MODOS_DESTINATARIOS.join(" o ")})`], datos: vacio };
+  }
+
+  const modo = typeof destinatarios.modo === "string" ? destinatarios.modo.trim().toUpperCase() : null;
+  if (!MODOS_DESTINATARIOS.includes(modo)) {
+    return { errores: [`El modo de destinatarios debe ser ${MODOS_DESTINATARIOS.join(" o ")}`], datos: vacio };
+  }
+
+  if (modo === "TODOS") return { errores, datos: { modo, ids: [] } };
+
+  const { copropietarioIds } = destinatarios;
+  if (!Array.isArray(copropietarioIds) || copropietarioIds.length === 0) {
+    errores.push("Debe elegir al menos un destinatario (copropietarioIds)");
+    return { errores, datos: { modo, ids: [] } };
+  }
+  if (copropietarioIds.some((id) => typeof id !== "string" || id.trim() === "")) {
+    errores.push("copropietarioIds debe ser una lista de ids de copropietario");
+    return { errores, datos: { modo, ids: [] } };
+  }
+
+  return { errores, datos: { modo, ids: [...new Set(copropietarioIds.map((id) => id.trim()))] } };
+}
+
 /** Un comunicado ya emitido (enviado o fallido) queda bloqueado: solo se puede consultar. */
 function estaEmitido(comunicado) {
   return ESTADOS_EMITIDOS.includes(comunicado.estado);
@@ -86,7 +122,9 @@ module.exports = {
   CANALES_VALIDOS,
   ESTADOS_EMITIDOS,
   ESTADOS_TODOS,
+  MODOS_DESTINATARIOS,
   estadosVisiblesPara,
+  validarDestinatarios,
   MAX_TITULO,
   MAX_CUERPO,
   MAX_CUERPO_WHATSAPP,

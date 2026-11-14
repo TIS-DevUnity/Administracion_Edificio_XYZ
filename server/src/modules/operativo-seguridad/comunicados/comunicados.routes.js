@@ -42,6 +42,13 @@ const LECTURA = permitir("comunicados", "ver");
  *                 minItems: 1
  *                 items: { type: string, enum: [CORREO, WHATSAPP] }
  *                 example: [CORREO, WHATSAPP]
+ *               destinatarios:
+ *                 type: object
+ *                 description: "Opcional en el borrador. TODOS = todos los residentes vigentes (se resuelve al enviar); SELECCIONADOS = los copropietarios indicados"
+ *                 required: [modo]
+ *                 properties:
+ *                   modo: { type: string, enum: [TODOS, SELECCIONADOS] }
+ *                   copropietarioIds: { type: array, items: { type: string }, description: "Obligatorio con SELECCIONADOS" }
  *     responses:
  *       201: { description: Comunicado creado como borrador }
  *       400: { description: "Datos invalidos (campos faltantes, canal invalido o mensaje de WhatsApp de mas de 1024 caracteres)" }
@@ -49,6 +56,20 @@ const LECTURA = permitir("comunicados", "ver");
  */
 router.get("/", autenticar, LECTURA, controller.listar);
 router.post("/", autenticar, GESTION, controller.crear);
+
+/**
+ * @openapi
+ * /api/comunicados/destinatarios:
+ *   get:
+ *     summary: Residentes entre los que se eligen los destinatarios (solo ADMINISTRADOR). Copropietarios con ocupacion vigente en inmuebles activos; cada uno aparece una vez
+ *     tags: [Comunicados]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "Lista de { id, nombre, apellido, email, telefono, inmuebles: [{ codigo, esPropietario }] }" }
+ *       403: { description: Sin permisos }
+ */
+// Va antes de /:id para que "destinatarios" no se tome como un id.
+router.get("/destinatarios", autenticar, GESTION, controller.listarDestinatarios);
 
 /**
  * @openapi
@@ -87,6 +108,12 @@ router.post("/", autenticar, GESTION, controller.crear);
  *                 type: array
  *                 minItems: 1
  *                 items: { type: string, enum: [CORREO, WHATSAPP] }
+ *               destinatarios:
+ *                 type: object
+ *                 required: [modo]
+ *                 properties:
+ *                   modo: { type: string, enum: [TODOS, SELECCIONADOS] }
+ *                   copropietarioIds: { type: array, items: { type: string } }
  *     responses:
  *       200: { description: Comunicado actualizado }
  *       400: { description: Datos invalidos }

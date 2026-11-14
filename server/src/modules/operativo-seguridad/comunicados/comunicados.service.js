@@ -1,6 +1,13 @@
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
-const { ESTADOS_TODOS, validarComunicado, estaEmitido, estadosVisiblesPara } = require("./comunicados.util");
+const {
+  ESTADOS_TODOS,
+  validarComunicado,
+  validarDestinatarios,
+  estaEmitido,
+  estadosVisiblesPara,
+} = require("./comunicados.util");
+const destinatariosService = require("./destinatarios.service");
 
 const ESTADOS_VALIDOS = ESTADOS_TODOS;
 
@@ -10,6 +17,8 @@ const CAMPOS_PUBLICOS = {
   cuerpo: true,
   canales: true,
   estado: true,
+  destinatariosModo: true,
+  destinatarioIds: true,
   causaFallo: true,
   totalDestinatarios: true,
   enviadoEn: true,
@@ -56,12 +65,34 @@ async function obtenerPorId(id, { rol }) {
   return comunicado;
 }
 
-async function crear({ titulo, cuerpo, canales, actorId, ip }) {
+/** Residentes entre los que se puede elegir al redactar un comunicado (solo ADMINISTRADOR). */
+function listarDestinatarios() {
+  return destinatariosService.listarResidentes();
+}
+
+/**
+ * Valida los destinatarios recibidos y devuelve los campos a guardar. Con `destinatarios`
+ * undefined no hay nada que cambiar y devuelve {}.
+ */
+async function prepararDestinatarios(destinatarios) {
+  if (destinatarios === undefined) return {};
+  const { errores, datos } = validarDestinatarios(destinatarios);
+  if (errores.length > 0) throw errorValidacion(errores);
+  await destinatariosService.exigirResidentesValidos(datos.ids);
+  return { destinatariosModo: datos.modo, destinatarioIds: datos.ids };
+}
+
+function resumenDestinatarios(comunicado) {
+  return { modo: comunicado.destinatariosModo, cantidad: comunicado.destinatarioIds?.length ?? 0 };
+}
+
+async function crear({ titulo, cuerpo, canales, destinatarios, actorId, ip }) {
   const { errores, datos } = validarComunicado({ titulo, cuerpo, canales });
   if (errores.length > 0) throw errorValidacion(errores);
+  const datosDestinatarios = await prepararDestinatarios(destinatarios);
 
   const comunicado = await prisma.comunicado.create({
-    data: { ...datos, estado: "BORRADOR", creadoPorId: actorId },
+    data: { ...datos, ...datosDestinatarios, estado: "BORRADOR", creadoPorId: actorId },
     select: CAMPOS_PUBLICOS,
   });
 
@@ -70,22 +101,26 @@ async function crear({ titulo, cuerpo, canales, actorId, ip }) {
     accion: "CREATE",
     entidad: "Comunicado",
     entidadId: comunicado.id,
-    detalle: { titulo: comunicado.titulo, canales: comunicado.canales },
+    detalle: {
+      titulo: comunicado.titulo,
+      canales: comunicado.canales,
+      destinatarios: resumenDestinatarios(comunicado),
+    },
     ip,
   });
 
   return comunicado;
 }
 
-async function actualizar(id, { titulo, cuerpo, canales, actorId, ip }) {
+async function actualizar(id, { titulo, cuerpo, canales, destinatarios, actorId, ip }) {
   const actual = await prisma.comunicado.findUnique({ where: { id } });
   if (!actual) throw error("Comunicado no encontrado", 404);
   if (estaEmitido(actual)) {
     throw error("Un comunicado ya enviado no se puede editar", 409);
   }
 
-  if (titulo === undefined && cuerpo === undefined && canales === undefined) {
-    throw error("Debe enviar al menos un campo a modificar: titulo, cuerpo o canales", 400);
+  if (titulo === undefined && cuerpo === undefined && canales === undefined && destinatarios === undefined) {
+    throw error("Debe enviar al menos un campo a modificar: titulo, cuerpo, canales o destinatarios", 400);
   }
 
   // Se valida el comunicado resultante completo (lo nuevo sobre lo que ya tenia).
@@ -95,10 +130,11 @@ async function actualizar(id, { titulo, cuerpo, canales, actorId, ip }) {
     canales: canales !== undefined ? canales : actual.canales,
   });
   if (errores.length > 0) throw errorValidacion(errores);
+  const datosDestinatarios = await prepararDestinatarios(destinatarios);
 
   const comunicado = await prisma.comunicado.update({
     where: { id },
-    data: datos,
+    data: { ...datos, ...datosDestinatarios },
     select: CAMPOS_PUBLICOS,
   });
 
@@ -108,8 +144,18 @@ async function actualizar(id, { titulo, cuerpo, canales, actorId, ip }) {
     entidad: "Comunicado",
     entidadId: id,
     detalle: {
-      antes: { titulo: actual.titulo, cuerpo: actual.cuerpo, canales: actual.canales },
-      despues: { titulo: comunicado.titulo, cuerpo: comunicado.cuerpo, canales: comunicado.canales },
+      antes: {
+        titulo: actual.titulo,
+        cuerpo: actual.cuerpo,
+        canales: actual.canales,
+        destinatarios: resumenDestinatarios(actual),
+      },
+      despues: {
+        titulo: comunicado.titulo,
+        cuerpo: comunicado.cuerpo,
+        canales: comunicado.canales,
+        destinatarios: resumenDestinatarios(comunicado),
+      },
     },
     ip,
   });
@@ -136,4 +182,4 @@ async function eliminar(id, { actorId, ip }) {
   });
 }
 
-module.exports = { listar, obtenerPorId, crear, actualizar, eliminar };
+module.exports = { listar, listarDestinatarios, obtenerPorId, crear, actualizar, eliminar };
