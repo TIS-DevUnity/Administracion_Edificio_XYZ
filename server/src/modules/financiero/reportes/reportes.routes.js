@@ -160,4 +160,52 @@ router.get('/flujo-caja', autenticar, SUPERVISION, controller.flujoCajaJson)
  */
 router.get('/flujo-caja/pdf', autenticar, SUPERVISION, controller.flujoCajaPdf)
 
+/**
+ * @openapi
+ * /api/financiero/reportes/balance-general:
+ *   get:
+ *     summary: Balance general gerencial a la fecha de emision, vista previa en JSON (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Balance a hoy (hora de Bolivia), sin parametros. **Activos**: efectivo y bancos (el saldo del edificio,
+ *       el mismo de saldo-edificio) y cuentas por cobrar (expensas pendientes con su mora aplicada, mas los anticipos
+ *       a empleados pendientes de descontar). **Pasivos**: saldos a favor de residentes y sueldos por pagar de las
+ *       nominas PENDIENTES. **Patrimonio**: activos menos pasivos. Cada bloque trae `grupos` con sus lineas y
+ *       `subtotal`, y su `total`; `verificacion` comprueba que activos = pasivos + patrimonio. `nota` aclara que es un
+ *       balance gerencial basado en lo registrado y lo que no incluye. Cada generacion queda en la auditoria
+ *       (entidad ReporteFinanciero), tambien si falla.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: "{ titulo, tipoReporte, fechaCorte, generadoEn, generadoPor, nota, activos: { grupos, total }, pasivos: { grupos, total }, patrimonio: { grupos, total }, verificacion: { formula, activos, pasivosMasPatrimonio, coincide } }" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/balance-general', autenticar, SUPERVISION, controller.balanceGeneralJson)
+
+/**
+ * @openapi
+ * /api/financiero/reportes/balance-general/pdf:
+ *   get:
+ *     summary: Balance general gerencial en PDF (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       El mismo contenido de `/reportes/balance-general` en A4 vertical: membrete "Edificio XYZ", titulo, fecha y
+ *       hora de emision, usuario generador, la nota de limitaciones, activos, pasivos y patrimonio con sus
+ *       subtotales y totales, y la verificacion. Se descarga por defecto; con `inline=true` se abre en el navegador.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: inline
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: "PDF balance-general-YYYY-MM-DD.pdf"
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/balance-general/pdf', autenticar, SUPERVISION, controller.balanceGeneralPdf)
+
 module.exports = router
