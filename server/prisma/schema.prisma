@@ -79,6 +79,7 @@ model Copropietario {
   expensasComoResponsable Expensa[]
   notificaciones          Notificacion[]
   pagosInformados         PagoInformado[]
+  comunicadosRecibidos    ComunicadoDestinatario[]
 
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
@@ -293,10 +294,17 @@ model Comunicado {
   destinatariosModo  ModoDestinatarios?
   destinatarioIds    String[]         @default([])
 
-  // Se completan cuando se conecte el envio real.
+  // Resultado del envio. `enviadoEn` se marca al empezar a enviar (reserva el comunicado para que no se
+  // envie dos veces) y se actualiza al terminar. totalDestinatarios = residentes; los otros tres cuentan
+  // filas de `destinatarios` (una por residente y canal).
   causaFallo         String?
   totalDestinatarios Int?
+  totalEnviados      Int?
+  totalFallidos      Int?
+  totalOmitidos      Int?
   enviadoEn          DateTime?        @db.Timestamptz(3)
+
+  destinatarios      ComunicadoDestinatario[]
 
   creadoPor          Usuario?         @relation(fields: [creadoPorId], references: [id])
   creadoPorId        String?
@@ -306,6 +314,42 @@ model Comunicado {
 
   @@map("comunicados")
   @@index([estado, createdAt])
+}
+
+enum EstadoEnvioDestinatario {
+  ENVIADO
+  FALLIDO // se intento y fallo
+  OMITIDO // no se intento (sin contacto valido, canal no configurado, sin ocupacion vigente)
+}
+
+// Resultado del envio de un comunicado a un residente por un canal. Es el historial: no se edita ni se borra.
+// Guarda el nombre y el contacto tal como eran al enviar (aunque el copropietario cambie despues).
+model ComunicadoDestinatario {
+  id              String                  @id @default(uuid())
+
+  comunicado      Comunicado              @relation(fields: [comunicadoId], references: [id], onDelete: Restrict)
+  comunicadoId    String
+
+  copropietario   Copropietario?          @relation(fields: [copropietarioId], references: [id], onDelete: SetNull)
+  copropietarioId String?
+
+  nombre          String
+  canal           CanalComunicado
+  // Contacto usado: el correo (canal CORREO) o el telefono ya normalizado (canal WHATSAPP). null si no habia.
+  email           String?
+  telefono        String?
+  // Donde se entrego de verdad cuando el envio se redirigio o se permitio por lista de pruebas (fuera de produccion).
+  destinoReal     String?
+
+  estado          EstadoEnvioDestinatario
+  motivo          String?
+
+  createdAt       DateTime                @default(now()) @db.Timestamptz(3)
+
+  @@map("comunicado_destinatarios")
+  @@unique([comunicadoId, copropietarioId, canal], map: "comunicado_dest_unico")
+  @@index([comunicadoId])
+  @@index([estado])
 }
 
 // ---------------------------------------------------------------------------

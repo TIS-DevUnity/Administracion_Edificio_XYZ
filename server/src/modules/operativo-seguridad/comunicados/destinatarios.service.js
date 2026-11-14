@@ -43,6 +43,40 @@ async function idsDeTodosLosResidentes(fecha = new Date()) {
   return residentes.map((r) => r.id);
 }
 
+/**
+ * Residentes a los que se envia un comunicado, con el contacto de cada uno.
+ *  - TODOS: los residentes elegibles de este momento.
+ *  - SELECCIONADOS: los ids elegidos en el borrador, en ese orden. Uno que ya no tiene ocupacion vigente
+ *    queda con `vigente: false` (se omite al enviar); uno que ya no existe, con `existe: false`.
+ */
+async function resolverResidentes({ modo, ids = [] }, fecha = new Date()) {
+  const select = { id: true, nombre: true, apellido: true, email: true, telefono: true };
+
+  if (modo === "TODOS") {
+    const residentes = await prisma.copropietario.findMany({
+      where: filtroResidente(fecha),
+      select,
+      orderBy: [{ apellido: "asc" }, { nombre: "asc" }],
+    });
+    return residentes.map((r) => ({ ...r, existe: true, vigente: true }));
+  }
+
+  const [encontrados, vigentes] = await Promise.all([
+    prisma.copropietario.findMany({ where: { id: { in: ids } }, select }),
+    prisma.copropietario.findMany({ where: { id: { in: ids }, ...filtroResidente(fecha) }, select: { id: true } }),
+  ]);
+  const porId = new Map(encontrados.map((r) => [r.id, r]));
+  const idsVigentes = new Set(vigentes.map((r) => r.id));
+
+  return ids.map((id) => {
+    const residente = porId.get(id);
+    if (!residente) {
+      return { id, nombre: "Copropietario no encontrado", apellido: "", email: null, telefono: null, existe: false, vigente: false };
+    }
+    return { ...residente, existe: true, vigente: idsVigentes.has(id) };
+  });
+}
+
 /** Falla con 400 si algun id no es un residente elegible (no existe o no tiene ocupacion vigente). */
 async function exigirResidentesValidos(ids, fecha = new Date()) {
   if (ids.length === 0) return;
@@ -60,4 +94,4 @@ async function exigirResidentesValidos(ids, fecha = new Date()) {
   }
 }
 
-module.exports = { listarResidentes, idsDeTodosLosResidentes, exigirResidentesValidos };
+module.exports = { listarResidentes, idsDeTodosLosResidentes, resolverResidentes, exigirResidentesValidos };

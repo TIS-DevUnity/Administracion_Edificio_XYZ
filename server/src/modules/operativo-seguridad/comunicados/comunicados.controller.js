@@ -73,4 +73,35 @@ async function eliminar(req, res, next) {
   }
 }
 
-module.exports = { listar, listarDestinatarios, obtener, crear, actualizar, eliminar };
+async function vistaPrevia(req, res, next) {
+  try {
+    const vistaPrevia = await comunicadosService.vistaPrevia(req.params.id);
+    res.json({ vistaPrevia });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function enviar(req, res, next) {
+  try {
+    const { confirmar } = req.body ?? {};
+    const resultado = await comunicadosService.enviar(req.params.id, {
+      confirmar,
+      actorId: req.usuario.id,
+      ip: req.ip,
+    });
+    res.json(resultado);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function resultado(req, res, next) {
+  try {
+    res.json(await comunicadosService.obtenerResultado(req.params.id, { rol: req.usuario.rol }));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listar, listarDestinatarios, obtener, crear, actualizar, eliminar, vistaPrevia, enviar, resultado };

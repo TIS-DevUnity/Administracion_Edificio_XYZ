@@ -103,9 +103,12 @@ function validarDestinatarios(destinatarios) {
   return { errores, datos: { modo, ids: [...new Set(copropietarioIds.map((id) => id.trim()))] } };
 }
 
-/** Un comunicado ya emitido (enviado o fallido) queda bloqueado: solo se puede consultar. */
+/**
+ * Un comunicado ya emitido (enviado o fallido) queda bloqueado: solo se puede consultar. Tambien lo esta
+ * el que ya empezo a enviarse (`enviadoEn`), para que nadie lo edite, borre o reenvie a mitad del envio.
+ */
 function estaEmitido(comunicado) {
-  return ESTADOS_EMITIDOS.includes(comunicado.estado);
+  return ESTADOS_EMITIDOS.includes(comunicado.estado) || Boolean(comunicado.enviadoEn);
 }
 
 /**
