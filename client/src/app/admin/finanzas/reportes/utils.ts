@@ -1,5 +1,5 @@
 import { fechaRealBolivia, formatCurrency, formatearFechaCalendario } from "@/app/admin/morosidad/utils/morosidad";
-import type { ParametrosReporte, TipoReporte } from "@/types/reportes";
+import type { ParametrosReporte, ReporteFinanciero, TipoReporte } from "@/types/reportes";
 
 export const CLASE_LABEL = "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
 export const CLASE_AYUDA = "font-caption text-[12px] leading-[1.3] tracking-[0.01em] text-muted-foreground";
@@ -90,6 +90,70 @@ export function validarParametros(p: ParametrosReporte): ErroresParametros {
     errores.hasta = "La fecha de finalización debe ser igual o posterior a la de inicio.";
   }
   return errores;
+}
+
+// En centavos, para comparar sin errores de coma flotante.
+const cent = (v: string | number | null | undefined) => Math.round(Number(v ?? 0) * 100);
+const sumaCent = (valores: (string | number)[]) => valores.reduce<number>((acc, v) => acc + cent(v), 0);
+
+export interface AvisosReporte {
+  /** Los totales no cuadran: no se debe presentar ni exportar como válido. */
+  inconsistencias: string[];
+  /** Datos que faltan pero no invalidan los totales. */
+  incompletos: string[];
+}
+
+/** Revisa en el cliente que los totales del backend cuadren con sus propias líneas antes de mostrarlos. */
+export function revisarReporte(r: ReporteFinanciero): AvisosReporte {
+  const inconsistencias: string[] = [];
+  const incompletos: string[] = [];
+
+  if (r.tipoReporte === "BALANCE_GENERAL") {
+    for (const [nombre, bloque] of [["activos", r.activos], ["pasivos", r.pasivos], ["patrimonio", r.patrimonio]] as const) {
+      const malGrupo = bloque.grupos.some((g) => sumaCent(g.lineas.map((l) => l.monto)) !== cent(g.subtotal));
+      if (malGrupo || sumaCent(bloque.grupos.map((g) => g.subtotal)) !== cent(bloque.total)) {
+        inconsistencias.push(`Los subtotales de ${nombre} no suman su total.`);
+      }
+    }
+    if (!r.verificacion.coincide || cent(r.activos.total) !== cent(r.pasivos.total) + cent(r.patrimonio.total)) {
+      inconsistencias.push("Los activos no son iguales a pasivos más patrimonio.");
+    }
+  }
+
+  if (r.tipoReporte === "FLUJO_CAJA") {
+    if (cent(r.ingresos.expensas.total) + sumaCent(r.ingresos.otros.map((o) => o.total)) !== cent(r.totalIngresos)) {
+      inconsistencias.push("Los ingresos por concepto no suman el total de ingresos.");
+    }
+    const egresos = sumaCent(r.egresos.porCategoria.map((c) => c.total)) + cent(r.egresos.personal.total);
+    if (egresos !== cent(r.totalEgresos)) inconsistencias.push("Los egresos por categoría no suman el total de egresos.");
+    if (cent(r.saldoInicial) + cent(r.totalIngresos) - cent(r.totalEgresos) !== cent(r.saldoFinal)) {
+      inconsistencias.push("Saldo inicial + ingresos − egresos no da el saldo final.");
+    }
+    if (r.verificacion.coincide === false) {
+      inconsistencias.push(`El saldo final (${bs(r.saldoFinal)}) no coincide con el saldo del edificio a esa fecha (${bs(r.verificacion.saldoEdificio)}).`);
+    } else if (r.verificacion.coincide === null) {
+      incompletos.push("No se pudo comparar el saldo final con el saldo del edificio.");
+    }
+  }
+
+  if (r.tipoReporte === "MOROSOS") {
+    const ids = r.filas.map((f) => f.inmuebleId);
+    if (new Set(ids).size !== ids.length) inconsistencias.push("Hay inmuebles repetidos en el listado.");
+    const expensas = r.filas.flatMap((f) => f.expensas.map((e) => e.expensaId));
+    if (new Set(expensas).size !== expensas.length) inconsistencias.push("Hay expensas repetidas en el listado.");
+    if (r.filas.some((f) => cent(f.montoPendiente) + cent(f.interesMora) !== cent(f.totalAcumulado))) {
+      inconsistencias.push("En alguna fila, monto pendiente + mora no da el total acumulado.");
+    }
+    if (sumaCent(r.filas.map((f) => f.totalAcumulado)) !== cent(r.totales.totalAcumulado)) {
+      inconsistencias.push("Las filas no suman el total acumulado del listado.");
+    }
+    const sinResponsable = r.filas.filter((f) => !f.responsable).length;
+    if (sinResponsable > 0) {
+      incompletos.push(`${sinResponsable} inmueble${sinResponsable === 1 ? " no tiene" : "s no tienen"} responsable de pago registrado.`);
+    }
+  }
+
+  return { inconsistencias, incompletos };
 }
 
 /** Clave estable de los parámetros: si cambia, la vista previa ya no corresponde a lo elegido. */

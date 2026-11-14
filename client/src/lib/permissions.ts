@@ -122,6 +122,14 @@ export function puedeEmitirEstadoCuenta(rol: RolNombre): boolean {
   return rol === "ADMINISTRADOR";
 }
 
+export const MENSAJE_SOLO_SUPERVISION_REPORTES =
+  "Permiso insuficiente: solo el Administrador y el Directorio pueden generar y exportar reportes financieros.";
+
+/** Reportes financieros (HU13). El backend los restringe a ADMINISTRADOR y DIRECTORIO (reportes.routes.js). */
+export function puedeGenerarReportesFinancieros(rol: RolNombre): boolean {
+  return rol === "ADMINISTRADOR" || rol === "DIRECTORIO";
+}
+
 export interface SeccionNav {
   id: SeccionId;
   label: string;
