@@ -84,4 +84,80 @@ router.get('/morosos', autenticar, SUPERVISION, controller.morosos)
  */
 router.get('/morosos/pdf', autenticar, SUPERVISION, controller.morososPdf)
 
+/**
+ * @openapi
+ * /api/financiero/reportes/flujo-caja:
+ *   get:
+ *     summary: Flujo de caja del edificio, vista previa en JSON (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Entradas y salidas de dinero entre `desde` y `hasta` (ambos inclusive), a nivel edificio. Las mismas
+ *       fuentes que el saldo del edificio: ingresos por pagos de expensas (recibos) y por otros conceptos
+ *       (ingresos extraordinarios, por categoria); egresos por categoria (gastos extraordinarios) y las lineas
+ *       fijas de personal (sueldos de nominas pagadas y anticipos salariales). No depende de CAJA_BANCOS_ASIENTOS.
+ *       `saldoInicial` es el saldo acumulado hasta el dia anterior a `desde`; `saldoFinal = saldoInicial +
+ *       totalIngresos - totalEgresos`. `verificacion` compara ese saldo con el acumulado a `hasta` que informa el
+ *       saldo del edificio. `movimientos` va de la fecha mas antigua a la mas reciente; `tipo` filtra solo esa
+ *       lista (los totales y saldos siempre son completos). Sin movimientos: `vacio: true` y un `mensaje`.
+ *       Cada generacion queda en la auditoria (entidad ReporteFinanciero), tambien si falla.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: desde
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: hasta
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *       - in: query
+ *         name: tipo
+ *         schema: { type: string, enum: [Ingreso, Gasto] }
+ *     responses:
+ *       200: { description: "{ titulo, tipoReporte, rango, tipo, generadoEn, generadoPor, vacio, mensaje, saldoInicial, saldoInicialAl, ingresos: { expensas, otros, totalOtros, total }, egresos: { porCategoria, personal: { sueldos, anticipos, total }, total }, totalIngresos, totalEgresos, saldoFinal, verificacion: { formula, saldoFinalCalculado, saldoEdificio, coincide }, movimientos }" }
+ *       400: { description: "Fecha faltante o invalida (FECHA_REQUERIDA, FECHA_INVALIDA), desde posterior a hasta (RANGO_INVALIDO) o tipo invalido (TIPO_INVALIDO)" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/flujo-caja', autenticar, SUPERVISION, controller.flujoCajaJson)
+
+/**
+ * @openapi
+ * /api/financiero/reportes/flujo-caja/pdf:
+ *   get:
+ *     summary: Flujo de caja del edificio en PDF (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       El mismo contenido de `/reportes/flujo-caja` en A4 vertical: membrete "Edificio XYZ", titulo, rango de
+ *       fechas, fecha y hora de emision, usuario generador, resumen con la verificacion, ingresos, egresos y los
+ *       movimientos (la cabecera de cada tabla se repite si ocupa varias paginas). Se descarga por defecto; con
+ *       `inline=true` se abre en el navegador.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: desde
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: hasta
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *       - in: query
+ *         name: tipo
+ *         schema: { type: string, enum: [Ingreso, Gasto] }
+ *       - in: query
+ *         name: inline
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200:
+ *         description: "PDF flujo-caja-DESDE-a-HASTA.pdf"
+ *         content:
+ *           application/pdf:
+ *             schema: { type: string, format: binary }
+ *       400: { description: "Mismos errores de validacion que la vista previa" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/flujo-caja/pdf', autenticar, SUPERVISION, controller.flujoCajaPdf)
+
 module.exports = router

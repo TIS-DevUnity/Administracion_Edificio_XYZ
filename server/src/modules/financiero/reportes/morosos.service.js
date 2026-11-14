@@ -1,10 +1,8 @@
 const prisma = require('../../../config/prisma')
-const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
 const { fechaEnZona } = require('../expensas/mora.util')
+const { registrarGeneracion } = require('./registro-generacion.service')
 const util = require('./morosos.util')
 const { generarMorososPdf, nombreArchivoMorosos } = require('./morosos-pdf.service')
-
-const ENTIDAD_AUDITORIA = 'ReporteFinanciero'
 
 /**
  * Consulta (solo lectura) y arma el listado. La vista previa JSON y el PDF salen de esta misma funcion.
@@ -55,34 +53,15 @@ async function listadoMorosos({ desde, hasta, orden, usuarioId } = {}) {
   })
 }
 
-/** Deja constancia de la generacion (exitosa o fallida). Nunca interrumpe la respuesta. */
-function registrarGeneracion({ usuarioId, ip, desde, hasta, orden, formato, error = null }) {
-  return registrarAuditoria({
-    usuarioId,
-    accion: 'GENERATE',
-    entidad: ENTIDAD_AUDITORIA,
-    detalle: {
-      tipo: util.TIPO_REPORTE,
-      desde: desde ?? null,
-      hasta: hasta ?? null,
-      orden: orden ?? null,
-      formato,
-      resultado: error ? 'FALLIDO' : 'EXITOSO',
-      ...(error ? { error: error.message } : {})
-    },
-    ip
-  })
-}
-
 /** Genera el listado en `formato` ("JSON" o "PDF") y lo registra. Devuelve { datos } o { datos, pdf, nombreArchivo }. */
 async function generar({ formato, desde, hasta, orden, usuarioId, ip }) {
   try {
     const datos = await listadoMorosos({ desde, hasta, orden, usuarioId })
     const salida = formato === 'PDF' ? { datos, pdf: await generarMorososPdf(datos), nombreArchivo: nombreArchivoMorosos(datos) } : { datos }
-    await registrarGeneracion({ usuarioId, ip, desde: datos.rango.desde, hasta: datos.rango.hasta, orden: datos.orden, formato })
+    await registrarGeneracion({ tipo: util.TIPO_REPORTE, usuarioId, ip, desde: datos.rango.desde, hasta: datos.rango.hasta, formato, extra: { orden: datos.orden } })
     return salida
   } catch (err) {
-    await registrarGeneracion({ usuarioId, ip, desde, hasta, orden, formato, error: err })
+    await registrarGeneracion({ tipo: util.TIPO_REPORTE, usuarioId, ip, desde, hasta, formato, extra: { orden: orden ?? null }, error: err })
     throw err
   }
 }

@@ -1,4 +1,5 @@
 const service = require('./morosos.service')
+const flujoCaja = require('./flujo-caja.service')
 const { enviarPdf } = require('../nomina/pdf-comun.util')
 
 async function morosos(req, res, next) {
@@ -21,4 +22,24 @@ async function morososPdf(req, res, next) {
   }
 }
 
-module.exports = { morosos, morososPdf }
+async function flujoCajaJson(req, res, next) {
+  try {
+    const { desde, hasta, tipo } = req.query
+    const { datos } = await flujoCaja.generar({ formato: 'JSON', desde, hasta, tipo, usuarioId: req.usuario.id, ip: req.ip })
+    res.json(datos)
+  } catch (err) {
+    next(err)
+  }
+}
+
+async function flujoCajaPdf(req, res, next) {
+  try {
+    const { desde, hasta, tipo } = req.query
+    const { pdf, nombreArchivo } = await flujoCaja.generar({ formato: 'PDF', desde, hasta, tipo, usuarioId: req.usuario.id, ip: req.ip })
+    enviarPdf(res, pdf, nombreArchivo, req.query.inline === 'true')
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { morosos, morososPdf, flujoCajaJson, flujoCajaPdf }
