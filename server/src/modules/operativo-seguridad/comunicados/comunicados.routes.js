@@ -12,7 +12,7 @@ const LECTURA = permitir("comunicados", "ver");
  * @openapi
  * /api/comunicados:
  *   get:
- *     summary: Historial de comunicados. El ADMINISTRADOR ve todos (incluidos borradores); DIRECTORIO y CONSULTA solo los enviados o fallidos
+ *     summary: Historial de comunicados. El ADMINISTRADOR ve todos (incluidos borradores); DIRECTORIO solo los enviados o fallidos; CONSULTA no tiene acceso (403)
  *     tags: [Comunicados]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -54,7 +54,7 @@ router.post("/", autenticar, GESTION, controller.crear);
  * @openapi
  * /api/comunicados/{id}:
  *   get:
- *     summary: Obtiene un comunicado. Un borrador solo lo ve el ADMINISTRADOR (para los demas responde 404)
+ *     summary: Obtiene un comunicado. Un borrador solo lo ve el ADMINISTRADOR (para DIRECTORIO responde 404); CONSULTA no tiene acceso (403)
  *     tags: [Comunicados]
  *     security: [{ bearerAuth: [] }]
  *     parameters:

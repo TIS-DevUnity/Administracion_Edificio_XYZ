@@ -3,7 +3,8 @@
 // Son funciones puras: no tocan la base de datos.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { validarComunicado, estaEmitido, MAX_CUERPO_WHATSAPP } = require("./comunicados.util");
+const { validarComunicado, estaEmitido, estadosVisiblesPara, MAX_CUERPO_WHATSAPP } = require("./comunicados.util");
+const { PERMISOS } = require("../../../middlewares/permisos");
 
 const valido = { titulo: "Corte de agua", cuerpo: "El sabado no habra agua.", canales: ["CORREO"] };
 
@@ -73,4 +74,19 @@ test("solo los comunicados enviados o fallidos estan emitidos (bloqueados)", () 
   assert.equal(estaEmitido({ estado: "BORRADOR" }), false);
   assert.equal(estaEmitido({ estado: "ENVIADO" }), true);
   assert.equal(estaEmitido({ estado: "FALLIDO" }), true);
+});
+
+test("BUG-007: el ADMINISTRADOR ve todos los estados y el DIRECTORIO solo los emitidos", () => {
+  assert.deepEqual(estadosVisiblesPara("ADMINISTRADOR"), ["BORRADOR", "ENVIADO", "FALLIDO"]);
+  assert.deepEqual(estadosVisiblesPara("DIRECTORIO"), ["ENVIADO", "FALLIDO"]);
+});
+
+test("BUG-007: CONSULTA (y cualquier rol desconocido) no ve ningun estado", () => {
+  assert.deepEqual(estadosVisiblesPara("CONSULTA"), []);
+  assert.deepEqual(estadosVisiblesPara(undefined), []);
+});
+
+test("BUG-007: el permiso de ver comunicados excluye a CONSULTA y gestionar es solo del ADMINISTRADOR", () => {
+  assert.deepEqual(PERMISOS.comunicados.ver, ["ADMINISTRADOR", "DIRECTORIO"]);
+  assert.deepEqual(PERMISOS.comunicados.gestionar, ["ADMINISTRADOR"]);
 });

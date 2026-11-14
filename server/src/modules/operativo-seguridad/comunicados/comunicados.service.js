@@ -1,8 +1,8 @@
 const prisma = require("../../../config/prisma");
 const { registrarAuditoria } = require("../auditoria/auditoria.service");
-const { ESTADOS_EMITIDOS, validarComunicado, estaEmitido } = require("./comunicados.util");
+const { ESTADOS_TODOS, validarComunicado, estaEmitido, estadosVisiblesPara } = require("./comunicados.util");
 
-const ESTADOS_VALIDOS = ["BORRADOR", ...ESTADOS_EMITIDOS];
+const ESTADOS_VALIDOS = ESTADOS_TODOS;
 
 const CAMPOS_PUBLICOS = {
   id: true,
@@ -23,24 +23,21 @@ function error(mensaje, status) {
   return Object.assign(new Error(mensaje), { status });
 }
 
-function esAdministrador(rol) {
-  return rol === "ADMINISTRADOR";
-}
-
 function errorValidacion(errores) {
   return Object.assign(new Error(errores.join(". ")), { status: 400, errores });
 }
 
 /**
- * Historial de comunicados. El ADMINISTRADOR ve todo (incluidos los borradores); el resto de los
- * roles solo ve los ya emitidos (enviados o fallidos).
+ * Historial de comunicados. El ADMINISTRADOR ve todo (incluidos los borradores), el DIRECTORIO solo
+ * los ya emitidos (enviados o fallidos) y CONSULTA ninguno. La ruta ya frena a CONSULTA; el servicio
+ * lo vuelve a filtrar por si se llama desde otro lugar.
  */
 async function listar({ estado, rol }) {
   if (estado && !ESTADOS_VALIDOS.includes(estado)) {
     throw error(`estado invalido. Valores permitidos: ${ESTADOS_VALIDOS.join(", ")}`, 400);
   }
 
-  const visibles = esAdministrador(rol) ? ESTADOS_VALIDOS : ESTADOS_EMITIDOS;
+  const visibles = estadosVisiblesPara(rol);
   const filtroEstado = estado ? (visibles.includes(estado) ? [estado] : []) : visibles;
 
   return prisma.comunicado.findMany({
@@ -50,10 +47,10 @@ async function listar({ estado, rol }) {
   });
 }
 
-/** Un borrador solo existe para el ADMINISTRADOR: para los demas se responde 404. */
+/** Un borrador solo existe para el ADMINISTRADOR y CONSULTA no ve ninguno: en esos casos se responde 404. */
 async function obtenerPorId(id, { rol }) {
   const comunicado = await prisma.comunicado.findUnique({ where: { id }, select: CAMPOS_PUBLICOS });
-  if (!comunicado || (!esAdministrador(rol) && !estaEmitido(comunicado))) {
+  if (!comunicado || !estadosVisiblesPara(rol).includes(comunicado.estado)) {
     throw error("Comunicado no encontrado", 404);
   }
   return comunicado;

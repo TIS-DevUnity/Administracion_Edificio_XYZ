@@ -5,8 +5,9 @@ const MAX_TITULO = 150;
 const MAX_CUERPO = 5000;
 const MAX_CUERPO_WHATSAPP = 1024;
 
-// Estados en los que el comunicado ya salio: no se pueden editar ni borrar, y los ven todos los roles.
+// Estados en los que el comunicado ya salio: no se pueden editar ni borrar.
 const ESTADOS_EMITIDOS = ["ENVIADO", "FALLIDO"];
+const ESTADOS_TODOS = ["BORRADOR", ...ESTADOS_EMITIDOS];
 
 function textoONull(valor) {
   if (typeof valor !== "string") return null;
@@ -71,9 +72,21 @@ function estaEmitido(comunicado) {
   return ESTADOS_EMITIDOS.includes(comunicado.estado);
 }
 
+/**
+ * Estados de comunicado que un rol puede ver: el ADMINISTRADOR ve todo (incluidos los borradores),
+ * el DIRECTORIO solo los emitidos y cualquier otro rol (CONSULTA) nada (BUG-007).
+ */
+function estadosVisiblesPara(rol) {
+  if (rol === "ADMINISTRADOR") return ESTADOS_TODOS;
+  if (rol === "DIRECTORIO") return ESTADOS_EMITIDOS;
+  return [];
+}
+
 module.exports = {
   CANALES_VALIDOS,
   ESTADOS_EMITIDOS,
+  ESTADOS_TODOS,
+  estadosVisiblesPara,
   MAX_TITULO,
   MAX_CUERPO,
   MAX_CUERPO_WHATSAPP,
