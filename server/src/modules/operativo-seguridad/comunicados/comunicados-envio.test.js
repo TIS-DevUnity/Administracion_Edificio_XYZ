@@ -1,4 +1,4 @@
-// Pruebas del envio de comunicados (BUG-003). Se ejecutan con:
+// Pruebas del envio de comunicados (BUG-003 y BUG-001). Se ejecutan con:
 //   node --test server/src/modules/operativo-seguridad/comunicados/comunicados-envio.test.js
 // Son funciones puras con enviadores falsos: no tocan la base de datos ni la red.
 const test = require("node:test");
@@ -6,12 +6,13 @@ const assert = require("node:assert/strict");
 const {
   ejecutarEnvio,
   resumirEnvio,
+  construirHtmlComunicado,
   limiteEnvioInterrumpido,
   envioInterrumpido,
   MINUTOS_ENVIO_INTERRUMPIDO,
 } = require("./comunicados-envio.util");
 const { estaEmitido } = require("./comunicados.util");
-const { ENVIADORES_POR_DEFECTO } = require("./comunicados.canales");
+const { ENVIADORES_POR_DEFECTO, crearEnviadorCorreo } = require("./comunicados.canales");
 
 const residente = (id, extra = {}) => ({
   id,
@@ -138,11 +139,12 @@ test("FALLIDO con la causa cuando no llega a ningun destinatario", async () => {
   assert.equal(r.enviados, 0);
 });
 
-test("FALLIDO si el canal no esta configurado (enviadores por defecto)", async () => {
+test("FALLIDO si los canales no estan configurados (CORREO sin enviador y WHATSAPP por defecto)", async () => {
   const filas = await ejecutarEnvio({
     residentes: [residente("a")],
     canales: ["CORREO", "WHATSAPP"],
-    enviadores: ENVIADORES_POR_DEFECTO,
+    // Sin el CORREO real: la prueba no debe depender de que haya SMTP en el entorno.
+    enviadores: { WHATSAPP: ENVIADORES_POR_DEFECTO.WHATSAPP },
     comunicado,
   });
   const r = resumirEnvio({ filas, totalDestinatarios: 1 });
@@ -208,4 +210,58 @@ test("un borrador sin reserva o un comunicado ya emitido nunca es un envio inter
 test("el limite del barrido es 15 minutos antes de la fecha actual que se le pasa", () => {
   const ahora = new Date("2026-11-14T12:00:00.000Z");
   assert.equal(limiteEnvioInterrumpido(ahora).toISOString(), "2026-11-14T11:45:00.000Z");
+});
+
+test("BUG-001: el HTML del correo escapa el titulo y el mensaje y respeta los saltos de linea", () => {
+  const html = construirHtmlComunicado({ titulo: "Corte <b>de agua</b>", cuerpo: 'Linea 1\nLinea "2" & <script>alert(1)</script>' });
+  assert.equal(html.includes("<script>"), false);
+  assert.match(html, /<h2>Corte &lt;b&gt;de agua&lt;\/b&gt;<\/h2>/);
+  assert.match(html, /Linea 1<br>Linea &quot;2&quot; &amp; &lt;script&gt;/);
+});
+
+test("BUG-001: el enviador de correo manda titulo, mensaje y correo del residente y traduce el resultado", async () => {
+  let recibido;
+  const enviador = crearEnviadorCorreo(async (datos) => {
+    recibido = datos;
+    return { estado: "ENVIADO", motivo: "redirigido", destinatario: "ana@correo.com", destinoReal: "pruebas@x.com" };
+  });
+  const r = await enviador({ residente: residente("a", { email: "ana@correo.com" }), comunicado: { titulo: "Aviso", cuerpo: "Texto" } });
+  assert.equal(recibido.to, "ana@correo.com");
+  assert.equal(recibido.subject, "Aviso");
+  assert.equal(recibido.text, "Texto");
+  assert.match(recibido.html, /<h2>Aviso<\/h2>/);
+  assert.deepEqual(r, { estado: "ENVIADO", motivo: "redirigido", contacto: "ana@correo.com", destinoReal: "pruebas@x.com" });
+});
+
+test("BUG-001: un residente sin correo valido se omite y queda en la lista de omitidos con el contacto usado", async () => {
+  const enviar = async ({ to }) =>
+    to === "ana@correo.com"
+      ? { estado: "ENVIADO", motivo: null, destinatario: to, destinoReal: null }
+      : { estado: "OMITIDO", motivo: to ? `El correo "${to}" no es valido` : "El destinatario no tiene correo registrado", destinatario: to ?? null, destinoReal: null };
+  const filas = await ejecutarEnvio({
+    residentes: [residente("a", { email: "ana@correo.com" }), residente("b", { email: null }), residente("c", { email: "malo@x" })],
+    canales: ["CORREO"],
+    enviadores: { CORREO: crearEnviadorCorreo(enviar) },
+    comunicado,
+  });
+  const r = resumirEnvio({ filas, totalDestinatarios: 3 });
+  assert.equal(r.estado, "ENVIADO");
+  assert.deepEqual([r.enviados, r.omitidos], [1, 2]);
+  assert.equal(filas[0].email, "ana@correo.com");
+  assert.equal(filas[1].email, null);
+  assert.equal(filas[2].email, "malo@x");
+  assert.match(r.omitidosLista[0].motivo, /no tiene correo/);
+  assert.match(r.omitidosLista[1].motivo, /no es valido/);
+});
+
+test("BUG-001: el destinoReal de un envio redirigido queda en la fila del destinatario", async () => {
+  const enviar = async ({ to }) => ({ estado: "ENVIADO", motivo: null, destinatario: to, destinoReal: "pruebas@x.com" });
+  const filas = await ejecutarEnvio({
+    residentes: [residente("a", { email: "ana@correo.com" })],
+    canales: ["CORREO"],
+    enviadores: { CORREO: crearEnviadorCorreo(enviar) },
+    comunicado,
+  });
+  assert.equal(filas[0].email, "ana@correo.com");
+  assert.equal(filas[0].destinoReal, "pruebas@x.com");
 });

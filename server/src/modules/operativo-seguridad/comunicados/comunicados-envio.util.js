@@ -105,6 +105,21 @@ function resumirEnvio({ filas, totalDestinatarios }) {
   };
 }
 
+function escaparHtml(texto) {
+  return String(texto ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Cuerpo HTML del correo: el titulo y el mensaje escapados (el texto nunca se interpreta como HTML) y con saltos de linea. */
+function construirHtmlComunicado({ titulo, cuerpo }) {
+  const parrafos = escaparHtml(cuerpo).replace(/\r\n|\r|\n/g, "<br>");
+  return `<h2>${escaparHtml(titulo)}</h2><p>${parrafos}</p>`;
+}
+
 // Un envio que lleva mas de 15 minutos reservado (enviadoEn) y sigue en BORRADOR se da por interrumpido
 // (el proceso se cayo o se reinicio a mitad del envio).
 const MINUTOS_ENVIO_INTERRUMPIDO = 15;
@@ -127,6 +142,7 @@ function envioInterrumpido(comunicado, ahora = new Date()) {
 module.exports = {
   ejecutarEnvio,
   resumirEnvio,
+  construirHtmlComunicado,
   MINUTOS_ENVIO_INTERRUMPIDO,
   CAUSA_ENVIO_INTERRUMPIDO,
   limiteEnvioInterrumpido,
