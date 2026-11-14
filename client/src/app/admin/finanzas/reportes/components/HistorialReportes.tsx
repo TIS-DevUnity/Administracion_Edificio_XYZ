@@ -208,7 +208,7 @@ export function HistorialReportes({ intRecarga }: { intRecarga: number }) {
                         <TableCell className="text-[13px]">{d.formato ? ETIQUETA_FORMATO[d.formato] ?? d.formato : "—"}</TableCell>
                         <TableCell className="text-[13px]">{registro.usuario ? `${registro.usuario.nombre} ${registro.usuario.apellido}`.trim() : "—"}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={`font-caption text-[11px] ${fallido ? "border-destructive/30 text-destructive" : "border-success/30 text-success"}`}>
+                          <Badge className={`font-caption text-[11px] ${fallido ? "bg-danger-subtle text-destructive" : "bg-success-subtle text-success"}`}>
                             {fallido ? "Fallido" : "Exitoso"}
                           </Badge>
                         </TableCell>
