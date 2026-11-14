@@ -7,12 +7,14 @@ const {
   ejecutarEnvio,
   resumirEnvio,
   construirHtmlComunicado,
+  construirMensajeWhatsapp,
   limiteEnvioInterrumpido,
   envioInterrumpido,
   MINUTOS_ENVIO_INTERRUMPIDO,
 } = require("./comunicados-envio.util");
 const { estaEmitido } = require("./comunicados.util");
-const { ENVIADORES_POR_DEFECTO, crearEnviadorCorreo } = require("./comunicados.canales");
+const { ENVIADORES_POR_DEFECTO, crearEnviadorCorreo, crearEnviadorWhatsapp } = require("./comunicados.canales");
+const { enviarWhatsApp } = require("../../../config/whatsapp");
 
 const residente = (id, extra = {}) => ({
   id,
@@ -264,4 +266,54 @@ test("BUG-001: el destinoReal de un envio redirigido queda en la fila del destin
   });
   assert.equal(filas[0].email, "ana@correo.com");
   assert.equal(filas[0].destinoReal, "pruebas@x.com");
+});
+
+test("BUG-002: el mensaje de WhatsApp lleva el titulo y debajo el mensaje", () => {
+  assert.equal(construirMensajeWhatsapp({ titulo: "Corte de agua", cuerpo: "Sabado 8:00" }), "Corte de agua\n\nSabado 8:00");
+});
+
+test("BUG-002: el enviador de WhatsApp manda el telefono del residente y traduce el resultado", async () => {
+  let recibido;
+  const enviador = crearEnviadorWhatsapp(async (datos) => {
+    recibido = datos;
+    return { estado: "ENVIADO", motivo: null, destinatario: "+59170123456", destinoReal: "+59170123456" };
+  });
+  const r = await enviador({
+    residente: residente("a", { telefono: "70123456" }),
+    comunicado: { titulo: "Aviso", cuerpo: "Texto" },
+  });
+  assert.equal(recibido.to, "70123456");
+  assert.equal(recibido.body, "Aviso\n\nTexto");
+  assert.deepEqual(r, { estado: "ENVIADO", motivo: null, contacto: "+59170123456", destinoReal: "+59170123456" });
+});
+
+test("BUG-002: un residente sin telefono valido se omite y el resto sigue; el telefono usado queda en la fila", async () => {
+  const enviar = async ({ to }) =>
+    to === "70123456"
+      ? { estado: "ENVIADO", motivo: null, destinatario: "+59170123456", destinoReal: null }
+      : { estado: "OMITIDO", motivo: "No es un celular boliviano: un fijo no recibe WhatsApp", destinatario: null, destinoReal: null };
+  const filas = await ejecutarEnvio({
+    residentes: [residente("a", { telefono: "70123456" }), residente("b", { telefono: "22345678" }), residente("c", { telefono: null })],
+    canales: ["WHATSAPP"],
+    enviadores: { WHATSAPP: crearEnviadorWhatsapp(enviar) },
+    comunicado,
+  });
+  const r = resumirEnvio({ filas, totalDestinatarios: 3 });
+  assert.equal(r.estado, "ENVIADO");
+  assert.deepEqual([r.enviados, r.omitidos], [1, 2]);
+  assert.equal(filas[0].telefono, "+59170123456");
+  assert.equal(filas[0].email, null);
+  assert.equal(filas[1].telefono, null);
+});
+
+test("BUG-002: con WhatsApp sin configurar el canal se omite y el comunicado queda FALLIDO con esa causa", async () => {
+  const filas = await ejecutarEnvio({
+    residentes: [residente("a", { telefono: "70123456" })],
+    canales: ["WHATSAPP"],
+    enviadores: { WHATSAPP: crearEnviadorWhatsapp((datos) => enviarWhatsApp(datos, { env: {} })) },
+    comunicado,
+  });
+  const r = resumirEnvio({ filas, totalDestinatarios: 1 });
+  assert.equal(r.estado, "FALLIDO");
+  assert.match(r.causaFallo, /WhatsApp no configurado/);
 });

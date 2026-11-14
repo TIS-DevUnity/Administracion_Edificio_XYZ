@@ -3,13 +3,10 @@
 // donde `contacto` es el correo o telefono que se uso (queda en el registro por destinatario) y `destinoReal`
 // es donde se entrego de verdad si el envio se redirigio o se permitio por lista de pruebas.
 // Cada enviador es quien valida el contacto del residente: sin contacto valido devuelve OMITIDO con el motivo.
-// Mientras un canal no tenga su enviador real, se omite con el motivo "no configurado".
+// Un canal sin proveedor o sin credenciales se omite con el motivo "... no configurado".
 const { enviarMensaje } = require("../../../config/mailer");
-const { construirHtmlComunicado } = require("./comunicados-envio.util");
-
-function canalNoConfigurado(canal) {
-  return async () => ({ estado: "OMITIDO", motivo: `El canal ${canal} no esta configurado` });
-}
+const { enviarWhatsApp } = require("../../../config/whatsapp");
+const { construirHtmlComunicado, construirMensajeWhatsapp } = require("./comunicados-envio.util");
 
 /**
  * Canal CORREO: usa el envio de bajo nivel de mailer.js, que valida el correo, aplica la redireccion de
@@ -33,9 +30,26 @@ function crearEnviadorCorreo(enviar = enviarMensaje) {
   };
 }
 
+/**
+ * Canal WHATSAPP (Twilio): usa el envio de bajo nivel de whatsapp.js, que comprueba la configuracion, normaliza
+ * el telefono a E.164, valida el largo y aplica la lista de numeros permitidos fuera de produccion.
+ * `enviar` se inyecta en las pruebas.
+ */
+function crearEnviadorWhatsapp(enviar = enviarWhatsApp) {
+  return async ({ residente, comunicado }) => {
+    const resultado = await enviar({ to: residente.telefono, body: construirMensajeWhatsapp(comunicado) });
+    return {
+      estado: resultado.estado,
+      motivo: resultado.motivo,
+      contacto: resultado.destinatario,
+      destinoReal: resultado.destinoReal,
+    };
+  };
+}
+
 const ENVIADORES_POR_DEFECTO = {
   CORREO: crearEnviadorCorreo(),
-  WHATSAPP: canalNoConfigurado("WHATSAPP"),
+  WHATSAPP: crearEnviadorWhatsapp(),
 };
 
-module.exports = { ENVIADORES_POR_DEFECTO, crearEnviadorCorreo };
+module.exports = { ENVIADORES_POR_DEFECTO, crearEnviadorCorreo, crearEnviadorWhatsapp };

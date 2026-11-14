@@ -120,6 +120,11 @@ function construirHtmlComunicado({ titulo, cuerpo }) {
   return `<h2>${escaparHtml(titulo)}</h2><p>${parrafos}</p>`;
 }
 
+/** Texto que recibe el residente por WhatsApp: el titulo y, debajo, el mensaje. */
+function construirMensajeWhatsapp({ titulo, cuerpo }) {
+  return `${titulo}\n\n${cuerpo}`;
+}
+
 // Un envio que lleva mas de 15 minutos reservado (enviadoEn) y sigue en BORRADOR se da por interrumpido
 // (el proceso se cayo o se reinicio a mitad del envio).
 const MINUTOS_ENVIO_INTERRUMPIDO = 15;
@@ -143,6 +148,7 @@ module.exports = {
   ejecutarEnvio,
   resumirEnvio,
   construirHtmlComunicado,
+  construirMensajeWhatsapp,
   MINUTOS_ENVIO_INTERRUMPIDO,
   CAUSA_ENVIO_INTERRUMPIDO,
   limiteEnvioInterrumpido,

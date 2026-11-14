@@ -6,6 +6,7 @@ const {
   validarDestinatarios,
   estaEmitido,
   estadosVisiblesPara,
+  MAX_CUERPO_WHATSAPP,
 } = require("./comunicados.util");
 const destinatariosService = require("./destinatarios.service");
 const {
@@ -13,6 +14,7 @@ const {
   resumirEnvio,
   limiteEnvioInterrumpido,
   CAUSA_ENVIO_INTERRUMPIDO,
+  construirMensajeWhatsapp,
 } = require("./comunicados-envio.util");
 const { ENVIADORES_POR_DEFECTO } = require("./comunicados.canales");
 
@@ -225,6 +227,15 @@ async function prepararEnvio(id) {
   if (errores.length > 0) throw errorValidacion(errores);
   if (!comunicado.destinatariosModo) {
     throw error("Debe elegir los destinatarios antes de enviar el comunicado", 400);
+  }
+
+  // Por WhatsApp el residente recibe titulo y mensaje juntos: el conjunto tambien debe caber en 1024.
+  const largoWhatsapp = construirMensajeWhatsapp(comunicado).length;
+  if (comunicado.canales.includes("WHATSAPP") && largoWhatsapp > MAX_CUERPO_WHATSAPP) {
+    throw error(
+      `Por WhatsApp se envian el titulo y el mensaje juntos y no pueden superar los ${MAX_CUERPO_WHATSAPP} caracteres (tienen ${largoWhatsapp})`,
+      400
+    );
   }
 
   const residentes = await destinatariosService.resolverResidentes({
