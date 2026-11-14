@@ -3,6 +3,7 @@ const saldoEdificio = require('../saldo-edificio/saldo-edificio.service')
 const { registrarGeneracion, usuarioGenerador } = require('./registro-generacion.service')
 const util = require('./balance-general.util')
 const { generarBalanceGeneralPdf, nombreArchivoBalanceGeneral } = require('./balance-general-pdf.service')
+const { generarBalanceGeneralExcel, nombreArchivoBalanceGeneralExcel } = require('./balance-general-excel.service')
 
 /**
  * Consulta (solo lectura) y arma el balance a la fecha de emision. La vista previa JSON y el PDF salen de esta
@@ -32,11 +33,16 @@ async function balanceGeneral({ usuarioId } = {}) {
   })
 }
 
-/** Genera el balance en `formato` ("JSON" o "PDF") y lo registra. Devuelve { datos } o { datos, pdf, nombreArchivo }. */
+/** Genera el balance en `formato` ("JSON", "PDF" o "EXCEL") y lo registra. Devuelve { datos } o { datos, archivo, nombreArchivo }. */
 async function generar({ formato, usuarioId, ip }) {
   try {
     const datos = await balanceGeneral({ usuarioId })
-    const salida = formato === 'PDF' ? { datos, pdf: await generarBalanceGeneralPdf(datos), nombreArchivo: nombreArchivoBalanceGeneral(datos) } : { datos }
+    const salida =
+      formato === 'PDF'
+        ? { datos, archivo: await generarBalanceGeneralPdf(datos), nombreArchivo: nombreArchivoBalanceGeneral(datos) }
+        : formato === 'EXCEL'
+          ? { datos, archivo: await generarBalanceGeneralExcel(datos), nombreArchivo: nombreArchivoBalanceGeneralExcel(datos) }
+          : { datos }
     await registrarGeneracion({ tipo: util.TIPO_REPORTE, usuarioId, ip, desde: datos.fechaCorte, hasta: datos.fechaCorte, formato, extra: { fechaCorte: datos.fechaCorte } })
     return salida
   } catch (err) {

@@ -208,4 +208,99 @@ router.get('/balance-general', autenticar, SUPERVISION, controller.balanceGenera
  */
 router.get('/balance-general/pdf', autenticar, SUPERVISION, controller.balanceGeneralPdf)
 
+/**
+ * @openapi
+ * /api/financiero/reportes/morosos/excel:
+ *   get:
+ *     summary: Listado de morosos en Excel (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       El mismo contenido de `/reportes/morosos` (sale de la misma consulta) en un .xlsx con dos hojas: "Morosos"
+ *       (una fila por inmueble, con totales) y "Detalle" (una fila por expensa). Los importes son numeros reales con
+ *       formato de moneda de 2 decimales; cada hoja lleva titulo, fecha de generacion y usuario. La generacion
+ *       queda en la auditoria con formato EXCEL.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: desde
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: hasta
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *       - in: query
+ *         name: orden
+ *         schema: { type: string, enum: [monto, antiguedad], default: monto }
+ *     responses:
+ *       200:
+ *         description: "Excel listado-morosos-DESDE-a-HASTA.xlsx"
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema: { type: string, format: binary }
+ *       400: { description: "Mismos errores de validacion que la vista previa" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/morosos/excel', autenticar, SUPERVISION, controller.morososExcel)
+
+/**
+ * @openapi
+ * /api/financiero/reportes/flujo-caja/excel:
+ *   get:
+ *     summary: Flujo de caja del edificio en Excel (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       El mismo contenido de `/reportes/flujo-caja` (sale de la misma consulta) en un .xlsx con tres hojas:
+ *       "Resumen" (saldo inicial, ingresos, egresos, saldo final y verificacion), "Ingresos y egresos" (por concepto
+ *       y categoria, con totales) y "Movimientos" (cronologicos, con egresos en negativo). Importes numericos con
+ *       formato de moneda; cada hoja lleva titulo, fecha de generacion y usuario. Auditoria con formato EXCEL.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: desde
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *       - in: query
+ *         name: hasta
+ *         required: true
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *       - in: query
+ *         name: tipo
+ *         schema: { type: string, enum: [Ingreso, Gasto] }
+ *     responses:
+ *       200:
+ *         description: "Excel flujo-caja-DESDE-a-HASTA.xlsx"
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema: { type: string, format: binary }
+ *       400: { description: "Mismos errores de validacion que la vista previa" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/flujo-caja/excel', autenticar, SUPERVISION, controller.flujoCajaExcel)
+
+/**
+ * @openapi
+ * /api/financiero/reportes/balance-general/excel:
+ *   get:
+ *     summary: Balance general gerencial en Excel (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       El mismo contenido de `/reportes/balance-general` (sale de la misma consulta) en un .xlsx con dos hojas:
+ *       "Balance" (activos, pasivos y patrimonio con subtotales, totales, verificacion y la nota de limitaciones) y
+ *       "Datos" (las mismas lineas en una tabla plana). Importes numericos con formato de moneda; cada hoja lleva
+ *       titulo, fecha de generacion y usuario. Auditoria con formato EXCEL.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: "Excel balance-general-YYYY-MM-DD.xlsx"
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema: { type: string, format: binary }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio }
+ */
+router.get('/balance-general/excel', autenticar, SUPERVISION, controller.balanceGeneralExcel)
+
 module.exports = router

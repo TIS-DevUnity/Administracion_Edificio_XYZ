@@ -3,6 +3,7 @@ const { fechaEnZona } = require('../expensas/mora.util')
 const { registrarGeneracion } = require('./registro-generacion.service')
 const util = require('./morosos.util')
 const { generarMorososPdf, nombreArchivoMorosos } = require('./morosos-pdf.service')
+const { generarMorososExcel, nombreArchivoMorososExcel } = require('./morosos-excel.service')
 
 /**
  * Consulta (solo lectura) y arma el listado. La vista previa JSON y el PDF salen de esta misma funcion.
@@ -53,11 +54,16 @@ async function listadoMorosos({ desde, hasta, orden, usuarioId } = {}) {
   })
 }
 
-/** Genera el listado en `formato` ("JSON" o "PDF") y lo registra. Devuelve { datos } o { datos, pdf, nombreArchivo }. */
+/** Genera el listado en `formato` ("JSON", "PDF" o "EXCEL") y lo registra. Devuelve { datos } o { datos, archivo, nombreArchivo }. */
 async function generar({ formato, desde, hasta, orden, usuarioId, ip }) {
   try {
     const datos = await listadoMorosos({ desde, hasta, orden, usuarioId })
-    const salida = formato === 'PDF' ? { datos, pdf: await generarMorososPdf(datos), nombreArchivo: nombreArchivoMorosos(datos) } : { datos }
+    const salida =
+      formato === 'PDF'
+        ? { datos, archivo: await generarMorososPdf(datos), nombreArchivo: nombreArchivoMorosos(datos) }
+        : formato === 'EXCEL'
+          ? { datos, archivo: await generarMorososExcel(datos), nombreArchivo: nombreArchivoMorososExcel(datos) }
+          : { datos }
     await registrarGeneracion({ tipo: util.TIPO_REPORTE, usuarioId, ip, desde: datos.rango.desde, hasta: datos.rango.hasta, formato, extra: { orden: datos.orden } })
     return salida
   } catch (err) {

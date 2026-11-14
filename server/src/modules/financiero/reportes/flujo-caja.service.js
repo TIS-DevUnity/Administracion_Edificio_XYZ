@@ -4,6 +4,7 @@ const { registrarGeneracion, usuarioGenerador } = require('./registro-generacion
 const { validarRango } = require('./morosos.util')
 const util = require('./flujo-caja.util')
 const { generarFlujoCajaPdf, nombreArchivoFlujoCaja } = require('./flujo-caja-pdf.service')
+const { generarFlujoCajaExcel, nombreArchivoFlujoCajaExcel } = require('./flujo-caja-excel.service')
 
 /**
  * Consulta (solo lectura) y arma el flujo de caja. La vista previa JSON y el PDF salen de esta misma funcion.
@@ -63,11 +64,16 @@ async function flujoCaja({ desde, hasta, tipo, usuarioId } = {}) {
   })
 }
 
-/** Genera el flujo de caja en `formato` ("JSON" o "PDF") y lo registra. Devuelve { datos } o { datos, pdf, nombreArchivo }. */
+/** Genera el flujo de caja en `formato` ("JSON", "PDF" o "EXCEL") y lo registra. Devuelve { datos } o { datos, archivo, nombreArchivo }. */
 async function generar({ formato, desde, hasta, tipo, usuarioId, ip }) {
   try {
     const datos = await flujoCaja({ desde, hasta, tipo, usuarioId })
-    const salida = formato === 'PDF' ? { datos, pdf: await generarFlujoCajaPdf(datos), nombreArchivo: nombreArchivoFlujoCaja(datos) } : { datos }
+    const salida =
+      formato === 'PDF'
+        ? { datos, archivo: await generarFlujoCajaPdf(datos), nombreArchivo: nombreArchivoFlujoCaja(datos) }
+        : formato === 'EXCEL'
+          ? { datos, archivo: await generarFlujoCajaExcel(datos), nombreArchivo: nombreArchivoFlujoCajaExcel(datos) }
+          : { datos }
     await registrarGeneracion({ tipo: util.TIPO_REPORTE, usuarioId, ip, desde: datos.rango.desde, hasta: datos.rango.hasta, formato, extra: { filtroTipo: datos.tipo } })
     return salida
   } catch (err) {
