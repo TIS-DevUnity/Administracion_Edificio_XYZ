@@ -12,6 +12,15 @@ async function listar(req, res, next) {
   }
 }
 
+async function listarDestinatarios(req, res, next) {
+  try {
+    const destinatarios = await comunicadosService.listarDestinatarios();
+    res.json({ destinatarios });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function obtener(req, res, next) {
   try {
     const comunicado = await comunicadosService.obtenerPorId(req.params.id, { rol: req.usuario.rol });
@@ -23,11 +32,12 @@ async function obtener(req, res, next) {
 
 async function crear(req, res, next) {
   try {
-    const { titulo, cuerpo, canales } = req.body ?? {};
+    const { titulo, cuerpo, canales, destinatarios } = req.body ?? {};
     const comunicado = await comunicadosService.crear({
       titulo,
       cuerpo,
       canales,
+      destinatarios,
       actorId: req.usuario.id,
       ip: req.ip,
     });
@@ -39,11 +49,12 @@ async function crear(req, res, next) {
 
 async function actualizar(req, res, next) {
   try {
-    const { titulo, cuerpo, canales } = req.body ?? {};
+    const { titulo, cuerpo, canales, destinatarios } = req.body ?? {};
     const comunicado = await comunicadosService.actualizar(req.params.id, {
       titulo,
       cuerpo,
       canales,
+      destinatarios,
       actorId: req.usuario.id,
       ip: req.ip,
     });
@@ -62,4 +73,35 @@ async function eliminar(req, res, next) {
   }
 }
 
-module.exports = { listar, obtener, crear, actualizar, eliminar };
+async function vistaPrevia(req, res, next) {
+  try {
+    const vistaPrevia = await comunicadosService.vistaPrevia(req.params.id);
+    res.json({ vistaPrevia });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function enviar(req, res, next) {
+  try {
+    const { confirmar } = req.body ?? {};
+    const resultado = await comunicadosService.enviar(req.params.id, {
+      confirmar,
+      actorId: req.usuario.id,
+      ip: req.ip,
+    });
+    res.json(resultado);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function resultado(req, res, next) {
+  try {
+    res.json(await comunicadosService.obtenerResultado(req.params.id, { rol: req.usuario.rol }));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listar, listarDestinatarios, obtener, crear, actualizar, eliminar, vistaPrevia, enviar, resultado };

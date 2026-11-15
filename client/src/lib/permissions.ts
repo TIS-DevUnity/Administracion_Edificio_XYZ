@@ -84,7 +84,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
-    comunicados: ["ver"],
+    // Comunicados no está disponible para CONSULTA: el backend reserva el historial a ADMINISTRADOR y DIRECTORIO.
     // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
     // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
@@ -120,6 +120,14 @@ export const MENSAJE_SOLO_ADMIN_ESTADO_CUENTA =
 /** Emitir/imprimir/descargar el estado de cuenta (HU5 CA-26). El backend restringe el PDF a ADMINISTRADOR. */
 export function puedeEmitirEstadoCuenta(rol: RolNombre): boolean {
   return rol === "ADMINISTRADOR";
+}
+
+export const MENSAJE_SOLO_SUPERVISION_REPORTES =
+  "Permiso insuficiente: solo el Administrador y el Directorio pueden generar y exportar reportes financieros.";
+
+/** Reportes financieros (HU13). El backend los restringe a ADMINISTRADOR y DIRECTORIO (reportes.routes.js). */
+export function puedeGenerarReportesFinancieros(rol: RolNombre): boolean {
+  return rol === "ADMINISTRADOR" || rol === "DIRECTORIO";
 }
 
 export interface SeccionNav {

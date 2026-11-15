@@ -8,6 +8,7 @@ const MODULOS = {
     "Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora", "MoraExpensa", "FacturaAgua",
     "MovimientoFinanciero", "CategoriaMovimiento", "PlanPago", "CuotaPlan", "Empleado", "Nomina", "AnticipoSalarial",
     "CuentaBancaria", "MovimientoCaja", "CierreCaja", "PagoInformado",
+    "ReporteFinanciero",
   ],
   Seguridad: ["Usuario"],
   Copropietarios: ["Copropietario"],

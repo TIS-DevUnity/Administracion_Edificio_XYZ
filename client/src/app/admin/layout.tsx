@@ -16,6 +16,7 @@ import {
   Landmark,
   ArrowLeftRight,
   ChartColumnIncreasing,
+  FileBarChart2,
   Banknote,
   BriefcaseBusiness,
   ShieldCheck,
@@ -33,6 +34,7 @@ import {
   normalizarRol,
   obtenerSeccionPorRuta,
   puedeAcceder,
+  puedeGenerarReportesFinancieros,
   SeccionId,
   SECCIONES_NAV,
 } from "@/lib/permissions";
@@ -227,6 +229,16 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                       <span className="truncate">Flujo de caja y gráficos</span>
                     </Link>
                   )}
+                  {seccion.id === "finanzas" && puedeGenerarReportesFinancieros(rol) && (
+                    <Link
+                      href="/admin/finanzas/reportes"
+                      aria-current={pathname.startsWith("/admin/finanzas/reportes") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/reportes") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <FileBarChart2 className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Reportes financieros</span>
+                    </Link>
+                  )}
 
                   {seccion.id === "personal" && (
                     <>
@@ -397,6 +409,17 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
                     >
                       <ChartColumnIncreasing className="h-4 w-4 shrink-0" />
                       <span className="truncate">Flujo de caja y gráficos</span>
+                    </Link>
+                  )}
+                  {seccion.id === "finanzas" && puedeGenerarReportesFinancieros(rol) && (
+                    <Link
+                      href="/admin/finanzas/reportes"
+                      onClick={handleNavegacionMovil}
+                      aria-current={pathname.startsWith("/admin/finanzas/reportes") ? "page" : undefined}
+                      className={`font-subtitle ml-5 flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] transition-colors ${pathname.startsWith("/admin/finanzas/reportes") ? "bg-sidebar-primary text-sidebar-primary-foreground" : "text-sidebar-foreground/75 hover:bg-sidebar-accent"}`}
+                    >
+                      <FileBarChart2 className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Reportes financieros</span>
                     </Link>
                   )}
 

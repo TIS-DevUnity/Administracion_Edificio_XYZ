@@ -8,6 +8,7 @@ import {
   Building2,
   CircleDollarSign,
   Download,
+  FileBarChart2,
   ReceiptText,
   Landmark,
   WalletCards,
@@ -338,6 +339,12 @@ export default function DashboardFinancieroPage() {
             <Link href="/admin/finanzas/movimientos">
               <ReceiptText className="mr-2 h-4 w-4" />
               Movimientos financieros
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/admin/finanzas/reportes">
+              <FileBarChart2 className="mr-2 h-4 w-4" />
+              Reportes financieros
             </Link>
           </Button>
         </div>
