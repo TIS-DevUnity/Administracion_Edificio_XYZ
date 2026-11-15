@@ -12,7 +12,7 @@ import { FormularioComunicadoDialog } from "@/components/comunicados/FormularioC
 import { HistorialComunicados } from "@/components/comunicados/HistorialComunicados";
 import { DetalleComunicadoDialog } from "@/components/comunicados/DetalleComunicadoDialog";
 import {
-  Comunicado, DatosComunicado, crearBorradorComunicado, editarBorradorComunicado,
+  Comunicado, DatosComunicado, ResumenEnvio, crearBorradorComunicado, editarBorradorComunicado,
   eliminarBorradorComunicado, listarComunicados, obtenerComunicado, obtenerErrorComunicado,
 } from "@/lib/comunicados";
 import { normalizarRol, puedeEjecutar } from "@/lib/permissions";
@@ -21,6 +21,7 @@ import { useSesionActual } from "@/lib/session";
 export default function ComunicadosPage() {
   const { usuario } = useSesionActual();
   const rol = normalizarRol(usuario?.rol ?? "CONSULTA");
+  const puedeVer = puedeEjecutar(rol, "comunicados", "ver");
   const puedeGestionar = puedeEjecutar(rol, "comunicados", "crear");
   const [comunicados, setComunicados] = useState<Comunicado[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -72,13 +73,20 @@ export default function ComunicadosPage() {
     setFormularioAbierto(true);
   }
 
-  async function guardar(datos: DatosComunicado) {
+  async function guardar(datos: DatosComunicado): Promise<Comunicado> {
     if (!puedeGestionar) throw new Error("Permiso insuficiente para modificar comunicados.");
-    if (borradorEditar) await editarBorradorComunicado(borradorEditar.id, datos);
-    else await crearBorradorComunicado(datos);
+    const guardado = borradorEditar
+      ? await editarBorradorComunicado(borradorEditar.id, datos)
+      : await crearBorradorComunicado(datos);
+    setNotificacion("Borrador guardado correctamente.");
+    await cargar();
+    return guardado;
+  }
+
+  async function comunicadoEnviado(resumen: ResumenEnvio) {
     setFormularioAbierto(false);
     setBorradorEditar(null);
-    setNotificacion(borradorEditar ? "Borrador actualizado correctamente." : "Borrador guardado correctamente. No se envió ningún mensaje.");
+    setNotificacion(`Envío finalizado: ${resumen.enviados} enviados, ${resumen.fallidos} fallidos y ${resumen.omitidos} omitidos. Estado: ${resumen.estado}.`);
     await cargar();
   }
 
@@ -128,6 +136,8 @@ export default function ComunicadosPage() {
   const enviados = comunicadosVisibles.filter((comunicado) => comunicado.estado === "ENVIADO").length;
   const fallidos = comunicadosVisibles.filter((comunicado) => comunicado.estado === "FALLIDO").length;
 
+  if (!puedeVer) return <main className="mx-auto w-full max-w-3xl p-6"><div role="alert" className="rounded-lg border p-4 text-sm text-muted-foreground">No tienes permisos para consultar el historial de comunicados.</div></main>;
+
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -156,7 +166,7 @@ export default function ComunicadosPage() {
 
       {notificacion && <div role="status" className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"><span>{notificacion}</span><button type="button" aria-label="Cerrar aviso" onClick={() => setNotificacion("")} className="shrink-0 font-semibold">Cerrar</button></div>}
       {!puedeGestionar && <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Tu perfil tiene acceso de solo lectura al historial de comunicados emitidos.</p>}
-      {puedeGestionar && <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">El envío por correo y WhatsApp aún no está disponible en el backend. Puedes redactar, guardar y gestionar borradores; ningún registro creado desde esta pantalla se enviará automáticamente.</p>}
+      {puedeGestionar && <p className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">Puedes redactar comunicados, seleccionar destinatarios, revisar la vista previa y confirmar el envío por los canales elegidos.</p>}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -171,7 +181,7 @@ export default function ComunicadosPage() {
         </CardContent>
       </Card>
 
-      {formularioAbierto && <FormularioComunicadoDialog key={borradorEditar?.id ?? "nuevo"} abierto={formularioAbierto} comunicado={borradorEditar} onCerrar={() => setFormularioAbierto(false)} onGuardar={guardar} />}
+      {formularioAbierto && <FormularioComunicadoDialog key={borradorEditar?.id ?? "nuevo"} abierto={formularioAbierto} comunicado={borradorEditar} onCerrar={() => { setFormularioAbierto(false); setBorradorEditar(null); }} onGuardar={guardar} onEnviado={(resumen) => void comunicadoEnviado(resumen)} />}
       <DetalleComunicadoDialog abierto={detalleId !== null} cargando={cargandoDetalle} comunicado={detalle} error={errorDetalle} onCerrar={() => setDetalleId(null)} />
       <Dialog open={borradorEliminar !== null} onOpenChange={(abierto) => { if (!abierto && !eliminando) setBorradorEliminar(null); }}>
         <DialogContent className="sm:max-w-md">

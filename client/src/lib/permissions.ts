@@ -84,7 +84,7 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
-    comunicados: ["ver"],
+    // Comunicados no está disponible para CONSULTA: el backend reserva el historial a ADMINISTRADOR y DIRECTORIO.
     // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
     // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
     // "usuarios", "roles" y "documentos" no aparecen: quedan ocultas y bloqueadas
