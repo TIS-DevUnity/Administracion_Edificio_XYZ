@@ -1,51 +1,47 @@
 "use client";
 
-import { ArrowLeft, Save, Send } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, Send, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { DatosComunicado, ETIQUETAS_CANAL } from "@/lib/comunicados";
+import { DatosComunicado, ETIQUETAS_CANAL, obtenerErrorComunicado, obtenerVistaPreviaComunicado, enviarComunicado, VistaPreviaComunicado, ResumenEnvio } from "@/lib/comunicados";
 
 interface Props {
-  datos: DatosComunicado;
-  cargando: boolean;
-  error: string;
-  onVolver: () => void;
-  onGuardar: () => void;
+  comunicadoId: string; datos: DatosComunicado; onVolver: () => void;
+  onEnviado: (resumen: ResumenEnvio) => void;
 }
-
-/** La vista previa confirma SOLO el guardado del borrador; no envía mensajes. */
-export function VistaPreviaComunicadoDialog({ datos, cargando, error, onVolver, onGuardar }: Props) {
-  return (
-    <div className="min-w-0 max-w-full space-y-4 overflow-x-hidden">
-      <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">Vista previa del comunicado</p>
-        <p className="text-xs text-muted-foreground">Comprueba el contenido y los canales antes de guardar.</p>
-      </div>
-      <div className="min-w-0 max-w-full space-y-3 overflow-x-hidden rounded-xl border bg-muted/30 p-4">
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Título</p>
-          <p className="mt-1 min-w-0 whitespace-normal [overflow-wrap:anywhere] font-medium">{datos.titulo.trim()}</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Mensaje</p>
-          <p className="mt-1 max-h-44 min-w-0 overflow-x-hidden overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-6">{datos.cuerpo.trim()}</p>
-        </div>
-        <div>
-          <p className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Canales seleccionados</p>
-          <div className="flex flex-wrap gap-2">
-            {datos.canales.map((canal) => <Badge variant="outline" key={canal}>{ETIQUETAS_CANAL[canal]}</Badge>)}
-          </div>
-        </div>
-      </div>
-      <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2 font-semibold text-foreground"><Send className="size-4" /> Envío no disponible todavía</div>
-        Este comunicado se guardará como <strong>BORRADOR</strong>. No se enviarán correos ni mensajes de WhatsApp. El número real de destinatarios estará disponible cuando Backend implemente el envío.
-      </div>
-      {error && <p role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">{error}</p>}
-      <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
-        <Button type="button" variant="outline" onClick={onVolver} disabled={cargando}><ArrowLeft /> Volver a editar</Button>
-        <Button type="button" onClick={onGuardar} cargando={cargando}><Save /> Guardar borrador</Button>
-      </div>
+export function VistaPreviaComunicadoDialog({ comunicadoId, datos, onVolver, onEnviado }: Props) {
+  const [vista, setVista] = useState<VistaPreviaComunicado | null>(null);
+  const [cargando, setCargando] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let vigente = true;
+    obtenerVistaPreviaComunicado(comunicadoId).then((r) => { if (vigente) setVista(r); })
+      .catch((e: unknown) => { if (vigente) setError(obtenerErrorComunicado(e, "No se pudo preparar la vista previa.")); })
+      .finally(() => { if (vigente) setCargando(false); });
+    return () => { vigente = false; };
+  }, [comunicadoId]);
+  async function confirmarEnvio() {
+    if (enviando || !vista?.puedeEnviar) return;
+    setEnviando(true); setError("");
+    try { const resultado = await enviarComunicado(comunicadoId); onEnviado(resultado.resumen); }
+    catch (e) { setError(obtenerErrorComunicado(e, "No se pudo enviar el comunicado.")); }
+    finally { setEnviando(false); }
+  }
+  return <div className="min-w-0 space-y-4">
+    <div><p className="font-semibold">Confirma el comunicado antes de enviarlo</p><p className="text-xs text-muted-foreground">Esta revisión consulta los destinatarios actuales. El envío solo ocurre al confirmar.</p></div>
+    <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+      <div><p className="text-[11px] uppercase text-muted-foreground">Título</p><p className="font-medium [overflow-wrap:anywhere]">{datos.titulo.trim()}</p></div>
+      <div><p className="text-[11px] uppercase text-muted-foreground">Mensaje</p><p className="max-h-40 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{datos.cuerpo.trim()}</p></div>
+      <div><p className="mb-1 text-[11px] uppercase text-muted-foreground">Canales</p><div className="flex flex-wrap gap-2">{datos.canales.map((c) => <Badge key={c} variant="outline">{ETIQUETAS_CANAL[c]}</Badge>)}</div></div>
+      {cargando ? <p className="text-sm text-muted-foreground">Calculando destinatarios…</p> : vista && <div className="flex items-center gap-2 border-t pt-3 text-sm"><Users className="size-4"/><strong>{vista.totalDestinatarios}</strong> destinatarios previstos <span className="text-muted-foreground">({vista.destinatariosModo === "TODOS" ? "todos los residentes vigentes" : "residentes seleccionados"})</span></div>}
+      {vista && vista.sinOcupacionVigente > 0 && <p className="text-xs text-amber-700">{vista.sinOcupacionVigente} destinatario(s) ya no tienen ocupación vigente y serán omitidos.</p>}
     </div>
-  );
+    {error && <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{error}</p>}
+    <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+      <Button variant="outline" onClick={onVolver} disabled={enviando}><ArrowLeft/> Volver a editar</Button>
+      <Button onClick={() => void confirmarEnvio()} disabled={cargando || enviando || !vista?.puedeEnviar}><Send/> {enviando ? "Enviando…" : "Confirmar y enviar"}</Button>
+    </div>
+  </div>;
 }
