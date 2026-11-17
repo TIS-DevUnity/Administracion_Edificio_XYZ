@@ -62,6 +62,9 @@ export default function ReportesFinancierosPage() {
   const avisos = useMemo(() => (reporte ? revisarReporte(reporte) : null), [reporte]);
   const bolExportable = bolVistaVigente && avisos !== null && avisos.inconsistencias.length === 0;
   const hoy = fechaRealBolivia();
+  // BUG-02: solo se puede restablecer si algún filtro cambió. El balance no tiene filtros (su clave es solo
+  // el tipo), así que ahí el botón queda deshabilitado en vez de no hacer nada.
+  const bolHayFiltrosCambiados = strClaveActual !== claveParametros({ ...parametrosIniciales(), tipo: parametros.tipo });
 
   function cambiar(parcial: Partial<ParametrosReporte>) {
     setStrExito("");
@@ -196,7 +199,7 @@ export default function ReportesFinancierosPage() {
             <p className={`${CLASE_LABEL} mb-2`}>Filtros de {tipoActual.titulo.toLowerCase()}</p>
             {!usaRango(parametros.tipo) ? (
               <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-[13px] text-muted-foreground">
-                El balance general se calcula a la fecha de emisión (hoy) con todo lo registrado; no usa rango de fechas.
+                El balance general se calcula a la fecha de emisión (hoy) con todo lo registrado; no usa rango de fechas ni tiene filtros que restablecer.
               </p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[180px_180px_minmax(0,260px)]">
@@ -255,7 +258,7 @@ export default function ReportesFinancierosPage() {
               <Button onClick={() => void generar()} cargando={bolGenerando}>
                 <Play className="h-4 w-4" /> Generar vista previa
               </Button>
-              <Button variant="outline" onClick={restablecer} disabled={bolGenerando}>
+              <Button variant="outline" onClick={restablecer} disabled={bolGenerando || !bolHayFiltrosCambiados}>
                 <RotateCcw className="h-4 w-4" /> Restablecer filtros
               </Button>
             </div>
