@@ -40,8 +40,11 @@ export default function ReportesFinancierosPage() {
 
   const [parametros, setParametros] = useState<ParametrosReporte>(parametrosIniciales);
   const [bolIntentoGenerar, setBolIntentoGenerar] = useState(false);
-  const [reporte, setReporte] = useState<ReporteFinanciero | null>(null);
-  const [strClaveReporte, setStrClaveReporte] = useState("");
+  // BUG-04: último reporte generado de cada tipo, con la clave de sus filtros. Vive solo mientras se está en
+  // esta pantalla (al salir del módulo o recargar se pierde), así se mantiene visible al cambiar de tipo y no
+  // se vuelve a pedir (ni a registrar en el historial) un reporte que ya se generó con los mismos filtros.
+  const [generados, setGenerados] = useState<Partial<Record<TipoReporte, { clave: string; reporte: ReporteFinanciero }>>>({});
+  const [strAviso, setStrAviso] = useState("");
   const [bolGenerando, setBolGenerando] = useState(false);
   const [strErrorGenerar, setStrErrorGenerar] = useState("");
   const [exportando, setExportando] = useState<FormatoArchivo | null>(null);
@@ -57,6 +60,8 @@ export default function ReportesFinancierosPage() {
   const erroresVisibles = bolIntentoGenerar ? errores : {};
   const bolParametrosValidos = Object.keys(errores).length === 0;
   const strClaveActual = claveParametros(parametros);
+  const reporte = generados[parametros.tipo]?.reporte ?? null;
+  const strClaveReporte = generados[parametros.tipo]?.clave ?? "";
   // La vista previa deja de valer si se cambió algún filtro después de generarla.
   const bolVistaVigente = reporte !== null && strClaveReporte === strClaveActual;
   const avisos = useMemo(() => (reporte ? revisarReporte(reporte) : null), [reporte]);
@@ -68,6 +73,7 @@ export default function ReportesFinancierosPage() {
 
   function cambiar(parcial: Partial<ParametrosReporte>) {
     setStrExito("");
+    setStrAviso("");
     setErrorExportar(null);
     setParametros((prev) => ({ ...prev, ...parcial }));
   }
@@ -76,8 +82,6 @@ export default function ReportesFinancierosPage() {
     if (tipo === parametros.tipo) return;
     controlador.current?.abort();
     setBolGenerando(false);
-    setReporte(null);
-    setStrClaveReporte("");
     setStrErrorGenerar("");
     setBolIntentoGenerar(false);
     cambiar({ tipo });
@@ -89,6 +93,7 @@ export default function ReportesFinancierosPage() {
     setBolIntentoGenerar(false);
     setStrErrorGenerar("");
     setStrExito("");
+    setStrAviso("");
     setErrorExportar(null);
     setParametros({ ...parametrosIniciales(), tipo: parametros.tipo });
   }
@@ -101,6 +106,13 @@ export default function ReportesFinancierosPage() {
     setBolIntentoGenerar(true);
     if (!bolParametrosValidos || bolGenerando) return;
 
+    // Mismo tipo y mismos filtros: se muestra el que ya está, sin otra consulta ni otro registro en el historial.
+    if (bolVistaVigente) {
+      setStrExito("");
+      setStrAviso("Este reporte ya está generado con estos filtros y es el que se muestra abajo. Cambia algún filtro para generar uno nuevo.");
+      return;
+    }
+
     controlador.current?.abort();
     const ctrl = new AbortController();
     controlador.current = ctrl;
@@ -108,12 +120,12 @@ export default function ReportesFinancierosPage() {
     setBolGenerando(true);
     setStrErrorGenerar("");
     setStrExito("");
+    setStrAviso("");
     setErrorExportar(null);
     try {
       const resultado = await reportesService.vistaPrevia(p, ctrl.signal);
       if (ctrl.signal.aborted) return;
-      setReporte(resultado);
-      setStrClaveReporte(claveParametros(p));
+      setGenerados((prev) => ({ ...prev, [p.tipo]: { clave: claveParametros(p), reporte: resultado } }));
     } catch (error) {
       if (axios.isCancel(error) || ctrl.signal.aborted) return;
       setStrErrorGenerar(await mensajeErrorReporte(error, "No se pudo generar el reporte. Intenta de nuevo."));
@@ -290,6 +302,7 @@ export default function ReportesFinancierosPage() {
               <Button size="sm" variant="outline" disabled={exportando !== null} onClick={() => void exportar(errorExportar.formato)}>Reintentar</Button>
             </div>
           )}
+          {strAviso && <p role="status" className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] text-muted-foreground">{strAviso}</p>}
           {strExito && <p role="status" className="rounded-lg border border-success/20 bg-success-subtle px-3 py-2 text-[13px] text-success">{strExito}</p>}
         </CardContent>
       </Card>
