@@ -164,9 +164,13 @@ router.get('/flujo-caja/pdf', autenticar, SUPERVISION, controller.flujoCajaPdf)
  * @openapi
  * /api/financiero/reportes/balance-general:
  *   get:
- *     summary: Balance general gerencial a la fecha de emision, vista previa en JSON (solo ADMINISTRADOR y DIRECTORIO)
+ *     summary: Balance general gerencial a la fecha de emision (o a una fecha de corte opcional), vista previa en JSON (solo ADMINISTRADOR y DIRECTORIO)
  *     description: |
- *       Balance a hoy (hora de Bolivia), sin parametros. **Activos**: efectivo y bancos (el saldo del edificio,
+ *       Balance a hoy (hora de Bolivia). Con `hasta` (opcional, YYYY-MM-DD, no futura) solo el **efectivo** se calcula
+ *       a esa fecha de corte (el saldo del edificio acumulado hasta ese dia); cuentas por cobrar, anticipos, saldos a
+ *       favor y sueldos por pagar siguen a la fecha de emision porque no hay historial de esos saldos. Con `hasta`,
+ *       `fechaCorte` es esa fecha, la respuesta trae `fechaEmision` y `nota` agrega la aclaracion. Sin `hasta` es
+ *       identico al balance a hoy. **Activos**: efectivo y bancos (el saldo del edificio,
  *       el mismo de saldo-edificio) y cuentas por cobrar (expensas pendientes con su mora aplicada, mas los anticipos
  *       a empleados pendientes de descontar). **Pasivos**: saldos a favor de residentes y sueldos por pagar de las
  *       nominas PENDIENTES. **Patrimonio**: activos menos pasivos. Cada bloque trae `grupos` con sus lineas y
@@ -175,8 +179,14 @@ router.get('/flujo-caja/pdf', autenticar, SUPERVISION, controller.flujoCajaPdf)
  *       (entidad ReporteFinanciero), tambien si falla.
  *     tags: [Reportes financieros]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *         description: "Fecha de corte opcional. No puede ser futura (hora de Bolivia)"
  *     responses:
- *       200: { description: "{ titulo, tipoReporte, fechaCorte, generadoEn, generadoPor, nota, activos: { grupos, total }, pasivos: { grupos, total }, patrimonio: { grupos, total }, verificacion: { formula, activos, pasivosMasPatrimonio, coincide } }" }
+ *       200: { description: "{ titulo, tipoReporte, fechaCorte, fechaEmision (solo con hasta), generadoEn, generadoPor, nota, activos: { grupos, total }, pasivos: { grupos, total }, patrimonio: { grupos, total }, verificacion: { formula, activos, pasivosMasPatrimonio, coincide } }" }
+ *       400: { description: "hasta invalida (FECHA_INVALIDA) o futura (FECHA_FUTURA)" }
  *       401: { description: No autenticado }
  *       403: { description: Solo Administrador o Directorio }
  */
@@ -190,19 +200,25 @@ router.get('/balance-general', autenticar, SUPERVISION, controller.balanceGenera
  *     description: |
  *       El mismo contenido de `/reportes/balance-general` en A4 vertical: membrete "Edificio XYZ", titulo, fecha y
  *       hora de emision, usuario generador, la nota de limitaciones, activos, pasivos y patrimonio con sus
- *       subtotales y totales, y la verificacion. Se descarga por defecto; con `inline=true` se abre en el navegador.
+ *       subtotales y totales, y la verificacion. Acepta el mismo `hasta` opcional (fecha de corte). Se descarga por
+ *       defecto; con `inline=true` se abre en el navegador.
  *     tags: [Reportes financieros]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *         description: "Fecha de corte opcional. No puede ser futura (hora de Bolivia)"
  *       - in: query
  *         name: inline
  *         schema: { type: string, enum: ["true", "false"] }
  *     responses:
  *       200:
- *         description: "PDF balance-general-YYYY-MM-DD.pdf"
+ *         description: "PDF balance-general-<fechaCorte>.pdf"
  *         content:
  *           application/pdf:
  *             schema: { type: string, format: binary }
+ *       400: { description: "hasta invalida (FECHA_INVALIDA) o futura (FECHA_FUTURA)" }
  *       401: { description: No autenticado }
  *       403: { description: Solo Administrador o Directorio }
  */
@@ -289,15 +305,22 @@ router.get('/flujo-caja/excel', autenticar, SUPERVISION, controller.flujoCajaExc
  *       El mismo contenido de `/reportes/balance-general` (sale de la misma consulta) en un .xlsx con dos hojas:
  *       "Balance" (activos, pasivos y patrimonio con subtotales, totales, verificacion y la nota de limitaciones) y
  *       "Datos" (las mismas lineas en una tabla plana). Importes numericos con formato de moneda; cada hoja lleva
- *       titulo, fecha de generacion y usuario. Auditoria con formato EXCEL.
+ *       titulo, fecha de generacion y usuario. Acepta el mismo `hasta` opcional (fecha de corte). Auditoria con
+ *       formato EXCEL.
  *     tags: [Reportes financieros]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *         description: "Fecha de corte opcional. No puede ser futura (hora de Bolivia)"
  *     responses:
  *       200:
- *         description: "Excel balance-general-YYYY-MM-DD.xlsx"
+ *         description: "Excel balance-general-<fechaCorte>.xlsx"
  *         content:
  *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
  *             schema: { type: string, format: binary }
+ *       400: { description: "hasta invalida (FECHA_INVALIDA) o futura (FECHA_FUTURA)" }
  *       401: { description: No autenticado }
  *       403: { description: Solo Administrador o Directorio }
  */

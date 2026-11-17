@@ -4,14 +4,33 @@
  *
  *   patrimonio = activos - pasivos            (activos = pasivos + patrimonio)
  */
-const { Decimal } = require('../expensas/saldo.util')
+const { Decimal, errorHttp } = require('../expensas/saldo.util')
 const { fechaEnZona } = require('../expensas/mora.util')
+const { validarFecha } = require('./morosos.util')
 
 const CERO = new Decimal(0)
 const TITULO = 'Balance general'
 const TIPO_REPORTE = 'BALANCE_GENERAL'
 const NOTA =
   'Balance gerencial a la fecha de emisión, basado en lo registrado; no incluye activos fijos, proveedores, reservas ni depreciación'
+
+// Se agrega a la nota solo cuando se pide una fecha de corte (`hasta`): solo el efectivo se calcula a esa fecha.
+const NOTA_FECHA_CORTE =
+  'Efectivo calculado a la fecha de corte; cuentas por cobrar, saldos a favor y sueldos por pagar reflejan la situación a la fecha de emisión'
+
+/**
+ * Fecha de corte opcional (`hasta`, YYYY-MM-DD). Sin valor devuelve null (balance a hoy, como siempre). Con valor
+ * debe ser una fecha real (400 FECHA_REQUERIDA/FECHA_INVALIDA) y no futura respecto de `hoy`, hora de Bolivia
+ * (400 FECHA_FUTURA). `hasta` igual a hoy es valido.
+ */
+function validarFechaCorte(hasta, hoy) {
+  if (hasta === undefined || hasta === null || (typeof hasta === 'string' && hasta.trim() === '')) return null
+  const corte = validarFecha(hasta, 'hasta')
+  if (corte > hoy) {
+    throw errorHttp('hasta no puede ser una fecha futura', 400, { codigo: 'FECHA_FUTURA', detalle: { hasta: corte, hoy } })
+  }
+  return corte
+}
 
 const dinero = (valor) => new Decimal(valor ?? 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2)
 const suma = (valores) => valores.reduce((acc, v) => acc.plus(v), CERO)
@@ -33,6 +52,8 @@ const totalDe = (grupos) => suma(grupos.map((g) => g.subtotal))
 /**
  * Arma el balance. Entradas (todas con monto y, si corresponde, cantidad):
  * `efectivo` (saldo del edificio), `cuentasPorCobrar`, `anticiposPendientes`, `saldosAFavor`, `sueldosPorPagar`.
+ * `fechaCorte` (opcional, YYYY-MM-DD ya validada): sin ella el balance es a la fecha de emision, como siempre; con
+ * ella `fechaCorte` es esa fecha, se agrega `fechaEmision` y la nota aclara que solo el efectivo es a la fecha de corte.
  */
 function construirBalanceGeneral({
   efectivo = 0,
@@ -40,6 +61,7 @@ function construirBalanceGeneral({
   anticiposPendientes: anticipos = { monto: 0, cantidad: 0 },
   saldosAFavor = 0,
   sueldosPorPagar = { monto: 0, cantidad: 0 },
+  fechaCorte = null,
   generadoPor = null,
   generadoEn = new Date()
 } = {}) {
@@ -66,10 +88,12 @@ function construirBalanceGeneral({
   return {
     titulo: TITULO,
     tipoReporte: TIPO_REPORTE,
-    fechaCorte: fechaEnZona(generadoEn),
+    fechaCorte: fechaCorte ?? fechaEnZona(generadoEn),
+    // Solo con fecha de corte: sin ella el resultado queda igual que antes (sin campos nuevos).
+    ...(fechaCorte ? { fechaEmision: fechaEnZona(generadoEn) } : {}),
     generadoEn: new Date(generadoEn).toISOString(),
     generadoPor,
-    nota: NOTA,
+    nota: fechaCorte ? `${NOTA}. ${NOTA_FECHA_CORTE}` : NOTA,
     activos: { grupos: grupoActivos, total: dinero(totalActivos) },
     pasivos: { grupos: grupoPasivos, total: dinero(totalPasivos) },
     patrimonio: { grupos: patrimonio, total: dinero(totalPatrimonio) },
@@ -82,4 +106,4 @@ function construirBalanceGeneral({
   }
 }
 
-module.exports = { TITULO, TIPO_REPORTE, NOTA, anticiposPendientes, construirBalanceGeneral }
+module.exports = { TITULO, TIPO_REPORTE, NOTA, NOTA_FECHA_CORTE, validarFechaCorte, anticiposPendientes, construirBalanceGeneral }

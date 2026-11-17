@@ -3,8 +3,9 @@
 // Son funciones puras: no tocan la base de datos.
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { anticiposPendientes, construirBalanceGeneral, NOTA } = require('./balance-general.util')
+const { anticiposPendientes, construirBalanceGeneral, validarFechaCorte, NOTA, NOTA_FECHA_CORTE } = require('./balance-general.util')
 const { generarBalanceGeneralPdf, nombreArchivoBalanceGeneral } = require('./balance-general-pdf.service')
+const { generarBalanceGeneralExcel, nombreArchivoBalanceGeneralExcel } = require('./balance-general-excel.service')
 
 const entradas = () => ({
   efectivo: '5000.50',
@@ -100,4 +101,64 @@ test('PDF: se genera con los mismos datos', async () => {
   assert.equal(nombreArchivoBalanceGeneral(b), `balance-general-${b.fechaCorte}.pdf`)
   const vacio = await generarBalanceGeneralPdf(construirBalanceGeneral())
   assert.equal(vacio.subarray(0, 5).toString(), '%PDF-')
+})
+
+// --- Fecha de corte opcional ("hasta") ----------------------------------------------------------------------------
+
+const HOY = '2026-11-17'
+const generadoEnFijo = new Date('2026-11-17T15:00:00.000Z') // 11:00 en Bolivia: el mismo dia
+
+test('sin hasta: el balance es el de siempre (sin campos nuevos ni cambios en la nota)', () => {
+  assert.equal(validarFechaCorte(undefined, HOY), null)
+  assert.equal(validarFechaCorte(null, HOY), null)
+  assert.equal(validarFechaCorte('', HOY), null)
+  assert.equal(validarFechaCorte('   ', HOY), null)
+  const b = construirBalanceGeneral({ ...entradas(), generadoEn: generadoEnFijo })
+  assert.equal(b.fechaCorte, HOY)
+  assert.equal(b.nota, NOTA)
+  assert.ok(!('fechaEmision' in b))
+  // Pasar fechaCorte nula equivale a no pasarla.
+  assert.deepEqual(construirBalanceGeneral({ ...entradas(), generadoEn: generadoEnFijo, fechaCorte: null }), b)
+})
+
+test('con hasta: fechaCorte es esa fecha, la emision queda aparte y la nota agrega la aclaracion', () => {
+  assert.equal(validarFechaCorte('2026-10-31', HOY), '2026-10-31')
+  assert.equal(validarFechaCorte(' 2026-10-31 ', HOY), '2026-10-31')
+  const b = construirBalanceGeneral({ ...entradas(), generadoEn: generadoEnFijo, fechaCorte: '2026-10-31' })
+  assert.equal(b.fechaCorte, '2026-10-31')
+  assert.equal(b.fechaEmision, HOY)
+  assert.equal(b.nota, `${NOTA}. ${NOTA_FECHA_CORTE}`)
+  assert.ok(b.nota.includes('Efectivo calculado a la fecha de corte; cuentas por cobrar, saldos a favor y sueldos por pagar reflejan la situación a la fecha de emisión'))
+  // Las cifras y la verificacion no cambian por usar una fecha de corte.
+  const sin = construirBalanceGeneral({ ...entradas(), generadoEn: generadoEnFijo })
+  assert.deepEqual(b.activos, sin.activos)
+  assert.deepEqual(b.pasivos, sin.pasivos)
+  assert.deepEqual(b.verificacion, sin.verificacion)
+  assert.equal(b.verificacion.coincide, true)
+})
+
+test('con hasta igual a hoy es valido (no es futura)', () => {
+  assert.equal(validarFechaCorte(HOY, HOY), HOY)
+})
+
+test('con hasta futura: 400 FECHA_FUTURA', () => {
+  assert.throws(() => validarFechaCorte('2026-11-18', HOY), { status: 400, codigo: 'FECHA_FUTURA' })
+  assert.throws(() => validarFechaCorte('2027-01-01', HOY), { status: 400, codigo: 'FECHA_FUTURA' })
+})
+
+test('con hasta de formato invalido: 400 FECHA_INVALIDA', () => {
+  const invalida = { status: 400, codigo: 'FECHA_INVALIDA' }
+  assert.throws(() => validarFechaCorte('17/11/2026', HOY), invalida)
+  assert.throws(() => validarFechaCorte('ayer', HOY), invalida)
+  assert.throws(() => validarFechaCorte('2026-13-01', HOY), invalida) // mes imposible
+  assert.throws(() => validarFechaCorte('2026-02-31', HOY), invalida) // dia imposible
+  assert.throws(() => validarFechaCorte(['2026-10-31', '2026-10-30'], HOY), invalida) // ?hasta=a&hasta=b
+})
+
+test('PDF y Excel con hasta: el archivo lleva la fecha de corte y se generan', async () => {
+  const b = construirBalanceGeneral({ ...entradas(), generadoEn: generadoEnFijo, fechaCorte: '2026-10-31' })
+  assert.equal(nombreArchivoBalanceGeneral(b), 'balance-general-2026-10-31.pdf')
+  assert.equal(nombreArchivoBalanceGeneralExcel(b), 'balance-general-2026-10-31.xlsx')
+  assert.equal((await generarBalanceGeneralPdf(b)).subarray(0, 5).toString(), '%PDF-')
+  assert.equal((await generarBalanceGeneralExcel(b)).subarray(0, 2).toString(), 'PK')
 })

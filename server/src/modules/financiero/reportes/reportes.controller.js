@@ -56,7 +56,7 @@ async function flujoCajaPdf(req, res, next) {
 
 async function balanceGeneralJson(req, res, next) {
   try {
-    const { datos } = await balanceGeneral.generar({ formato: 'JSON', usuarioId: req.usuario.id, ip: req.ip })
+    const { datos } = await balanceGeneral.generar({ formato: 'JSON', hasta: req.query.hasta, usuarioId: req.usuario.id, ip: req.ip })
     res.json(datos)
   } catch (err) {
     next(err)
@@ -65,7 +65,7 @@ async function balanceGeneralJson(req, res, next) {
 
 async function balanceGeneralPdf(req, res, next) {
   try {
-    const { archivo, nombreArchivo } = await balanceGeneral.generar({ formato: 'PDF', usuarioId: req.usuario.id, ip: req.ip })
+    const { archivo, nombreArchivo } = await balanceGeneral.generar({ formato: 'PDF', hasta: req.query.hasta, usuarioId: req.usuario.id, ip: req.ip })
     enviarPdf(res, archivo, nombreArchivo, req.query.inline === 'true')
   } catch (err) {
     next(err)
@@ -94,7 +94,7 @@ async function flujoCajaExcel(req, res, next) {
 
 async function balanceGeneralExcel(req, res, next) {
   try {
-    const { archivo, nombreArchivo } = await balanceGeneral.generar({ formato: 'EXCEL', usuarioId: req.usuario.id, ip: req.ip })
+    const { archivo, nombreArchivo } = await balanceGeneral.generar({ formato: 'EXCEL', hasta: req.query.hasta, usuarioId: req.usuario.id, ip: req.ip })
     enviarExcel(res, archivo, nombreArchivo)
   } catch (err) {
     next(err)

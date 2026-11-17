@@ -23,7 +23,9 @@ function generarBalanceGeneralPdf(balance) {
       const continuacion = (d) => comun.cabeceraContinuacion(d, `${balance.titulo} - ${balance.fechaCorte}`)
       const opciones = { alNuevaPagina: continuacion, anchoEtiqueta: 150 }
 
-      let y = comun.cabecera(doc, balance.titulo, `A la fecha de emisión: ${comun.formatearDia(balance.fechaCorte)}`)
+      // Con fecha de corte (`fechaEmision` presente) la fecha del encabezado ya no es la de emision; esa va en "Emitido".
+      const etiquetaFecha = balance.fechaEmision ? 'A la fecha de corte' : 'A la fecha de emisión'
+      let y = comun.cabecera(doc, balance.titulo, `${etiquetaFecha}: ${comun.formatearDia(balance.fechaCorte)}`)
       y = comun.filaDato(doc, y, 'Emitido', formatearFecha(balance.generadoEn), opciones)
       y = comun.filaDato(doc, y, 'Generado por', balance.generadoPor?.nombre ?? '-', opciones)
       y += 2
