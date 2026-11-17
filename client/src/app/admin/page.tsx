@@ -182,6 +182,9 @@ export default function AdminPanelPage() {
   const bolVerDocumentos = puedeAcceder(rol, "documentos");
   const bolVerUsuarios = puedeAcceder(rol, "usuarios");
   const bolVerAuditoria = puedeAcceder(rol, "auditoria");
+  // GET /copropietarios (lista general) es solo para ADMINISTRADOR y DIRECTORIO: a CONSULTA le
+  // responde 403 (permisos.js → copropietarios.listar) y eso tiraba todo el panel (BUG-01).
+  const bolListarCopropietarios = rol !== "CONSULTA";
 
   const [resumen, setResumen] = useState<ResumenDatos | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -195,7 +198,7 @@ export default function AdminPanelPage() {
       try {
         const [inmuebles, copropietarios, expensas, documentos, usuariosResp, auditoriaResp] = await Promise.all([
           listarInmuebles(),
-          listarCopropietarios(),
+          bolListarCopropietarios ? listarCopropietarios() : Promise.resolve<Copropietario[]>([]),
           financeService.getExpensas(),
           bolVerDocumentos ? listarDocumentos() : Promise.resolve<Documento[]>([]),
           bolVerUsuarios
@@ -285,12 +288,14 @@ export default function AdminPanelPage() {
               icono={ShieldAlert}
               claseValor={resumen.expensasVencidasTotal > 0 ? "text-destructive" : "text-success"}
             />
-            <TarjetaKpi
-              titulo="Copropietarios registrados"
-              valor={String(resumen.copropietariosTotal)}
-              detalle="Propietarios e inquilinos en el sistema"
-              icono={Users}
-            />
+            {bolListarCopropietarios && (
+              <TarjetaKpi
+                titulo="Copropietarios registrados"
+                valor={String(resumen.copropietariosTotal)}
+                detalle="Propietarios e inquilinos en el sistema"
+                icono={Users}
+              />
+            )}
           </div>
 
           {/* Previsualización de secciones */}
@@ -327,20 +332,22 @@ export default function AdminPanelPage() {
               )}
             </TarjetaSeccion>
 
-            <TarjetaSeccion
-              titulo="Copropietarios"
-              resumen={`${resumen.copropietariosTotal} registrados en el sistema`}
-              href="/admin/copropietarios"
-              icono={Users}
-            >
-              {resumen.copropietarios.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">No hay copropietarios registrados.</p>
-              ) : (
-                resumen.copropietarios.map((cop) => (
-                  <FilaPrevia key={cop.id} titulo={`${cop.nombre} ${cop.apellido}`} subtitulo={`CI ${cop.ci}`} />
-                ))
-              )}
-            </TarjetaSeccion>
+            {bolListarCopropietarios && (
+              <TarjetaSeccion
+                titulo="Copropietarios"
+                resumen={`${resumen.copropietariosTotal} registrados en el sistema`}
+                href="/admin/copropietarios"
+                icono={Users}
+              >
+                {resumen.copropietarios.length === 0 ? (
+                  <p className="text-[12px] text-muted-foreground">No hay copropietarios registrados.</p>
+                ) : (
+                  resumen.copropietarios.map((cop) => (
+                    <FilaPrevia key={cop.id} titulo={`${cop.nombre} ${cop.apellido}`} subtitulo={`CI ${cop.ci}`} />
+                  ))
+                )}
+              </TarjetaSeccion>
+            )}
 
             <TarjetaSeccion
               titulo="Morosidad y Expensas"
