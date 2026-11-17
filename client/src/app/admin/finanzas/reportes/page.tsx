@@ -267,8 +267,10 @@ export default function ReportesFinancierosPage() {
 
           <div className="flex flex-col gap-3 border-t border-border pt-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Button onClick={() => void generar()} cargando={bolGenerando}>
-                <Play className="h-4 w-4" /> Generar vista previa
+              {/* BUG-06: acción principal claramente identificada (antes "Generar vista previa"). */}
+              <Button size="lg" className="px-4 font-medium" onClick={() => void generar()} cargando={bolGenerando}
+                aria-label={`Generar reporte: ${tipoActual.titulo}`}>
+                <Play className="h-4 w-4" /> Generar reporte
               </Button>
               <Button variant="outline" onClick={restablecer} disabled={bolGenerando || !bolHayFiltrosCambiados}>
                 <RotateCcw className="h-4 w-4" /> Restablecer filtros
@@ -285,9 +287,9 @@ export default function ReportesFinancierosPage() {
           </div>
           <p className={CLASE_AYUDA}>
             {!reporte
-              ? "Para exportar, primero genera la vista previa del reporte."
+              ? "Elige el tipo y los filtros y pulsa \"Generar reporte\" para verlo en pantalla; después podrás exportarlo."
               : !bolVistaVigente
-                ? "Cambiaste los filtros: genera la vista previa de nuevo para poder exportar."
+                ? "Cambiaste los filtros: pulsa \"Generar reporte\" de nuevo para poder exportar."
                 : avisos && avisos.inconsistencias.length > 0
                   ? "La exportación está bloqueada porque los totales de la vista previa no cuadran."
                   : "El archivo se genera con los mismos parámetros de la vista previa."}
@@ -322,7 +324,7 @@ export default function ReportesFinancierosPage() {
           <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
             <FileBarChart2 className="h-8 w-8 text-muted-foreground" />
             <p className="text-[14px] font-medium text-foreground">Aún no hay un reporte generado</p>
-            <p className={`${CLASE_AYUDA} max-w-md`}>Elige el tipo de reporte, ajusta los filtros y pulsa &quot;Generar vista previa&quot; para verlo aquí antes de exportarlo.</p>
+            <p className={`${CLASE_AYUDA} max-w-md`}>Elige el tipo de reporte, ajusta los filtros y pulsa &quot;Generar reporte&quot; para verlo aquí antes de exportarlo.</p>
           </div>
         )}
       </Card>
