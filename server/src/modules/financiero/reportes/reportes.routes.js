@@ -303,4 +303,56 @@ router.get('/flujo-caja/excel', autenticar, SUPERVISION, controller.flujoCajaExc
  */
 router.get('/balance-general/excel', autenticar, SUPERVISION, controller.balanceGeneralExcel)
 
+/**
+ * @openapi
+ * /api/financiero/reportes/historial:
+ *   get:
+ *     summary: Historial de reportes financieros generados, con filtros y paginacion en el servidor (solo ADMINISTRADOR y DIRECTORIO)
+ *     description: |
+ *       Una fila por cada generacion registrada (entidad ReporteFinanciero), de la mas reciente a la mas antigua.
+ *       Los filtros se aplican en la base antes de paginar, por eso `total` y `totalPaginas` son los de los filtros.
+ *       **Por defecto no incluye las vistas previas** (formato JSON): se incluyen con `incluirVistaPrevia=true` o con
+ *       `formato=JSON`. `desde` y `hasta` filtran por la fecha de generacion y cubren el dia completo en hora de
+ *       Bolivia. No expone email ni IP. Consultar el historial no registra auditoria.
+ *     tags: [Reportes financieros]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: tipo
+ *         schema: { type: string, enum: [MOROSOS, FLUJO_CAJA, BALANCE_GENERAL] }
+ *       - in: query
+ *         name: formato
+ *         schema: { type: string, enum: [JSON, PDF, EXCEL] }
+ *         description: "JSON = vista previa. Si se envia, manda sobre incluirVistaPrevia"
+ *       - in: query
+ *         name: resultado
+ *         schema: { type: string, enum: [EXITOSO, FALLIDO] }
+ *       - in: query
+ *         name: usuarioId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: desde
+ *         schema: { type: string, format: date, example: "2026-01-01" }
+ *         description: Inicio del dia indicado (hora de Bolivia)
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date, example: "2026-10-31" }
+ *         description: Final del dia indicado (hora de Bolivia)
+ *       - in: query
+ *         name: incluirVistaPrevia
+ *         schema: { type: string, enum: ["true", "false"], default: "false" }
+ *       - in: query
+ *         name: pagina
+ *         schema: { type: integer, default: 1 }
+ *       - in: query
+ *         name: porPagina
+ *         schema: { type: integer, default: 20, maximum: 100 }
+ *     responses:
+ *       200: { description: "{ datos: [{ id, tipo, formato, resultado, desde, hasta, usuario: { id, nombre } | null, fecha }], paginacion: { pagina, porPagina, total, totalPaginas } }" }
+ *       400: { description: "Parametro invalido, con `codigo`: TIPO_INVALIDO, FORMATO_INVALIDO, RESULTADO_INVALIDO, FECHA_INVALIDA o RANGO_INVALIDO (desde posterior a hasta)" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador o Directorio (codigo SIN_PERMISO) }
+ */
+router.get('/historial', autenticar, SUPERVISION, controller.historial)
+
 module.exports = router

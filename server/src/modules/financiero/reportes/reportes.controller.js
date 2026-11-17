@@ -3,6 +3,16 @@ const flujoCaja = require('./flujo-caja.service')
 const balanceGeneral = require('./balance-general.service')
 const { enviarPdf } = require('../nomina/pdf-comun.util')
 const { enviarExcel } = require('./excel-comun.util')
+const historialReportes = require('./historial.service')
+
+/** Historial de reportes generados. Solo lectura: consultarlo no registra auditoria. */
+async function historial(req, res, next) {
+  try {
+    res.json(await historialReportes.listarHistorial(req.query))
+  } catch (err) {
+    next(err)
+  }
+}
 
 async function morosos(req, res, next) {
   try {
@@ -92,6 +102,7 @@ async function balanceGeneralExcel(req, res, next) {
 }
 
 module.exports = {
+  historial,
   morosos,
   morososPdf,
   morososExcel,
