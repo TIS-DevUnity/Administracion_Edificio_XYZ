@@ -180,7 +180,9 @@ export default function AuditoriaPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     cargarAuditoria(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroUsuarioId, filtroEntidad, filtroAccion, strDesde, strHasta]);
 
   function handleLimpiarFiltros() {
