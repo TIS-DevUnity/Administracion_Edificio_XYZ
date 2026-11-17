@@ -21,7 +21,9 @@ function validarFecha(valor, campo) {
     throw errorHttp(`${campo} es requerido`, 400, { codigo: 'FECHA_REQUERIDA' })
   }
   const texto = typeof valor === 'string' ? valor.trim() : ''
-  const real = SOLO_FECHA.test(texto) && new Date(`${texto}T00:00:00Z`).toISOString().slice(0, 10) === texto
+  const fecha = SOLO_FECHA.test(texto) ? new Date(`${texto}T00:00:00Z`) : null
+  // Con mes 13 o dia 32 la fecha es invalida y toISOString() lanzaria RangeError: debe ser un 400, no un 500.
+  const real = fecha !== null && !Number.isNaN(fecha.getTime()) && fecha.toISOString().slice(0, 10) === texto
   if (!real) throw errorHttp(`${campo} debe ser una fecha valida con el formato YYYY-MM-DD`, 400, { codigo: 'FECHA_INVALIDA' })
   return texto
 }
