@@ -1,0 +1,43 @@
+name: Restaurar Backup en BD de Prueba
+
+on:
+  workflow_dispatch: # Permite ejecutar el flujo manualmente con un botón
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Instalar cliente de PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: 3. Descargar el último artefacto de backup completo
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          # Busca el último flujo exitoso del archivo de respaldo
+          workflow: db-backup.yml 
+          name_is_regexp: true
+          name: backup-completo-.* 
+          path: ./backup_downloaded
+
+      - name: 4. Restaurar en la BD de prueba
+        env:
+          TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          # Descomprimir el archivo descargado
+          gunzip -f ./backup_downloaded/*.gz || true
+          
+          # Inyectar el archivo SQL en la base de prueba
+          # Usamos set +e para que los WARNINGS de permisos de auth no detengan el job
+          set +e
+          /usr/lib/postgresql/17/bin/psql "$TEST_DB_URL" -f ./backup_downloaded/*.sql
+          set -e
+          
+          echo "Restauración de SQL completada."
