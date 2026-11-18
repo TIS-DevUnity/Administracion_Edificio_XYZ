@@ -22,7 +22,8 @@ async function generarBalanceGeneralExcel(balance) {
   const libro = comun.nuevoLibro(balance.titulo)
   const encabezado = {
     titulo: balance.titulo,
-    lineas: [`A la fecha de emisión: ${balance.fechaCorte}`],
+    // Con fecha de corte (`fechaEmision` presente) la fecha del encabezado ya no es la de emision.
+    lineas: [`${balance.fechaEmision ? 'A la fecha de corte' : 'A la fecha de emisión'}: ${balance.fechaCorte}`],
     generadoEn: balance.generadoEn,
     generadoPor: balance.generadoPor
   }

@@ -166,8 +166,6 @@ export default function AuditoriaPage() {
       setRegistros(resultado.registros);
       setPaginacion(resultado.paginacion);
     } catch (error) {
-      // Ante un error no se deja la tabla anterior ni datos parciales: se limpia y
-      // se muestra únicamente el mensaje de error.
       setRegistros([]);
       setPaginacion(null);
       if (axios.isAxiosError(error)) {

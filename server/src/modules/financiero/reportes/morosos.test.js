@@ -4,6 +4,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  validarFecha,
   validarRango,
   validarOrden,
   diasDeAtraso,
@@ -47,6 +48,39 @@ test('validacion de fechas: obligatorias, reales y desde <= hasta', () => {
   assert.throws(() => validarRango({ desde: '01/01/2026', hasta: '2026-01-31' }), { status: 400, codigo: 'FECHA_INVALIDA' })
   assert.throws(() => validarRango({ desde: '2026-02-30', hasta: '2026-03-01' }), { status: 400, codigo: 'FECHA_INVALIDA' })
   assert.throws(() => validarRango({ desde: '2026-02-01', hasta: '2026-01-31' }), { status: 400, codigo: 'RANGO_INVALIDO' })
+})
+
+test('validarFecha: fecha con formato valido pero imposible da 400 FECHA_INVALIDA, no RangeError', () => {
+  const invalida = { status: 400, codigo: 'FECHA_INVALIDA' }
+  assert.throws(() => validarFecha('2026-13-01', 'desde'), invalida) // mes 13
+  assert.throws(() => validarFecha('2026-00-10', 'desde'), invalida) // mes 0
+  assert.throws(() => validarFecha('2026-01-32', 'hasta'), invalida) // dia 32
+  assert.throws(() => validarFecha('2026-01-00', 'hasta'), invalida) // dia 0
+  assert.throws(() => validarFecha('2026-02-31', 'hasta'), invalida) // 31 de febrero
+  assert.throws(() => validarFecha('2026-04-31', 'hasta'), invalida) // 31 de un mes de 30 dias
+  // Tambien a traves de validarRango, que es lo que llama cada reporte.
+  assert.throws(() => validarRango({ desde: '2026-13-01', hasta: '2026-12-31' }), invalida)
+  assert.throws(() => validarRango({ desde: '2026-01-01', hasta: '2026-02-31' }), invalida)
+})
+
+test('validarFecha: una fecha valida sigue funcionando (y se recorta el texto)', () => {
+  assert.equal(validarFecha('2026-11-17', 'desde'), '2026-11-17')
+  assert.equal(validarFecha('  2026-01-31  ', 'desde'), '2026-01-31')
+  assert.equal(validarFecha('2026-12-31', 'hasta'), '2026-12-31')
+})
+
+test('validarFecha: 29 de febrero solo en anio bisiesto', () => {
+  assert.equal(validarFecha('2028-02-29', 'desde'), '2028-02-29') // bisiesto
+  assert.equal(validarFecha('2000-02-29', 'desde'), '2000-02-29') // divisible por 400
+  assert.throws(() => validarFecha('2026-02-29', 'desde'), { status: 400, codigo: 'FECHA_INVALIDA' })
+  assert.throws(() => validarFecha('2100-02-29', 'desde'), { status: 400, codigo: 'FECHA_INVALIDA' }) // divisible por 100 y no por 400
+})
+
+test('validarFecha: los errores previos no cambian (requerida y formato)', () => {
+  assert.throws(() => validarFecha(undefined, 'desde'), { status: 400, codigo: 'FECHA_REQUERIDA' })
+  assert.throws(() => validarFecha('   ', 'desde'), { status: 400, codigo: 'FECHA_REQUERIDA' })
+  assert.throws(() => validarFecha('17/11/2026', 'desde'), { status: 400, codigo: 'FECHA_INVALIDA' })
+  assert.throws(() => validarFecha(20261117, 'desde'), { status: 400, codigo: 'FECHA_INVALIDA' })
 })
 
 test('validacion del orden: monto por defecto y solo monto o antiguedad', () => {
