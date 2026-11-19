@@ -4,13 +4,13 @@ on:
   workflow_dispatch: # Permite ejecutar el flujo manualmente con un botón
 
 jobs:
-  restore:
+  # ==========================================
+  # JOB 1: RESTAURAR BASE DE DATOS (.SQL)
+  # ==========================================
+  restore-db:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout del repositorio
-        uses: actions/checkout@v4
-
-      - name: 2. Instalar cliente de PostgreSQL 17
+      - name: 1. Instalar cliente de PostgreSQL 17
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
@@ -18,26 +18,68 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
 
-      - name: 3. Descargar el último artefacto de backup completo
+      - name: 2. Descargar el último artefacto de backup de BD
         uses: dawidd6/action-download-artifact@v3
         with:
-          # Busca el último flujo exitoso del archivo de respaldo
           workflow: db-backup.yml 
           name_is_regexp: true
           name: backup-completo-.* 
           path: ./backup_downloaded
 
-      - name: 4. Restaurar en la BD de prueba
+      - name: 3. Restaurar en la BD de prueba
         env:
           TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
         run: |
-          # Descomprimir el archivo descargado
           gunzip -f ./backup_downloaded/*.gz || true
           
-          # Inyectar el archivo SQL en la base de prueba
-          # Usamos set +e para que los WARNINGS de permisos de auth no detengan el job
+          # set +e evita que el workflow falle por los WARNINGS de permisos del esquema auth
           set +e
           /usr/lib/postgresql/17/bin/psql "$TEST_DB_URL" -f ./backup_downloaded/*.sql
           set -e
+
+  # ==========================================
+  # JOB 2: RESTAURAR ARCHIVOS (STORAGE)
+  # ==========================================
+  restore-storage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: 3. Instalar dependencias del backend
+        working-directory: ./server
+        run: npm ci
+
+      - name: 4. Descargar el último artefacto de Storage
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: db-backup.yml 
+          name_is_regexp: true
+          name: backup-storage-.* 
+          path: ./storage_downloaded
+
+      - name: 5. Descomprimir y Restaurar Storage
+        working-directory: ./server
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+        run: |
+          # Crear carpeta para extraer los PDFs
+          mkdir -p ../extracted_storage
           
-          echo "Restauración de SQL completada."
+          # Descomprimir el tar.gz en esa carpeta
+          tar -zxvf ../storage_downloaded/storage_backup.tar.gz -C ../extracted_storage
+          
+          # Pasarle la ruta exacta al script de Node.js
+          export RESTORE_SOURCE_DIR=$(realpath ../extracted_storage)
+          
+          # Ejecutar el script que acabas de modificar
+          node scripts/restore-storage.js
