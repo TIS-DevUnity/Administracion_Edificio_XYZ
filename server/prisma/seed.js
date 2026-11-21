@@ -146,10 +146,63 @@ async function cargarEjemplo() {
     }
   }
 
+  await cargarAreasComunes();
+
   console.log(
     "Datos de ejemplo listos: tipos A/B/C, 6 departamentos (4 asignados), 1 baulera y 2 parqueos " +
-      "(tarifas: parqueo Bs 50, baulera Bs 30; PAR-02 con monto propio Bs 80, asignados a A-101)"
+      "(tarifas: parqueo Bs 50, baulera Bs 30; PAR-02 con monto propio Bs 80, asignados a A-101) " +
+      "y 3 areas comunes (Salon de eventos, Churrasquera y Gimnasio) con sus horarios"
   );
+}
+
+// Areas comunes de ejemplo (HU14). Idempotente: el area se busca por nombre (si ya existe no se pisan los
+// cambios del administrador) y cada horario solo se crea si todavia no existe ese dia y esa hora de inicio.
+// diaSemana: 0 = domingo ... 6 = sabado. Cada horario es un turno reservable.
+async function cargarAreasComunes() {
+  const SABADO_DOMINGO = [6, 0];
+  const TODOS_LOS_DIAS = [0, 1, 2, 3, 4, 5, 6];
+  const LUNES_A_VIERNES = [1, 2, 3, 4, 5];
+
+  const areas = [
+    {
+      nombre: "Salon de eventos",
+      descripcion: "Salon con cocina y mobiliario para reuniones y celebraciones de los residentes.",
+      condiciones: "Dejar el salon limpio al terminar. Musica hasta las 22:00. Se responde por danos al mobiliario.",
+      horarios: [[SABADO_DOMINGO, "08:00", "13:00"], [SABADO_DOMINGO, "14:00", "19:00"]],
+    },
+    {
+      nombre: "Churrasquera",
+      descripcion: "Area de parrilla al aire libre con mesas y bancas.",
+      condiciones: "Apagar las brasas y limpiar la parrilla despues de usarla. Maximo 15 personas.",
+      horarios: [[TODOS_LOS_DIAS, "10:00", "14:00"], [TODOS_LOS_DIAS, "15:00", "19:00"]],
+    },
+    {
+      nombre: "Gimnasio",
+      descripcion: "Gimnasio con maquinas de cardio y pesas.",
+      condiciones: "Uso de toalla y calzado deportivo obligatorio. Solo residentes.",
+      horarios: [[LUNES_A_VIERNES, "06:00", "10:00"], [LUNES_A_VIERNES, "17:00", "21:00"]],
+    },
+  ];
+
+  for (const { nombre, descripcion, condiciones, horarios } of areas) {
+    const area = await prisma.areaComun.upsert({
+      where: { nombre },
+      update: {},
+      create: { nombre, descripcion, condiciones, activa: true },
+    });
+    for (const [dias, horaInicio, horaFin] of horarios) {
+      for (const diaSemana of dias) {
+        const existe = await prisma.horarioAreaComun.findFirst({
+          where: { areaId: area.id, diaSemana, horaInicio },
+        });
+        if (!existe) {
+          await prisma.horarioAreaComun.create({
+            data: { areaId: area.id, diaSemana, horaInicio, horaFin, activo: true },
+          });
+        }
+      }
+    }
+  }
 }
 
 async function main() {
