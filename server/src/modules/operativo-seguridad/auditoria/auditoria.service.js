@@ -15,6 +15,7 @@ const MODULOS = {
   Inmuebles: ["Inmueble", "OcupanteInmueble", "TipoInmueble", "TarifaClase"],
   Documentos: ["Documento"],
   Comunicados: ["Comunicado"],
+  "Areas comunes": ["AreaComun", "HorarioAreaComun", "BloqueoAreaComun", "ReservaAreaComun"],
 };
 
 const MODULO_POR_ENTIDAD = Object.fromEntries(
