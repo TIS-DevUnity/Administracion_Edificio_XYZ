@@ -20,7 +20,8 @@ export type SeccionId =
   // Portal del copropietario (HU14): solo CONSULTA, que es el rol del copropietario.
   | "miDeuda"
   | "areasComunes"
-  | "misReservas";
+  | "misReservas"
+  | "misPagos";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -93,6 +94,8 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     miDeuda: ["ver"],
     areasComunes: ["ver", "crear"],
     misReservas: ["ver", "eliminar"],
+    // Informar pagos es solo de CONSULTA en el backend (pagos-informados.routes.js → INFORMAR).
+    misPagos: ["ver", "crear"],
     // Comunicados no está disponible para CONSULTA: el backend reserva el historial a ADMINISTRADOR y DIRECTORIO.
     // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
     // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
@@ -148,6 +151,7 @@ export interface SeccionNav {
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
   { id: "miDeuda", label: "Mi deuda", href: "/admin/mi-deuda" },
+  { id: "misPagos", label: "Mis pagos", href: "/admin/mis-pagos" },
   { id: "areasComunes", label: "Áreas comunes", href: "/admin/areas-comunes" },
   { id: "misReservas", label: "Mis reservas", href: "/admin/areas-comunes/mis-reservas" },
   { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },

@@ -60,6 +60,7 @@ import { cuentaInmuebleService } from "@/services/cuentaInmueble.service";
 import { EstadoExpensa, ExpensaDTO, MetodoPago } from "@/types/finance";
 import { SaldoInmuebleDTO, SituacionCuenta } from "@/types/cuentaInmueble";
 import { DetalleAplicacionRecibo, generarReciboPdf } from "@/lib/reciboPago";
+import { PagosInformados } from "./components/PagosInformados";
 
 const CLASE_HEADER_TABLA =
   "font-caption text-[11px] font-medium uppercase leading-[1.3] tracking-[0.01em] text-muted-foreground";
@@ -520,6 +521,12 @@ export default function PagosPage() {
         El saldo a favor de cada inmueble se consulta al abrir &quot;Registrar pago&quot; o
         &quot;Ver cuenta&quot;, para no tener que calcularlo de todos a la vez.
       </p>
+
+      {/* HU14: pagos que los copropietarios informaron desde su portal. No va en la simulación (no los simula)
+          ni para CONSULTA (el copropietario los ve en "Mis pagos"). */}
+      {!enRutaSimulacion() && rol !== "CONSULTA" && (
+        <PagosInformados rol={rol} onConfirmado={() => void cargarCuentas()} />
+      )}
 
       <Card className="shadow-sm">
         <CardHeader className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">

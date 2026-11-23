@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, RefreshCw } from "lucide-react";
+import { FileText, HandCoins, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,9 +114,16 @@ export default function MiDeudaPage() {
                     <CardTitle className={CLASE_TITULO}>Departamento {c.inmueble.codigo}</CardTitle>
                     <Badge className={`font-caption text-[11px] ${sit.clase}`}>{sit.etiqueta}</Badge>
                   </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/admin/inmuebles/${c.inmueble.id}/estado-cuenta`}><FileText className="h-4 w-4" /> Ver estado de cuenta</Link>
-                  </Button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    {Number(c.deudaPendiente) > 0 && (
+                      <Button asChild size="sm">
+                        <Link href={`/admin/mis-pagos?inmuebleId=${c.inmueble.id}`}><HandCoins className="h-4 w-4" /> Informar un pago</Link>
+                      </Button>
+                    )}
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/admin/inmuebles/${c.inmueble.id}/estado-cuenta`}><FileText className="h-4 w-4" /> Ver estado de cuenta</Link>
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3 p-5">
                   <div className="flex flex-wrap gap-6 text-[13px]">

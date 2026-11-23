@@ -9,6 +9,7 @@ import {
   CalendarRange,
   ClipboardList,
   FileText,
+  HandCoins,
   ReceiptText,
   ShieldAlert,
   Trees,
@@ -323,6 +324,9 @@ export default function AdminPanelPage() {
               <>
                 <TarjetaSeccion titulo="Mi deuda" resumen={`Pendiente: ${formatCurrency(resumen.deudaPendiente)}`} href="/admin/mi-deuda" icono={ReceiptText}>
                   <p className="text-[12px] text-muted-foreground">Lo que debes por cada departamento y tu estado de cuenta.</p>
+                </TarjetaSeccion>
+                <TarjetaSeccion titulo="Mis pagos" resumen="Informar pagos e historial" href="/admin/mis-pagos" icono={HandCoins}>
+                  <p className="text-[12px] text-muted-foreground">Informa una transferencia o depósito y descarga tus recibos.</p>
                 </TarjetaSeccion>
                 <TarjetaSeccion titulo="Áreas comunes" resumen="Churrasquera, salón y otros espacios" href="/admin/areas-comunes" icono={Trees}>
                   <p className="text-[12px] text-muted-foreground">Consulta la disponibilidad y reserva un horario.</p>
