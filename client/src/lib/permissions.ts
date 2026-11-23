@@ -16,7 +16,12 @@ export type SeccionId =
   | "comunicados"
   | "finanzas"
   | "personal"
-  | "auditoria";
+  | "auditoria"
+  // Portal del copropietario (HU14): solo CONSULTA, que es el rol del copropietario.
+  | "miDeuda"
+  | "areasComunes"
+  | "misReservas"
+  | "misPagos";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -84,6 +89,13 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
+    // Portal del copropietario (HU14). Reservar es solo de CONSULTA en el backend
+    // (permisos.js → areasComunes.reservar), por eso estas secciones no aparecen en los otros roles.
+    miDeuda: ["ver"],
+    areasComunes: ["ver", "crear"],
+    misReservas: ["ver", "eliminar"],
+    // Informar pagos es solo de CONSULTA en el backend (pagos-informados.routes.js → INFORMAR).
+    misPagos: ["ver", "crear"],
     // Comunicados no está disponible para CONSULTA: el backend reserva el historial a ADMINISTRADOR y DIRECTORIO.
     // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
     // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
@@ -138,6 +150,10 @@ export interface SeccionNav {
 
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
+  { id: "miDeuda", label: "Mi deuda", href: "/admin/mi-deuda" },
+  { id: "misPagos", label: "Mis pagos", href: "/admin/mis-pagos" },
+  { id: "areasComunes", label: "Áreas comunes", href: "/admin/areas-comunes" },
+  { id: "misReservas", label: "Mis reservas", href: "/admin/areas-comunes/mis-reservas" },
   { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
   { id: "personal", label: "Personal y Nómina", href: "/admin/personal" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },
@@ -152,6 +168,29 @@ export const SECCIONES_NAV: SeccionNav[] = [
   { id: "usuarios", label: "Usuarios", href: "/admin/usuarios" },
   { id: "roles", label: "Configurar roles", href: "/admin/roles" },
 ];
+
+/**
+ * Portal del copropietario (HU14): secciones de administración que no se muestran en el menú del rol
+ * CONSULTA (el backend lo define como el rol del copropietario, ver server/src/middlewares/acceso-propio.js).
+ *
+ * Es solo presentación: NO cambia MATRIZ_PERMISOS. Las páginas siguen permitidas para ese rol (por ejemplo,
+ * el estado de cuenta en /admin/inmuebles/:id/estado-cuenta, enlazado desde "Mi deuda"). Para volver al
+ * menú anterior basta con vaciar esta lista.
+ */
+const SECCIONES_OCULTAS_EN_PORTAL: SeccionId[] = [
+  "inmuebles",
+  "residentes",
+  "copropietarios",
+  "pagos",
+  "morosidad",
+  "mantenimiento",
+];
+
+/** Si la sección aparece en el menú lateral de ese rol (permiso de ver y, para CONSULTA, que sea parte del portal). */
+export function seccionVisibleEnMenu(rol: RolNombre, seccion: SeccionId): boolean {
+  if (!puedeAcceder(rol, seccion)) return false;
+  return !(rol === "CONSULTA" && SECCIONES_OCULTAS_EN_PORTAL.includes(seccion));
+}
 
 export function obtenerSeccionPorRuta(strPathname: string): SeccionId {
   const objCoincidencia = [...SECCIONES_NAV]
