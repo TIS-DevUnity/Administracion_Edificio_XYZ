@@ -87,7 +87,7 @@ export function CalendarioArea({
             <Button size="sm" variant="outline" onClick={onReintentar}>Reintentar</Button>
           </div>
         ) : cargando ? (
-          <Skeleton className="h-[300px] w-full" />
+          <Skeleton className="h-75 w-full" />
         ) : (
           <div role="grid" aria-label={`Días de ${tituloMes(mes)}`} className="grid grid-cols-7 gap-1.5">
             {DIA_CORTO.map((d) => (
@@ -108,7 +108,7 @@ export function CalendarioArea({
                   aria-selected={activo}
                   aria-label={`${fechaLarga(fecha)}: ${LEYENDA.find((l) => l.estado === estado)?.texto ?? "No disponible para reservas"}`}
                   onClick={() => onSeleccionarFecha(fecha)}
-                  className={`flex aspect-square min-h-10 flex-col items-center justify-center rounded-lg border text-[13px] tabular-nums transition-colors disabled:cursor-not-allowed ${CLASE_DIA[estado]} ${
+                  className={`flex h-11 flex-col sm:h-12 items-center justify-center rounded-lg border text-[13px] tabular-nums transition-colors disabled:cursor-not-allowed ${CLASE_DIA[estado]} ${
                     activo ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : ""
                   }`}
                 >
