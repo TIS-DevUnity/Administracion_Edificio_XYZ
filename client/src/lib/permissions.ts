@@ -165,6 +165,29 @@ export const SECCIONES_NAV: SeccionNav[] = [
   { id: "roles", label: "Configurar roles", href: "/admin/roles" },
 ];
 
+/**
+ * Portal del copropietario (HU14): secciones de administración que no se muestran en el menú del rol
+ * CONSULTA (el backend lo define como el rol del copropietario, ver server/src/middlewares/acceso-propio.js).
+ *
+ * Es solo presentación: NO cambia MATRIZ_PERMISOS. Las páginas siguen permitidas para ese rol (por ejemplo,
+ * el estado de cuenta en /admin/inmuebles/:id/estado-cuenta, enlazado desde "Mi deuda"). Para volver al
+ * menú anterior basta con vaciar esta lista.
+ */
+const SECCIONES_OCULTAS_EN_PORTAL: SeccionId[] = [
+  "inmuebles",
+  "residentes",
+  "copropietarios",
+  "pagos",
+  "morosidad",
+  "mantenimiento",
+];
+
+/** Si la sección aparece en el menú lateral de ese rol (permiso de ver y, para CONSULTA, que sea parte del portal). */
+export function seccionVisibleEnMenu(rol: RolNombre, seccion: SeccionId): boolean {
+  if (!puedeAcceder(rol, seccion)) return false;
+  return !(rol === "CONSULTA" && SECCIONES_OCULTAS_EN_PORTAL.includes(seccion));
+}
+
 export function obtenerSeccionPorRuta(strPathname: string): SeccionId {
   const objCoincidencia = [...SECCIONES_NAV]
     .sort((a, b) => b.href.length - a.href.length)

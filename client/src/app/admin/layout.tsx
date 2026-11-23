@@ -37,6 +37,7 @@ import {
   obtenerSeccionPorRuta,
   puedeAcceder,
   puedeGenerarReportesFinancieros,
+  seccionVisibleEnMenu,
   SeccionId,
   SECCIONES_NAV,
 } from "@/lib/permissions";
@@ -137,7 +138,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
   const bolAutorizado = puedeAcceder(rol, seccionActual);
 
   const seccionesVisibles = SECCIONES_NAV.filter((seccion) =>
-    puedeAcceder(rol, seccion.id)
+    seccionVisibleEnMenu(rol, seccion.id)
   );
 
   const strTituloActual =
