@@ -31,6 +31,21 @@ interface UsuarioApi {
   ultimoLogin?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  /** Copropietario al que está vinculado (HU14: define "lo suyo" para el rol CONSULTA en el portal). */
+  copropietarioId?: string | null;
+}
+
+interface CopropietarioOpcion {
+  id: string;
+  nombre: string;
+  apellido: string;
+  ci: string;
+}
+
+function nombreCopropietario(copropietarios: CopropietarioOpcion[], strId?: string | null): string {
+  if (!strId) return "Sin vincular";
+  const objCop = copropietarios.find((cop) => cop.id === strId);
+  return objCop ? `${objCop.nombre} ${objCop.apellido} (CI ${objCop.ci})` : "Copropietario no disponible";
 }
 
 function formatearFechaHora(strFechaISO?: string | null): string {
@@ -123,6 +138,42 @@ function CampoRol({ strDefault }: { strDefault?: string }) {
   );
 }
 
+/**
+ * Vincula el usuario con su ficha de copropietario. Sin ese vínculo, un usuario CONSULTA no puede usar
+ * el portal (reservas, mis reservas): el backend responde 403 USUARIO_SIN_COPROPIETARIO.
+ */
+function CampoCopropietario({
+  strDefault,
+  copropietarios,
+}: {
+  strDefault?: string | null;
+  copropietarios: CopropietarioOpcion[];
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 sm:w-56">
+      <label className="text-[12px] font-medium text-foreground">
+        Copropietario vinculado
+      </label>
+
+      {/* key: si las opciones llegan después de abrir el formulario, se vuelve a montar con el valor actual. */}
+      <select
+        key={copropietarios.length}
+        name="copropietarioId"
+        defaultValue={strDefault ?? ""}
+        className={claseInput}
+        title="Necesario para que un usuario Consulta use el portal del copropietario"
+      >
+        <option value="">Sin vincular</option>
+        {copropietarios.map((cop) => (
+          <option key={cop.id} value={cop.id}>
+            {cop.nombre} {cop.apellido} · CI {cop.ci}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 
 export default function UsuariosPage() {
   const { usuario } = useSesionActual();
@@ -138,6 +189,7 @@ export default function UsuariosPage() {
   const [usuarioDetalle, setUsuarioDetalle] = useState<UsuarioApi | null>(null);
   // "crear", "editar:<id>" o "estado:<id>": bloquea el botón mientras la petición está en curso.
   const [strAccionEnCurso, setStrAccionEnCurso] = useState<string | null>(null);
+  const [copropietarios, setCopropietarios] = useState<CopropietarioOpcion[]>([]);
 
   const bolPuedeCrear = puedeEjecutar(rol, "usuarios", "crear");
   const bolPuedeEditar = puedeEjecutar(rol, "usuarios", "editar");
@@ -179,6 +231,14 @@ export default function UsuariosPage() {
 
     cargarUsuarios();
 
+    // Opciones del campo "Copropietario vinculado". Si falla, la lista de usuarios sigue funcionando.
+    api
+      .get<{ copropietarios: CopropietarioOpcion[] }>("/copropietarios")
+      .then((response) => {
+        if (!bolCancelado) setCopropietarios(response.data.copropietarios ?? []);
+      })
+      .catch((error: unknown) => console.error("Error al cargar copropietarios:", error));
+
     return () => {
       bolCancelado = true;
     };
@@ -194,6 +254,10 @@ export default function UsuariosPage() {
       }
       if (error.response?.status === 409) {
         setStrError("Ya existe un usuario registrado con ese correo.");
+        return;
+      }
+      if (error.response?.status === 404) {
+        setStrError("El copropietario elegido ya no existe. Recarga la página y elige otro.");
         return;
       }
     }
@@ -253,6 +317,7 @@ export default function UsuariosPage() {
           email: objFormulario.get("email"),
           password: objFormulario.get("password"),
           rol: objFormulario.get("rol"),
+          copropietarioId: objFormulario.get("copropietarioId") || null,
         }
       );
 
@@ -299,6 +364,7 @@ export default function UsuariosPage() {
           apellido: objFormulario.get("apellido"),
           email: objFormulario.get("email"),
           rol: objFormulario.get("rol"),
+          copropietarioId: objFormulario.get("copropietarioId") || null,
         }
       );
 
@@ -420,6 +486,8 @@ export default function UsuariosPage() {
 
               <CampoRol />
 
+              <CampoCopropietario copropietarios={copropietarios} />
+
               <button
                 type="submit"
                 disabled={strAccionEnCurso === "crear"}
@@ -499,6 +567,8 @@ export default function UsuariosPage() {
                         />
 
                         <CampoRol strDefault={registro.rol} />
+
+                        <CampoCopropietario strDefault={registro.copropietarioId} copropietarios={copropietarios} />
 
                         <button
                           type="submit"
@@ -654,6 +724,8 @@ export default function UsuariosPage() {
                     <CamposUsuario registro={registro} />
 
                     <CampoRol strDefault={registro.rol} />
+
+                    <CampoCopropietario strDefault={registro.copropietarioId} copropietarios={copropietarios} />
 
                     <div className="flex flex-col gap-2 pt-1 sm:flex-row">
                       <button
@@ -815,6 +887,14 @@ export default function UsuariosPage() {
                     Rol
                   </p>
                   <p className="mt-1 text-[13px] text-foreground">{usuarioDetalle.rol}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">
+                    Copropietario vinculado
+                  </p>
+                  <p className="mt-1 text-[13px] text-foreground">
+                    {nombreCopropietario(copropietarios, usuarioDetalle.copropietarioId)}
+                  </p>
                 </div>
                 <div>
                   <p className="font-caption text-[11px] font-medium uppercase tracking-[0.01em] text-muted-foreground">

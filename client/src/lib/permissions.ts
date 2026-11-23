@@ -16,7 +16,11 @@ export type SeccionId =
   | "comunicados"
   | "finanzas"
   | "personal"
-  | "auditoria";
+  | "auditoria"
+  // Portal del copropietario (HU14): solo CONSULTA, que es el rol del copropietario.
+  | "miDeuda"
+  | "areasComunes"
+  | "misReservas";
 export type Accion = "ver" | "crear" | "editar" | "eliminar";
 
 export const MENSAJE_PERMISO_INSUFICIENTE =
@@ -84,6 +88,11 @@ const MATRIZ_PERMISOS: Record<RolNombre, Partial<Record<SeccionId, Accion[]>>> =
     mantenimiento: ["ver"],
     copropietarios: ["ver"],
     morosidad: ["ver"],
+    // Portal del copropietario (HU14). Reservar es solo de CONSULTA en el backend
+    // (permisos.js → areasComunes.reservar), por eso estas secciones no aparecen en los otros roles.
+    miDeuda: ["ver"],
+    areasComunes: ["ver", "crear"],
+    misReservas: ["ver", "eliminar"],
     // Comunicados no está disponible para CONSULTA: el backend reserva el historial a ADMINISTRADOR y DIRECTORIO.
     // "finanzas" no aparece (QA bug 6): su historial muestra los pagos de cada departamento y el
     // backend restringe saldo-edificio y movimientos a ADMINISTRADOR y DIRECTORIO.
@@ -138,6 +147,9 @@ export interface SeccionNav {
 
 export const SECCIONES_NAV: SeccionNav[] = [
   { id: "panel", label: "Panel principal", href: "/admin" },
+  { id: "miDeuda", label: "Mi deuda", href: "/admin/mi-deuda" },
+  { id: "areasComunes", label: "Áreas comunes", href: "/admin/areas-comunes" },
+  { id: "misReservas", label: "Mis reservas", href: "/admin/areas-comunes/mis-reservas" },
   { id: "finanzas", label: "Finanzas", href: "/admin/finanzas" },
   { id: "personal", label: "Personal y Nómina", href: "/admin/personal" },
   { id: "inmuebles", label: "Inmuebles", href: "/admin/inmuebles" },

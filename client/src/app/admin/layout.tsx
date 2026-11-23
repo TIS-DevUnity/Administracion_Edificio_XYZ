@@ -5,7 +5,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
+  CalendarCheck,
   CalendarClock,
+  Trees,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -55,6 +57,9 @@ const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
   documentos: FileText,
   comunicados: Megaphone,
   auditoria: ClipboardList,
+  miDeuda: ReceiptText,
+  areasComunes: Trees,
+  misReservas: CalendarCheck,
   mantenimiento: Wrench,
   usuarios: UserCog,
   roles: ShieldCheck,
