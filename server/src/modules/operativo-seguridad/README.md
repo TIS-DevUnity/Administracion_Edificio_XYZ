@@ -10,6 +10,7 @@ Contiene:
 - `inmuebles/` — inmuebles (clase, tipo, ocupantes) y la regla de "a quien se le cobra expensa" (`asignacion.util.js`)
 - `tipos-inmueble/` — tipos de departamento (A, B, C...) con su expensa fija
 - `documentos/` — gestion documental (actas, reglamentos, contratos, facturas, fotos, cotizaciones), archivos en Supabase Storage
+- [`areas-comunes/`](areas-comunes/README.md) — areas comunes (HU14): horarios, bloqueos y reserva de turnos por el copropietario (requiere estar al dia con sus pagos)
 
 Tambien usa `src/middlewares/auth.middleware.js`, `src/middlewares/rbac.middleware.js` y `src/middlewares/upload.middleware.js` (multer, para `documentos/`).
 

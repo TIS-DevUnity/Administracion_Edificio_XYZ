@@ -5,7 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
+  CalendarCheck,
   CalendarClock,
+  HandCoins,
+  Trees,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -35,6 +38,7 @@ import {
   obtenerSeccionPorRuta,
   puedeAcceder,
   puedeGenerarReportesFinancieros,
+  seccionVisibleEnMenu,
   SeccionId,
   SECCIONES_NAV,
 } from "@/lib/permissions";
@@ -55,6 +59,10 @@ const ICONO_SECCION: Record<SeccionId, LucideIcon> = {
   documentos: FileText,
   comunicados: Megaphone,
   auditoria: ClipboardList,
+  miDeuda: ReceiptText,
+  misPagos: HandCoins,
+  areasComunes: Trees,
+  misReservas: CalendarCheck,
   mantenimiento: Wrench,
   usuarios: UserCog,
   roles: ShieldCheck,
@@ -132,7 +140,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
   const bolAutorizado = puedeAcceder(rol, seccionActual);
 
   const seccionesVisibles = SECCIONES_NAV.filter((seccion) =>
-    puedeAcceder(rol, seccion.id)
+    seccionVisibleEnMenu(rol, seccion.id)
   );
 
   const strTituloActual =
