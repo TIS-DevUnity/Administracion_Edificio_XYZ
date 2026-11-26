@@ -39,7 +39,7 @@ function dinero(valor) {
   return new Decimal(valor).toFixed(2)
 }
 
-/** Una linea por concepto de la expensa: tarifa del departamento, cada baulera/parqueo y el agua. */
+/** Una linea por concepto de la expensa: tarifa del departamento, cada baulera/parqueo, el agua y el extra (si tiene). */
 function desgloseExpensa(expensa) {
   const lineas = []
   if (expensa.cargos && expensa.cargos.length > 0) {
@@ -56,6 +56,10 @@ function desgloseExpensa(expensa) {
     lineas.push({ concepto: 'Tarifa fija', monto: dinero(expensa.montoBase) })
   }
   lineas.push({ concepto: 'Agua', monto: dinero(expensa.montoAgua) })
+  // El extra solo aparece cuando la expensa lo tiene: asi las lineas siguen sumando el total.
+  if (new Decimal(expensa.montoExtra ?? 0).gt(0)) {
+    lineas.push({ concepto: expensa.extraConcepto ? `Extra ${expensa.extraConcepto}` : 'Extra', monto: dinero(expensa.montoExtra) })
+  }
   return lineas
 }
 
@@ -84,6 +88,8 @@ function construirEventos({ expensas, abonosSaldo = [], formatearFolio }) {
       detalle: {
         tarifaFija: dinero(expensa.montoBase),
         agua: dinero(expensa.montoAgua),
+        extra: dinero(expensa.montoExtra ?? 0),
+        extraConcepto: expensa.extraConcepto ?? null,
         total: dinero(expensa.montoTotal)
       }
     })

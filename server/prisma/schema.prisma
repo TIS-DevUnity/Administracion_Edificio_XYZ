@@ -48,6 +48,12 @@ model Usuario {
   cierresCaja                 CierreCaja[]         @relation("CierreCajaPor")
   eventosConciliacion         ConciliacionEvento[] @relation("ConciliacionEventoPor")
   pagosInformadosRevisados    PagoInformado[]      @relation("PagoInformadoRevisadoPor")
+  empleadosRegistrados           Empleado[]         @relation("EmpleadoRegistradoPor")
+  nominasPersonalRegistradas     Nomina[]           @relation("NominaRegistradaPor")
+  nominasPersonalPagadas         Nomina[]           @relation("NominaPagadaPor")
+  anticiposSalarialesRegistrados AnticipoSalarial[] @relation("AnticipoRegistradoPor")
+  comunicadosCreados             Comunicado[]
+  bloqueosAreaCreados            BloqueoAreaComun[]
 
   createdAt       DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
@@ -74,6 +80,8 @@ model Copropietario {
   expensasComoResponsable Expensa[]
   notificaciones          Notificacion[]
   pagosInformados         PagoInformado[]
+  comunicadosRecibidos    ComunicadoDestinatario[]
+  reservasAreaComun       ReservaAreaComun[]
 
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
@@ -118,8 +126,21 @@ model Inmueble {
   areaM2         Decimal?     @db.Decimal(8, 2)
   activo         Boolean      @default(true)
 
-  // Solo baulera y parqueo: monto propio que reemplaza a la tarifa de su clase (TarifaClase).
-  // null = usa la tarifa de la clase; 0 = exento (no se cobra).
+  // Caracteristicas opcionales del departamento. No incluye habitantes ni datos familiares.
+  descripcion    String?      @db.Text
+
+  // Cada departamento puede tener un parqueo y una baulera. UNIQUE impide compartir
+  // el mismo accesorio entre dos departamentos. La clase se valida en el servicio.
+  parqueoId      String?      @unique @map("parqueo_id")
+  parqueo        Inmueble?    @relation("DepartamentoParqueo", fields: [parqueoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  esParqueoDe    Inmueble?    @relation("DepartamentoParqueo")
+
+  bauleraId      String?      @unique @map("baulera_id")
+  baulera        Inmueble?    @relation("DepartamentoBaulera", fields: [bauleraId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  esBauleraDe    Inmueble?    @relation("DepartamentoBaulera")
+
+  // Campo legado para mantener compatibilidad con otras HU.
+  // En DEMO no genera cobro: parqueo y baulera son informativos.
   cuotaMensual   Decimal?     @db.Decimal(10, 2)
 
   ocupaciones    OcupanteInmueble[]
@@ -171,6 +192,10 @@ model ConfiguracionMora {
   tipoValor      TipoValorMora @default(PORCENTAJE)
   valor          Decimal       @db.Decimal(10, 2)
   modoMora       ModoMora      @default(MENSUAL)
+  // Dia del mes (1-28) en que se descuenta el saldo a favor de las expensas pendientes. Va entre
+  // diaGeneracion y diaVencimiento (lo valida la aplicacion). Antes de ese dia, generar la expensa y
+  // cargar el agua no usan el saldo.
+  diaDescuentoSaldo Int        @default(9)
   // Desde cuando rige. La vigente en una fecha es la mas reciente con vigenteDesde <= fecha;
   // una con fecha futura queda programada y no cambia lo que ya esta generado.
   vigenteDesde   DateTime      @default(now()) @db.Timestamptz(3)
@@ -234,6 +259,196 @@ model Documento {
   @@map("documentos")
   @@index([categoria])
   @@index([entidad, entidadId])
+}
+
+// ---------------------------------------------------------------------------
+// Comunicados (Requisito 7 del documento de requerimientos, HU10)
+// Elaboracion y registro historico. El envio real por correo/WhatsApp se conecta despues:
+// por eso ya existen los estados ENVIADO/FALLIDO y los campos de envio.
+// ---------------------------------------------------------------------------
+
+enum CanalComunicado {
+  CORREO
+  WHATSAPP
+}
+
+enum EstadoComunicado {
+  BORRADOR
+  ENVIADO
+  FALLIDO
+}
+
+// TODOS: todos los residentes con ocupacion vigente en inmuebles activos (se resuelve al enviar).
+// SELECCIONADOS: solo los copropietarios de `Comunicado.destinatarioIds`.
+enum ModoDestinatarios {
+  TODOS
+  SELECCIONADOS
+}
+
+model Comunicado {
+  id                 String           @id @default(uuid())
+  titulo             String
+  cuerpo             String
+  canales            CanalComunicado[]
+  estado             EstadoComunicado @default(BORRADOR)
+
+  // Destinatarios elegidos en el borrador (copropietarios). null = todavia no se eligieron.
+  destinatariosModo  ModoDestinatarios?
+  destinatarioIds    String[]         @default([])
+
+  // Resultado del envio. `enviadoEn` se marca al empezar a enviar (reserva el comunicado para que no se
+  // envie dos veces) y se actualiza al terminar. totalDestinatarios = residentes; los otros tres cuentan
+  // filas de `destinatarios` (una por residente y canal).
+  causaFallo         String?
+  totalDestinatarios Int?
+  totalEnviados      Int?
+  totalFallidos      Int?
+  totalOmitidos      Int?
+  enviadoEn          DateTime?        @db.Timestamptz(3)
+
+  destinatarios      ComunicadoDestinatario[]
+
+  creadoPor          Usuario?         @relation(fields: [creadoPorId], references: [id])
+  creadoPorId        String?
+
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+
+  @@map("comunicados")
+  @@index([estado, createdAt])
+}
+
+enum EstadoEnvioDestinatario {
+  ENVIADO
+  FALLIDO // se intento y fallo
+  OMITIDO // no se intento (sin contacto valido, canal no configurado, sin ocupacion vigente)
+}
+
+// Resultado del envio de un comunicado a un residente por un canal. Es el historial: no se edita ni se borra.
+// Guarda el nombre y el contacto tal como eran al enviar (aunque el copropietario cambie despues).
+model ComunicadoDestinatario {
+  id              String                  @id @default(uuid())
+
+  comunicado      Comunicado              @relation(fields: [comunicadoId], references: [id], onDelete: Restrict)
+  comunicadoId    String
+
+  copropietario   Copropietario?          @relation(fields: [copropietarioId], references: [id], onDelete: SetNull)
+  copropietarioId String?
+
+  nombre          String
+  canal           CanalComunicado
+  // Contacto usado: el correo (canal CORREO) o el telefono ya normalizado (canal WHATSAPP). null si no habia.
+  email           String?
+  telefono        String?
+  // Donde se entrego de verdad cuando el envio se redirigio o se permitio por lista de pruebas (fuera de produccion).
+  destinoReal     String?
+
+  estado          EstadoEnvioDestinatario
+  motivo          String?
+
+  createdAt       DateTime                @default(now()) @db.Timestamptz(3)
+
+  @@map("comunicado_destinatarios")
+  @@unique([comunicadoId, copropietarioId, canal], map: "comunicado_dest_unico")
+  @@index([comunicadoId])
+  @@index([estado])
+}
+
+// ---------------------------------------------------------------------------
+// Areas comunes (HU14): el copropietario reserva un area en un horario habilitado.
+// ---------------------------------------------------------------------------
+
+enum EstadoReserva {
+  RESERVADA
+  CANCELADA
+}
+
+model AreaComun {
+  id          String   @id @default(uuid())
+  nombre      String   @unique
+  descripcion String?
+  condiciones String?
+  activa      Boolean  @default(true)
+
+  horarios    HorarioAreaComun[]
+  bloqueos    BloqueoAreaComun[]
+  reservas    ReservaAreaComun[]
+
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("areas_comunes")
+}
+
+// Franja semanal en la que el area se puede reservar. diaSemana: 0 = domingo ... 6 = sabado.
+// horaInicio / horaFin en formato "HH:MM".
+model HorarioAreaComun {
+  id         String    @id @default(uuid())
+
+  area       AreaComun @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  areaId     String
+
+  diaSemana  Int
+  horaInicio String
+  horaFin    String
+  activo     Boolean   @default(true)
+
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@map("horarios_area_comun")
+  @@unique([areaId, diaSemana, horaInicio])
+}
+
+// Cierre del area (mantenimiento, evento, etc.). horaInicio y horaFin null = todo el dia.
+model BloqueoAreaComun {
+  id          String    @id @default(uuid())
+
+  area        AreaComun @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  areaId      String
+
+  fecha       DateTime  @db.Date
+  horaInicio  String?
+  horaFin     String?
+  motivo      String
+
+  creadoPor   Usuario?  @relation(fields: [creadoPorId], references: [id], onDelete: SetNull)
+  creadoPorId String?
+
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@map("bloqueos_area_comun")
+  @@index([areaId, fecha])
+}
+
+// `vigente` es true mientras la reserva esta activa y pasa a null al cancelarla: asi el unico
+// (areaId, fecha, horaInicio, vigente) impide dos reservas vigentes en el mismo turno, pero
+// permite reservar de nuevo un turno cancelado (en PostgreSQL los NULL no chocan entre si).
+model ReservaAreaComun {
+  id                String          @id @default(uuid())
+
+  area              AreaComun       @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  areaId            String
+
+  copropietario     Copropietario   @relation(fields: [copropietarioId], references: [id], onDelete: Restrict)
+  copropietarioId   String
+
+  fecha             DateTime        @db.Date
+  horaInicio        String
+  horaFin           String
+  estado            EstadoReserva   @default(RESERVADA)
+  vigente           Boolean?        @default(true)
+  canceladaEn       DateTime?       @db.Timestamptz(3)
+  motivoCancelacion String?
+
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+
+  @@map("reservas_area_comun")
+  @@unique([areaId, fecha, horaInicio, vigente], map: "reserva_area_unica")
+  @@index([copropietarioId])
+  @@index([areaId, fecha])
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +525,8 @@ enum OrigenMovimientoCaja {
   RECIBO                 // cobro de expensa / pago anticipado / cuota de plan
   MOVIMIENTO_FINANCIERO  // ingreso o egreso extraordinario (incluye comisiones manuales)
   TRASPASO               // deposito de caja al banco (dos patas unidas por traspasoId)
+  PAGO_NOMINA            // egreso por el pago de una nomina de personal (HU8)
+  ANTICIPO_SALARIAL      // egreso por un anticipo salarial a un empleado (HU8)
 }
 
 enum OperacionConciliacion {
@@ -335,12 +552,16 @@ model Expensa {
   periodo          String        // formato "YYYY-MM"
 
   // montoTotal = montoBase (expensa fija del tipo + baulera y parqueo) + montoAgua (agua que el
-  // administrador carga a mano para este departamento). No incluye la mora, que se lleva aparte
-  // en `moras` y se resume en `montoMora`.
+  // administrador carga a mano para este departamento) + montoExtra (cobro opcional y ocasional, con
+  // su concepto). No incluye la mora, que se lleva aparte en `moras` y se resume en `montoMora`.
   montoBase        Decimal       @default(0) @db.Decimal(10, 2)
   montoAgua        Decimal       @default(0) @db.Decimal(10, 2)
   // Cuando se cargo el agua. null = todavia no se carga (distinto de haber cargado 0).
   aguaRegistradaEn DateTime?     @db.Timestamptz(3)
+  // Cobro extra opcional (pintura del edificio, reparaciones...). Nace en 0 y sin concepto; el concepto es
+  // obligatorio mientras el monto sea mayor que cero.
+  montoExtra       Decimal       @default(0) @db.Decimal(10, 2)
+  extraConcepto    String?
   montoTotal       Decimal       @db.Decimal(10, 2)
   montoMora        Decimal       @default(0) @db.Decimal(10, 2) // suma de las lineas de `moras`
 
@@ -659,6 +880,10 @@ model MovimientoCaja {
   movimientoFinanciero   MovimientoFinanciero? @relation(fields: [movimientoFinancieroId], references: [id])
   movimientoFinancieroId String?               @unique
   traspasoId             String?               // une las dos patas de un deposito caja -> banco
+  nomina                 Nomina?               @relation(fields: [nominaId], references: [id])
+  nominaId               String?               @unique
+  anticipoSalarial       AnticipoSalarial?     @relation(fields: [anticipoSalarialId], references: [id])
+  anticipoSalarialId     String?               @unique
 
   // Referencia de la operacion tal como la registramos (la del recibo; null en movimientos que no la tienen).
   referencia String?
@@ -832,6 +1057,156 @@ model PagoPersonal {
   @@map("pagos_personal")
   @@unique([personalId, periodo])
   @@index([personalId])
+}
+
+// ---------------------------------------------------------------------------
+// Nomina y pagos de personal (HU8). Convive con Personal/PagoPersonal, que no se usan ni se modifican.
+// ---------------------------------------------------------------------------
+
+enum EstadoEmpleado {
+  ACTIVO
+  INACTIVO  // conserva su historial de pagos; no entra en nominas nuevas
+}
+
+enum EstadoNomina {
+  PENDIENTE  // generada: admite agregar, cambiar o quitar conceptos
+  PAGADA     // confirmada: no se edita ni se elimina
+}
+
+enum TipoConceptoNomina {
+  BONO
+  HORA_EXTRA
+  DESCUENTO
+}
+
+enum EstadoAnticipo {
+  PENDIENTE   // nada descontado todavia
+  PARCIAL     // descontado en parte; el saldo queda para periodos posteriores
+  DESCONTADO  // descontado por completo
+}
+
+model Empleado {
+  id           String         @id @default(uuid())
+  nombres      String
+  apellidos    String
+  documento    String         @unique
+  cargo        String
+  fechaIngreso DateTime       @db.Date
+  telefono     String
+  sueldoBase   Decimal        @db.Decimal(10, 2)
+  estado       EstadoEmpleado @default(ACTIVO)
+
+  nominas      Nomina[]
+  anticipos    AnticipoSalarial[]
+
+  registradoPor   Usuario? @relation("EmpleadoRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@map("empleados")
+  @@index([estado])
+}
+
+// Una nomina por empleado y periodo. `sueldoBase` es una copia del sueldo del empleado al generarla:
+// un cambio posterior del sueldo solo afecta a las nominas futuras.
+model Nomina {
+  id         String   @id @default(uuid())
+
+  empleado   Empleado @relation(fields: [empleadoId], references: [id])
+  empleadoId String
+  periodo    String   // "YYYY-MM"
+
+  sueldoBase      Decimal @db.Decimal(10, 2)
+  totalBonos      Decimal @default(0) @db.Decimal(10, 2)
+  totalHorasExtra Decimal @default(0) @db.Decimal(10, 2)
+  totalDescuentos Decimal @default(0) @db.Decimal(10, 2)
+  totalAnticipos  Decimal @default(0) @db.Decimal(10, 2)
+  sueldoNeto      Decimal @db.Decimal(10, 2)
+
+  estado      EstadoNomina @default(PENDIENTE)
+  fechaPago   DateTime?    @db.Timestamptz(3)
+  montoPagado Decimal?     @db.Decimal(10, 2)
+  metodoPago  MetodoPago?
+
+  conceptos          ConceptoNomina[]
+  anticiposAplicados AplicacionAnticipo[]
+  asiento            MovimientoCaja?
+
+  registradoPor   Usuario? @relation("NominaRegistradaPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+  pagadoPor       Usuario? @relation("NominaPagadaPor", fields: [pagadoPorId], references: [id])
+  pagadoPorId     String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("nominas")
+  @@unique([empleadoId, periodo])
+  @@index([periodo, estado])
+}
+
+// Bono, hora extra o descuento de una nomina (el periodo es el de la nomina).
+model ConceptoNomina {
+  id          String             @id @default(uuid())
+
+  nomina      Nomina             @relation(fields: [nominaId], references: [id], onDelete: Cascade)
+  nominaId    String
+
+  tipo        TipoConceptoNomina
+  descripcion String
+  horas       Decimal?           @db.Decimal(6, 2) // solo HORA_EXTRA
+  monto       Decimal            @db.Decimal(10, 2)
+
+  createdAt   DateTime           @default(now()) @db.Timestamptz(3)
+
+  @@map("conceptos_nomina")
+  @@index([nominaId])
+}
+
+model AnticipoSalarial {
+  id         String   @id @default(uuid())
+
+  empleado   Empleado @relation(fields: [empleadoId], references: [id])
+  empleadoId String
+
+  monto           Decimal        @db.Decimal(10, 2)
+  montoDescontado Decimal        @default(0) @db.Decimal(10, 2)
+  fecha           DateTime       @db.Date
+  metodoPago      MetodoPago
+  descripcion     String
+  estado          EstadoAnticipo @default(PENDIENTE)
+
+  aplicaciones AplicacionAnticipo[]
+  asiento      MovimientoCaja?
+
+  registradoPor   Usuario? @relation("AnticipoRegistradoPor", fields: [registradoPorId], references: [id])
+  registradoPorId String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("anticipos_salariales")
+  @@index([empleadoId, estado])
+}
+
+// Que parte de que anticipo se descuenta en que nomina.
+model AplicacionAnticipo {
+  id         String           @id @default(uuid())
+
+  anticipo   AnticipoSalarial @relation(fields: [anticipoId], references: [id])
+  anticipoId String
+  nomina     Nomina           @relation(fields: [nominaId], references: [id], onDelete: Cascade)
+  nominaId   String
+
+  monto      Decimal          @db.Decimal(10, 2)
+
+  createdAt  DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@map("aplicaciones_anticipo")
+  @@unique([anticipoId, nominaId])
+  @@index([nominaId])
 }
 
 // ---------------------------------------------------------------------------

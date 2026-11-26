@@ -23,6 +23,7 @@ jobs:
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          set -o pipefail # Si pg_dump falla, no lo oculta gzip
           FECHA=$(date +'%Y-%m-%d_%H%M%S')
           
           # Respaldamos:
@@ -32,7 +33,6 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" \
             --schema=public \
             --schema=auth \
-            --schema=storage \
             --no-owner \
             --clean \
             --if-exists | gzip > "backup_completo_${FECHA}.sql.gz"

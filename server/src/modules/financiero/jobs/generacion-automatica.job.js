@@ -83,7 +83,8 @@ async function ejecutarGeneracionAutomatica(
         usuarioId,
         ip,
         origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO',
-        configuracion: config
+        configuracion: config,
+        hoy: fecha
       })
       generadas += 1
       nuevas.push(expensa)
@@ -141,15 +142,37 @@ async function ejecutarGeneracionAutomatica(
 }
 
 /**
- * Revisa las expensas con deuda y deja la mora al dia: genera una linea por cada mes de
- * atraso que todavia no tenga. El correo se envia unicamente cuando se agrega mora nueva,
- * asi un pago parcial no provoca avisos repetidos.
+ * Descuenta el saldo a favor de las expensas pendientes si ya es el dia de descuento configurado (sin
+ * configuracion, el 9). Un fallo aqui se registra y no frena la mora. Devuelve cuantas expensas se descontaron.
  */
-async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } = {}) {
+async function descontarSaldos(config, { usuarioId, ip, hoy }) {
+  try {
+    const resultado = await expensasService.ejecutarDescuentoSaldos({
+      hoy,
+      config,
+      usuarioId,
+      ip,
+      origen: usuarioId ? 'MANUAL_JOB' : 'AUTOMATICO'
+    })
+    return resultado.saldosAplicados
+  } catch (err) {
+    console.warn(`[cron:saldos] Fallo el descuento de saldo a favor: ${err.message}`)
+    return 0
+  }
+}
+
+/**
+ * Primero descuenta el saldo a favor de las expensas pendientes (desde el dia de descuento configurado), para
+ * que la mora se calcule sobre lo que realmente falta pagar. Despues revisa las expensas con deuda y deja la
+ * mora al dia: genera una linea por cada mes de atraso que todavia no tenga. El correo se envia unicamente
+ * cuando se agrega mora nueva, asi un pago parcial no provoca avisos repetidos.
+ */
+async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null, hoy = new Date() } = {}) {
   const config = await configuracionMoraService.obtenerVigente().catch(() => null)
+  const saldosAplicados = await descontarSaldos(config, { usuarioId, ip, hoy })
   if (!config) {
     console.warn('[cron:mora] No hay configuracion de mora vigente, se omite la aplicacion')
-    return { aplicadas: 0 }
+    return { aplicadas: 0, saldosAplicados }
   }
 
   const expensasConDeuda = await prisma.expensa.findMany({
@@ -175,7 +198,7 @@ async function ejecutarAplicacionMoraAutomatica({ usuarioId = null, ip = null } 
   }
 
   console.log(`[cron:mora] Aplicacion automatica de mora: ${aplicadas} expensas con mora nueva`)
-  return { aplicadas }
+  return { aplicadas, saldosAplicados }
 }
 
 /**

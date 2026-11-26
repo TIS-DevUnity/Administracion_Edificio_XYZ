@@ -1,5 +1,6 @@
 const prisma = require('../../../config/prisma')
 const { fechaEnZona } = require('../expensas/mora.util')
+const { resolverDiaDescuentoSaldo } = require('../expensas/descuento-saldo.util')
 const { registrarAuditoria } = require('../../operativo-seguridad/auditoria/auditoria.service')
 
 const MODOS_MORA = ['UNICA', 'MENSUAL']
@@ -67,6 +68,9 @@ function resolverVigenteDesde(valor) {
  *  - diaGeneracion: dia del mes en que se generan las expensas (1-28).
  *  - diaVencimiento: dia del mes en que vencen (1-28, no antes del dia de generacion). Si no
  *    se envia se conserva el de la configuracion anterior.
+ *  - diaDescuentoSaldo: dia del mes (1-28, entre diaGeneracion y diaVencimiento) en que se descuenta el saldo
+ *    a favor de las expensas pendientes. Si no se envia se conserva el de la configuracion anterior (ajustado
+ *    al rango) o, si no hay, el 9.
  *  - diasGracia: dias extra despues del vencimiento antes de que corra la mora.
  *  - tipoValor / valor: porcentaje (sobre lo que falta pagar) o monto fijo por mes de atraso.
  *  - modoMora: MENSUAL (una mora por cada mes de atraso) o UNICA (solo la primera).
@@ -76,6 +80,7 @@ function resolverVigenteDesde(valor) {
 async function crear({
   diaGeneracion,
   diaVencimiento,
+  diaDescuentoSaldo,
   diasGracia,
   tipoValor,
   valor,
@@ -122,10 +127,30 @@ async function crear({
     throw errorValidacion('diaVencimiento no puede ser anterior al dia de generacion')
   }
 
+  let anteriorDiaDescuento
+  if (diaDescuentoSaldo === undefined || diaDescuentoSaldo === null) {
+    const previa = await prisma.configuracionMora.findFirst({ orderBy: { vigenteDesde: 'desc' } })
+    anteriorDiaDescuento = previa?.diaDescuentoSaldo
+  }
+  const diaDescuento = resolverDiaDescuentoSaldo(diaDescuentoSaldo, {
+    diaGeneracion,
+    diaVencimiento: dia,
+    anterior: anteriorDiaDescuento
+  })
+
   const desde = resolverVigenteDesde(vigenteDesde)
 
   const config = await prisma.configuracionMora.create({
-    data: { diaGeneracion, diaVencimiento: dia, diasGracia, tipoValor, valor, modoMora, vigenteDesde: desde }
+    data: {
+      diaGeneracion,
+      diaVencimiento: dia,
+      diaDescuentoSaldo: diaDescuento,
+      diasGracia,
+      tipoValor,
+      valor,
+      modoMora,
+      vigenteDesde: desde
+    }
   })
 
   await registrarAuditoria({
@@ -136,6 +161,7 @@ async function crear({
     detalle: {
       diaGeneracion,
       diaVencimiento: dia,
+      diaDescuentoSaldo: diaDescuento,
       diasGracia,
       tipoValor,
       valor,

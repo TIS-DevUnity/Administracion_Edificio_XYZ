@@ -24,6 +24,12 @@ export interface Inmueble {
   clase: ClaseInmueble;
   piso: string | null;
   areaM2: string | null;
+  descripcion: string | null;
+  parqueoId: string | null;
+  bauleraId: string | null;
+  parqueo: { id: string; codigo: string; activo: boolean } | null;
+  baulera: { id: string; codigo: string; activo: boolean } | null;
+  departamentoAsociado: { id: string; codigo: string } | null;
   activo: boolean;
   asignado: boolean;
   tipoInmuebleId: string | null;
@@ -39,6 +45,9 @@ export interface DatosInmueble {
   tipoInmuebleId?: string;
   piso?: string;
   areaM2?: number;
+  descripcion?: string | null;
+  parqueoId?: string | null;
+  bauleraId?: string | null;
 }
 
 export interface DatosActualizarInmueble {
@@ -48,6 +57,9 @@ export interface DatosActualizarInmueble {
   piso?: string;
   areaM2?: number;
   activo?: boolean;
+  descripcion?: string | null;
+  parqueoId?: string | null;
+  bauleraId?: string | null;
 }
 
 export interface DatosTipoInmueble {

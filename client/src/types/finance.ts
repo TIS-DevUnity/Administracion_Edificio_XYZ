@@ -48,6 +48,8 @@ export interface ConfiguracionMoraDTO {
   diaGeneracion: number;
   diasGracia: number;
   diaVencimiento: number;
+  /** Día del mes desde el que el saldo a favor se descuenta de las expensas (si falta, rige el 9). */
+  diaDescuentoSaldo?: number;
   modoMora: "UNICA" | "MENSUAL";
   tipoValor: TipoValorMora;
   valor: number;
@@ -113,6 +115,12 @@ export interface ExpensaDTO {
   montoAgua: number | string;
   /** Cuándo se cargó el agua a mano; null = todavía pendiente de cargar. */
   aguaRegistradaEn?: string | null;
+  /** Cobro extra opcional (pintura, reparaciones...): 0 si no tiene. */
+  montoExtra?: number | string;
+  extraConcepto?: string | null;
+  /** "Extra Pintura Edificio", o null si no tiene extra. */
+  extraEtiqueta?: string | null;
+  /** Base + agua + extra, sin mora. */
   montoTotal: number | string;
   montoMora?: number | string;
   configuracionMoraId?: string | null;

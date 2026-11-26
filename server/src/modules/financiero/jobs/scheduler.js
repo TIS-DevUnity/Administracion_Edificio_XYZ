@@ -25,7 +25,8 @@ function iniciarCronsFinancieros() {
     { timezone: TIMEZONE }
   )
 
-  // Todos los dias a las 06:30: aplica mora a las expensas vencidas.
+  // Todos los dias a las 06:30: descuenta el saldo a favor de las expensas pendientes si ya es el dia
+  // configurado (ConfiguracionMora.diaDescuentoSaldo) y despues aplica mora a las expensas vencidas.
   cron.schedule(
     '30 6 * * *',
     () => {

@@ -17,7 +17,9 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *       Cada expensa trae `cargos` (una linea por concepto: departamento, parqueo, baulera),
  *       `saldoFavorInmueble` (saldo a favor vigente del inmueble) y `pagadoConSaldoFavor` (lo
  *       que ya se cubrio de esa expensa con saldo a favor). `aguaRegistradaEn` es la fecha en
- *       que se cargo el agua (null = todavia falta cargarla).
+ *       que se cargo el agua (null = todavia falta cargarla). `montoExtra` y `extraConcepto` son el
+ *       cobro extra opcional (0 y null si no tiene); `extraEtiqueta` es el encabezado listo para la
+ *       columna ("Extra Pintura Edificio") o null. `montoTotal = montoBase + montoAgua + montoExtra`.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -54,7 +56,9 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *       Quien tiene mas de un departamento paga baulera y parqueo una sola vez, en el primero
  *       por codigo. El agua (`montoAgua`) nace en 0 y el administrador la carga despues en
  *       `PATCH /api/financiero/expensas/{id}/agua`; baulera y parqueo no llevan agua. Si no se
- *       envia `fechaVencimiento` se usa el dia de vencimiento de la configuracion de mora.
+ *       envia `fechaVencimiento` se usa el dia de vencimiento de la configuracion de mora. El saldo a
+ *       favor del inmueble no se usa al generar si hoy es anterior al dia de descuento del saldo
+ *       (`diaDescuentoSaldo`, por defecto el 9): lo descuenta el proceso diario desde ese dia.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     requestBody:
@@ -69,7 +73,7 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *               periodo: { type: string, example: "2026-09" }
  *               fechaVencimiento: { type: string, example: "2026-09-10", description: "Opcional: por defecto el dia de vencimiento configurado dentro del periodo" }
  *     responses:
- *       201: { description: "Expensa generada (incluye saldoFavorAplicado, montoBase, cargos, montoAgua, tipoNombre y moras)" }
+ *       201: { description: "Expensa generada (incluye saldoFavorAplicado, montoBase, cargos, montoAgua, montoExtra en 0, tipoNombre y moras)" }
  *       400: { description: Datos invalidos }
  *       404: { description: Inmueble no encontrado }
  *       409: { description: "Inmueble inactivo, no es departamento, sin nadie asignado, o expensa duplicada" }
@@ -151,6 +155,10 @@ router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
  * /api/financiero/expensas/{id}/aplicar-saldo:
  *   post:
  *     summary: Cubre lo pendiente de una expensa con el saldo a favor del inmueble
+ *     description: |
+ *       El saldo a favor se descuenta solo, a partir del dia de descuento configurado de cada mes
+ *       (`diaDescuentoSaldo` de la configuracion de mora, por defecto el 9); este endpoint permite hacerlo a
+ *       mano. No cubre una expensa cuyo agua todavia no se cargo (409 AGUA_SIN_CARGAR).
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -161,7 +169,7 @@ router.post('/:id/pagos', autenticar, GESTION, controller.registrarPago)
  *     responses:
  *       200: { description: Saldo aplicado, devuelve la expensa y saldoFavorAplicado }
  *       404: { description: Expensa no encontrada }
- *       409: { description: "La expensa ya esta pagada, el inmueble no tiene saldo a favor, no es la deuda mas antigua o el saldo no completa un mes atrasado" }
+ *       409: { description: "La expensa ya esta pagada, el inmueble no tiene saldo a favor, no es la deuda mas antigua, el saldo no completa un mes atrasado o falta cargar el agua (codigo AGUA_SIN_CARGAR)" }
  */
 router.post('/:id/aplicar-saldo', autenticar, GESTION, controller.aplicarSaldoFavor)
 
@@ -172,10 +180,13 @@ router.post('/:id/aplicar-saldo', autenticar, GESTION, controller.aplicarSaldoFa
  *     summary: Carga (o corrige) el agua de una expensa ya generada (solo ADMINISTRADOR)
  *     description: |
  *       El administrador pone a mano el importe de agua de cada departamento; no hay factura
- *       del edificio ni reparto. `montoTotal = montoBase + montoAgua` y el estado se recalcula con
+ *       del edificio ni reparto. `montoTotal = montoBase + montoAgua + montoExtra` (conserva el extra
+ *       que la expensa ya tenga) y el estado se recalcula con
  *       lo ya pagado. Se puede corregir mientras la expensa no tenga mora generada y el nuevo total
  *       no quede por debajo de lo ya pagado. Si el agua sube y el inmueble tiene saldo a favor,
- *       este cubre el aumento (`saldoFavorAplicado`). Cada cambio queda en la auditoria.
+ *       este cubre el aumento (`saldoFavorAplicado`), pero solo desde el dia de descuento del saldo
+ *       (`diaDescuentoSaldo`, por defecto el 9): antes de ese dia no se usa y lo descuenta el proceso
+ *       diario. Cada cambio queda en la auditoria.
  *     tags: [Financiero]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -200,6 +211,50 @@ router.post('/:id/aplicar-saldo', autenticar, GESTION, controller.aplicarSaldoFa
  *       409: { description: "La expensa ya tiene mora, el nuevo total queda por debajo de lo pagado o el monto es el mismo (codigo EXPENSA_CON_MORA, AGUA_MENOR_A_LO_PAGADO o SIN_CAMBIO)" }
  */
 router.patch('/:id/agua', autenticar, GESTION, controller.cargarAgua)
+
+/**
+ * @openapi
+ * /api/financiero/expensas/{id}/extra:
+ *   patch:
+ *     summary: Carga, corrige o quita el cobro extra opcional de una expensa (solo ADMINISTRADOR)
+ *     description: |
+ *       Ademas del agua, el administrador puede cobrar un extra ocasional por expensa (pintura del edificio,
+ *       reparaciones) con un concepto de texto. Nace en 0. `montoTotal = montoBase + montoAgua + montoExtra` y
+ *       el estado se recalcula con lo ya pagado. `montoExtra` va de 0 en adelante con maximo 2 decimales; con un
+ *       monto mayor que cero el `concepto` es obligatorio (maximo 100 caracteres, texto limpio); con 0 se quita
+ *       el extra y se limpia el concepto. Mismas reglas que el agua: solo mientras la expensa no tenga mora
+ *       generada ni este en un plan de pagos, y el nuevo total no puede quedar por debajo de lo ya pagado.
+ *       Pedir el mismo monto y concepto es un 409 SIN_CAMBIO. Si el extra sube y el inmueble tiene saldo a
+ *       favor, este cubre el aumento (`saldoFavorAplicado`), pero solo desde el dia de descuento del saldo
+ *       (`diaDescuentoSaldo`, por defecto el 9) y si esta es su deuda mas antigua. Cada cambio queda en la
+ *       auditoria con el motivo EXTRA (antes y despues). La respuesta es la expensa completa con `montoExtra`,
+ *       `extraConcepto` y `extraEtiqueta` (por ejemplo "Extra Pintura Edificio").
+ *     tags: [Financiero]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [montoExtra]
+ *             properties:
+ *               montoExtra: { type: number, example: 250, description: "0 o mayor, maximo 2 decimales. 0 quita el extra." }
+ *               concepto: { type: string, example: Pintura Edificio, description: "Obligatorio si montoExtra es mayor que cero; maximo 100 caracteres" }
+ *     responses:
+ *       200: { description: "Expensa actualizada (montoExtra, extraConcepto, extraEtiqueta, montoTotal, estado) y saldoFavorAplicado" }
+ *       400: { description: "montoExtra invalido o ausente, o concepto faltante o demasiado largo (CONCEPTO_REQUERIDO)" }
+ *       401: { description: No autenticado }
+ *       403: { description: Solo Administrador }
+ *       404: { description: Expensa no encontrada }
+ *       409: { description: "La expensa ya tiene mora, esta en un plan de pagos, el nuevo total queda por debajo de lo pagado o no hay cambio (codigo EXPENSA_CON_MORA, EXPENSA_EN_PLAN, EXTRA_MENOR_A_LO_PAGADO o SIN_CAMBIO)" }
+ */
+router.patch('/:id/extra', autenticar, GESTION, controller.cargarExtra)
 
 /**
  * @openapi

@@ -35,6 +35,7 @@ import {
   formatearBs,
   formatearFecha,
   listarOcupantes,
+  listarInmuebles,
   listarTiposInmueble,
   motivoExpensa,
   obtenerInmueble,
@@ -84,6 +85,9 @@ export default function FichaInmueblePage() {
   const [bolGuardandoBaja, setBolGuardandoBaja] = useState(false);
 
   const [tiposInmueble, setTiposInmueble] = useState<TipoInmueble[]>([]);
+  const [accesorios, setAccesorios] = useState<Inmueble[]>([]);
+  const [strParqueoEdicion, setStrParqueoEdicion] = useState("");
+  const [strBauleraEdicion, setStrBauleraEdicion] = useState("");
   // El endpoint de ocupantes no trae teléfono ni correo: se cruzan con la lista de copropietarios.
   const [contactos, setContactos] = useState<Map<string, Copropietario>>(new Map());
   const [bolDialogoEditar, setBolDialogoEditar] = useState(false);
@@ -106,15 +110,17 @@ export default function FichaInmueblePage() {
     try {
       setBolLoading(true);
       setStrErrorCarga("");
-      const [objInmueble, arrHistorial, arrTipos, arrCopropietarios] = await Promise.all([
+      const [objInmueble, arrHistorial, arrTipos, arrCopropietarios, arrInmuebles] = await Promise.all([
         obtenerInmueble(strId),
         listarOcupantes(strId),
         listarTiposInmueble(),
         listarCopropietarios(),
+        listarInmuebles(),
       ]);
       setInmueble(objInmueble);
       setHistorial(arrHistorial);
       setTiposInmueble(arrTipos);
+      setAccesorios(arrInmuebles);
       setContactos(new Map(arrCopropietarios.map((copropietario) => [copropietario.id, copropietario])));
     } catch (error: unknown) {
       console.error("Error al cargar el inmueble:", error);
@@ -154,6 +160,8 @@ export default function FichaInmueblePage() {
     if (!inmueble) return;
     setStrClaseEdicion(inmueble.clase);
     setStrTipoEdicion(inmueble.tipoInmuebleId ?? "");
+    setStrParqueoEdicion(inmueble.parqueoId ?? "");
+    setStrBauleraEdicion(inmueble.bauleraId ?? "");
     setStrErrorEdicion("");
     setBolDialogoEditar(true);
   }
@@ -172,6 +180,7 @@ export default function FichaInmueblePage() {
     const strCodigo = String(objFormulario.get("codigoEdicion") ?? "").trim();
     const strPiso = String(objFormulario.get("pisoEdicion") ?? "").trim();
     const strAreaM2 = String(objFormulario.get("areaEdicion") ?? "").trim();
+    const strDescripcion = String(objFormulario.get("descripcionEdicion") ?? "").trim();
     const bolDepto = strClaseEdicion === "DEPARTAMENTO";
 
     if (!strCodigo || !strPiso) {
@@ -193,6 +202,9 @@ export default function FichaInmueblePage() {
         tipoInmuebleId: bolDepto ? strTipoEdicion : undefined,
         piso: strPiso || undefined,
         areaM2: strAreaM2 ? Number(strAreaM2) : undefined,
+        descripcion: bolDepto ? strDescripcion || null : null,
+        parqueoId: bolDepto ? strParqueoEdicion || null : null,
+        bauleraId: bolDepto ? strBauleraEdicion || null : null,
       });
       setBolDialogoEditar(false);
       setStrExito("Cambios guardados.");
@@ -354,12 +366,33 @@ export default function FichaInmueblePage() {
               <dd className="mt-1 text-[14px] text-foreground">{inmueble.areaM2 || "—"}</dd>
             </div>
             <div>
-              <dt className={CLASE_DT}>Ocupación</dt>
+              <dt className={CLASE_DT}>{esDepartamento(inmueble) ? "Ocupación" : "Asignación"}</dt>
               <dd className="mt-1 text-[14px] text-foreground">
-                {inmueble.asignado ? "Con propietario/inquilino" : "Sin asignar"}
+                {esDepartamento(inmueble)
+                  ? inmueble.asignado ? "Con propietario/inquilino" : "Sin asignar"
+                  : inmueble.departamentoAsociado ? `Departamento ${inmueble.departamentoAsociado.codigo}` : "Disponible"}
               </dd>
             </div>
           </dl>
+
+          {esDepartamento(inmueble) ? (
+            <div className="mt-4 grid gap-3 rounded-lg border border-border bg-muted/20 p-3 text-[13px] sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <span className={CLASE_DT}>Descripción</span>
+                <p className="mt-1 whitespace-pre-wrap text-foreground">{inmueble.descripcion || "Sin descripción"}</p>
+              </div>
+              <div><span className={CLASE_DT}>Parqueo asociado</span>
+                <p className="mt-1 text-foreground">{inmueble.parqueo ? <Link href={`/admin/inmuebles/${inmueble.parqueo.id}`} className="text-primary hover:underline">{inmueble.parqueo.codigo}</Link> : "Sin parqueo"}</p>
+              </div>
+              <div><span className={CLASE_DT}>Baulera asociada</span>
+                <p className="mt-1 text-foreground">{inmueble.baulera ? <Link href={`/admin/inmuebles/${inmueble.baulera.id}`} className="text-primary hover:underline">{inmueble.baulera.codigo}</Link> : "Sin baulera"}</p>
+              </div>
+            </div>
+          ) : inmueble.departamentoAsociado ? (
+            <p className="mt-4 text-[13px] text-muted-foreground">
+              Asociado a <Link href={`/admin/inmuebles/${inmueble.departamentoAsociado.id}`} className="text-primary hover:underline">{inmueble.departamentoAsociado.codigo}</Link>.
+            </p>
+          ) : null}
 
           {(() => {
             const { paga, motivo } = motivoExpensa(inmueble);
@@ -442,7 +475,7 @@ export default function FichaInmueblePage() {
             <h2 className="font-subtitle text-[14px] font-semibold leading-[1.3] tracking-[-0.005em] text-foreground">
               Personas asociadas ({ocupantesVigentes.length})
             </h2>
-            {bolPuedeDarBaja && inmueble.activo && (
+            {bolPuedeDarBaja && inmueble.activo && esDepartamento(inmueble) && (
               <Link
                 href={`/admin/residentes?inmuebleId=${inmueble.id}`}
                 className="font-caption whitespace-nowrap text-[12px] font-medium text-primary hover:text-primary/80"
@@ -669,6 +702,36 @@ export default function FichaInmueblePage() {
                   />
                 </div>
               </div>
+
+              {strClaseEdicion === "DEPARTAMENTO" && (
+                <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="descripcionEdicion" className="text-[12px] font-medium text-foreground">Descripción del departamento</label>
+                    <textarea id="descripcionEdicion" name="descripcionEdicion" rows={2} maxLength={1000}
+                      defaultValue={inmueble.descripcion ?? ""} className={CLASE_CAMPO + " h-auto min-h-20 py-2"}
+                      placeholder="Ej. Dos dormitorios, cocina y balcón" />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="parqueoEdicion" className="text-[12px] font-medium text-foreground">Parqueo asignado</label>
+                      <select id="parqueoEdicion" required className={CLASE_CAMPO} value={strParqueoEdicion} onChange={(e) => setStrParqueoEdicion(e.target.value)}>
+                        <option value="" disabled>Selecciona parqueo</option>
+                        {accesorios.filter((item) => item.clase === "PARQUEO" && item.activo && (!item.departamentoAsociado || item.departamentoAsociado.id === inmueble.id))
+                          .map((item) => <option key={item.id} value={item.id}>{item.codigo}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="bauleraEdicion" className="text-[12px] font-medium text-foreground">Baulera asignada</label>
+                      <select id="bauleraEdicion" required className={CLASE_CAMPO} value={strBauleraEdicion} onChange={(e) => setStrBauleraEdicion(e.target.value)}>
+                        <option value="" disabled>Selecciona baulera</option>
+                        {accesorios.filter((item) => item.clase === "BAULERA" && item.activo && (!item.departamentoAsociado || item.departamentoAsociado.id === inmueble.id))
+                          .map((item) => <option key={item.id} value={item.id}>{item.codigo}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Cada departamento debe tener un parqueo y una baulera exclusivos. No generan cargos adicionales. El propietario se vincula únicamente al departamento.</p>
+                </div>
+              )}
 
               {strClaseEdicion !== "DEPARTAMENTO" && (
                 <p className="font-caption text-[11px] leading-[1.3] tracking-[0.01em] text-muted-foreground">

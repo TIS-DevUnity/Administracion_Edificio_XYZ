@@ -36,6 +36,7 @@ const CONSULTA = autorizar('ADMINISTRADOR', 'DIRECTORIO', 'CONSULTA')
  *             properties:
  *               diaGeneracion: { type: integer, example: 1, description: "Dia del mes (1-28) en que se generan las expensas" }
  *               diaVencimiento: { type: integer, example: 10, description: "Dia del mes (1-28) en que vence la expensa; no puede ser anterior al dia de generacion. Si se omite se conserva el de la configuracion anterior." }
+ *               diaDescuentoSaldo: { type: integer, example: 9, description: "Dia del mes (1-28) en que se descuenta el saldo a favor de las expensas pendientes; entre el dia de generacion y el de vencimiento. Antes de ese dia, generar la expensa y cargar el agua no usan el saldo (el administrador alcanza a cargar el agua). Si se omite se conserva el de la configuracion anterior o, si no hay, el 9." }
  *               diasGracia: { type: integer, example: 0, description: "Dias extra despues del vencimiento antes de que corra la mora" }
  *               tipoValor: { type: string, enum: [PORCENTAJE, MONTO_FIJO], example: PORCENTAJE }
  *               valor: { type: number, example: 10, description: "No puede ser negativo; si el tipo es PORCENTAJE, maximo 100" }

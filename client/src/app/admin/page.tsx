@@ -5,10 +5,14 @@ import Link from "next/link";
 import {
   ArrowRight,
   Building2,
+  CalendarCheck,
   CalendarRange,
   ClipboardList,
   FileText,
+  HandCoins,
+  ReceiptText,
   ShieldAlert,
+  Trees,
   UserCog,
   Users,
   Wallet,
@@ -16,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { useSesionActual } from "@/lib/session";
-import { normalizarRol, puedeAcceder } from "@/lib/permissions";
+import { normalizarRol, puedeAcceder, seccionVisibleEnMenu, type SeccionId } from "@/lib/permissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -182,6 +186,18 @@ export default function AdminPanelPage() {
   const bolVerDocumentos = puedeAcceder(rol, "documentos");
   const bolVerUsuarios = puedeAcceder(rol, "usuarios");
   const bolVerAuditoria = puedeAcceder(rol, "auditoria");
+  // GET /copropietarios (lista general) es solo para ADMINISTRADOR y DIRECTORIO: a CONSULTA le
+  // responde 403 (permisos.js → copropietarios.listar) y eso tiraba todo el panel (BUG-01).
+  const bolListarCopropietarios = rol !== "CONSULTA";
+  // Portal del copropietario (HU14): mismas secciones que muestra el menú (seccionVisibleEnMenu).
+  const bolVerInmuebles = seccionVisibleEnMenu(rol, "inmuebles");
+  const bolVerMorosidad = seccionVisibleEnMenu(rol, "morosidad");
+  const bolPortal = seccionVisibleEnMenu(rol, "areasComunes");
+  const SECCION_DE_ACCESO: Record<string, SeccionId> = { "/admin/roles": "roles", "/admin/pagos": "pagos", "/admin/mantenimiento": "mantenimiento" };
+  const accesosVisibles = ACCESOS_RAPIDOS.filter((acceso) => {
+    const seccion = SECCION_DE_ACCESO[acceso.href];
+    return seccion ? seccionVisibleEnMenu(rol, seccion) : true;
+  });
 
   const [resumen, setResumen] = useState<ResumenDatos | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -195,7 +211,7 @@ export default function AdminPanelPage() {
       try {
         const [inmuebles, copropietarios, expensas, documentos, usuariosResp, auditoriaResp] = await Promise.all([
           listarInmuebles(),
-          listarCopropietarios(),
+          bolListarCopropietarios ? listarCopropietarios() : Promise.resolve<Copropietario[]>([]),
           financeService.getExpensas(),
           bolVerDocumentos ? listarDocumentos() : Promise.resolve<Documento[]>([]),
           bolVerUsuarios
@@ -265,12 +281,14 @@ export default function AdminPanelPage() {
         <>
           {/* KPIs */}
           <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <TarjetaKpi
-              titulo="Inmuebles activos"
-              valor={`${resumen.inmueblesActivos} / ${resumen.inmueblesTotal}`}
-              detalle="Unidades activas sobre el total registrado"
-              icono={Building2}
-            />
+            {bolVerInmuebles && (
+              <TarjetaKpi
+                titulo="Inmuebles activos"
+                valor={`${resumen.inmueblesActivos} / ${resumen.inmueblesTotal}`}
+                detalle="Unidades activas sobre el total registrado"
+                icono={Building2}
+              />
+            )}
             <TarjetaKpi
               titulo="Deuda pendiente"
               valor={formatCurrency(resumen.deudaPendiente)}
@@ -285,12 +303,14 @@ export default function AdminPanelPage() {
               icono={ShieldAlert}
               claseValor={resumen.expensasVencidasTotal > 0 ? "text-destructive" : "text-success"}
             />
-            <TarjetaKpi
-              titulo="Copropietarios registrados"
-              valor={String(resumen.copropietariosTotal)}
-              detalle="Propietarios e inquilinos en el sistema"
-              icono={Users}
-            />
+            {bolListarCopropietarios && (
+              <TarjetaKpi
+                titulo="Copropietarios registrados"
+                valor={String(resumen.copropietariosTotal)}
+                detalle="Propietarios e inquilinos en el sistema"
+                icono={Users}
+              />
+            )}
           </div>
 
           {/* Previsualización de secciones */}
@@ -299,6 +319,25 @@ export default function AdminPanelPage() {
           </div>
 
           <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {/* Portal del copropietario (HU14): accesos a sus trámites en lugar de las secciones de administración. */}
+            {bolPortal && (
+              <>
+                <TarjetaSeccion titulo="Mi deuda" resumen={`Pendiente: ${formatCurrency(resumen.deudaPendiente)}`} href="/admin/mi-deuda" icono={ReceiptText}>
+                  <p className="text-[12px] text-muted-foreground">Lo que debes por cada departamento y tu estado de cuenta.</p>
+                </TarjetaSeccion>
+                <TarjetaSeccion titulo="Mis pagos" resumen="Informar pagos e historial" href="/admin/mis-pagos" icono={HandCoins}>
+                  <p className="text-[12px] text-muted-foreground">Informa una transferencia o depósito y descarga tus recibos.</p>
+                </TarjetaSeccion>
+                <TarjetaSeccion titulo="Áreas comunes" resumen="Churrasquera, salón y otros espacios" href="/admin/areas-comunes" icono={Trees}>
+                  <p className="text-[12px] text-muted-foreground">Consulta la disponibilidad y reserva un horario.</p>
+                </TarjetaSeccion>
+                <TarjetaSeccion titulo="Mis reservas" resumen="Tus reservas de áreas comunes" href="/admin/areas-comunes/mis-reservas" icono={CalendarCheck}>
+                  <p className="text-[12px] text-muted-foreground">Revisa el estado de tus reservas o cancélalas.</p>
+                </TarjetaSeccion>
+              </>
+            )}
+
+            {bolVerInmuebles && (
             <TarjetaSeccion
               titulo="Inmuebles"
               resumen={`${resumen.inmueblesActivos} activos de ${resumen.inmueblesTotal} registrados`}
@@ -326,22 +365,26 @@ export default function AdminPanelPage() {
                 ))
               )}
             </TarjetaSeccion>
+            )}
 
-            <TarjetaSeccion
-              titulo="Copropietarios"
-              resumen={`${resumen.copropietariosTotal} registrados en el sistema`}
-              href="/admin/copropietarios"
-              icono={Users}
-            >
-              {resumen.copropietarios.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">No hay copropietarios registrados.</p>
-              ) : (
-                resumen.copropietarios.map((cop) => (
-                  <FilaPrevia key={cop.id} titulo={`${cop.nombre} ${cop.apellido}`} subtitulo={`CI ${cop.ci}`} />
-                ))
-              )}
-            </TarjetaSeccion>
+            {bolListarCopropietarios && (
+              <TarjetaSeccion
+                titulo="Copropietarios"
+                resumen={`${resumen.copropietariosTotal} registrados en el sistema`}
+                href="/admin/copropietarios"
+                icono={Users}
+              >
+                {resumen.copropietarios.length === 0 ? (
+                  <p className="text-[12px] text-muted-foreground">No hay copropietarios registrados.</p>
+                ) : (
+                  resumen.copropietarios.map((cop) => (
+                    <FilaPrevia key={cop.id} titulo={`${cop.nombre} ${cop.apellido}`} subtitulo={`CI ${cop.ci}`} />
+                  ))
+                )}
+              </TarjetaSeccion>
+            )}
 
+            {bolVerMorosidad && (
             <TarjetaSeccion
               titulo="Morosidad y Expensas"
               resumen={`Deuda pendiente: ${formatCurrency(resumen.deudaPendiente)}`}
@@ -365,6 +408,7 @@ export default function AdminPanelPage() {
                 ))
               )}
             </TarjetaSeccion>
+            )}
 
             {bolVerDocumentos && (
               <TarjetaSeccion
@@ -444,7 +488,9 @@ export default function AdminPanelPage() {
             )}
           </div>
 
-          {/* Accesos rápidos a secciones sin estadísticas todavía */}
+          {/* Accesos rápidos a secciones sin estadísticas todavía (mismas reglas que el menú lateral) */}
+          {accesosVisibles.length > 0 && (
+          <>
           <div className="mb-3 flex items-center justify-between">
             <h2 className={CLASE_TITULO_CARD}>Accesos rápidos</h2>
             <Badge variant="outline" className="font-caption border-dashed text-[10px] text-muted-foreground">
@@ -453,12 +499,7 @@ export default function AdminPanelPage() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {ACCESOS_RAPIDOS.filter((acceso) => {
-              if (acceso.href === "/admin/roles") return puedeAcceder(rol, "roles");
-              if (acceso.href === "/admin/pagos") return puedeAcceder(rol, "pagos");
-              if (acceso.href === "/admin/mantenimiento") return puedeAcceder(rol, "mantenimiento");
-              return true;
-            }).map((acceso) => (
+            {accesosVisibles.map((acceso) => (
               <Link
                 key={acceso.href}
                 href={acceso.href}
@@ -472,6 +513,8 @@ export default function AdminPanelPage() {
               </Link>
             ))}
           </div>
+          </>
+          )}
         </>
       )}
     </div>

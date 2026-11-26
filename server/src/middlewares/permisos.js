@@ -41,6 +41,20 @@ const PERMISOS = {
     gestionar: [ADMINISTRADOR, DIRECTORIO],
     eliminar: [ADMINISTRADOR],
   },
+  // Comunicados (HU10): solo el ADMINISTRADOR redacta, edita y borra. El historial lo consultan
+  // ADMINISTRADOR y DIRECTORIO (CONSULTA no ve comunicados); los borradores los filtra el servicio
+  // (solo el ADMINISTRADOR los ve).
+  comunicados: {
+    ver: [ADMINISTRADOR, DIRECTORIO],
+    gestionar: [ADMINISTRADOR],
+  },
+  // Areas comunes (HU14): todos las ven, el copropietario (CONSULTA) reserva y el ADMINISTRADOR
+  // administra areas, horarios y bloqueos.
+  areasComunes: {
+    ver: TODOS,
+    reservar: [CONSULTA],
+    gestionar: [ADMINISTRADOR],
+  },
   // El frontend muestra la pantalla de auditoria solo a DIRECTORIO, pero la ficha de documentos
   // consulta `GET /api/auditoria?entidad=Documento` tambien para ADMINISTRADOR, asi que el
   // backend mantiene a los dos. Restringirlo a DIRECTORIO es cambiar esta linea (y ese boton).

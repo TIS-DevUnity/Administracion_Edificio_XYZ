@@ -4,7 +4,7 @@
  *
  *   saldo = ingresos - gastos
  *   ingresos = pagos de expensas + ingresos extraordinarios
- *   gastos   = gastos extraordinarios
+ *   gastos   = gastos extraordinarios + gastos de personal
  *
  * - "Pagos de expensas" es el dinero que realmente entro: la suma de los recibos, en la fecha del
  *   pago. Un pago cubierto con saldo a favor no suma (esa plata ya se conto cuando el residente la
@@ -13,11 +13,22 @@
  *   pueda editar o desfasar. Al registrar o corregir un pago o un movimiento, el saldo cambia solo.
  * - Lo que los residentes deben (`deudaPendienteDeCobro`) y el saldo a favor que tienen adelantado
  *   se informan aparte: no son parte del saldo.
- * - Los sueldos de personal todavia no se descuentan: ese modulo no tiene API.
+ * - Gastos de personal (HU8): las nominas PAGADA suman su monto pagado en la fecha de pago, y los anticipos
+ *   salariales suman su monto en su fecha (cuando salen, no cuando se descuentan). No hay doble conteo: la
+ *   nomina paga el sueldo neto, ya sin los anticipos descontados. Siempre se cuentan, con o sin el interruptor
+ *   de asientos de caja: este saldo no lee el libro de caja (movimientos_caja), asi que tampoco cuenta dos
+ *   veces los asientos que esos pagos generan. Una nomina pagada con monto 0 no suma ni aparece en el historial.
  */
 const prisma = require('../../../config/prisma')
 const { Decimal, errorHttp, pendientesDe, formatearFolio } = require('../expensas/saldo.util')
 const { fechaEnZona } = require('../expensas/mora.util')
+const {
+  calcularGastosPersonal,
+  gastosPersonalParaCliente,
+  totalGastos: sumarGastos,
+  movimientoDeNomina,
+  movimientoDeAnticipo
+} = require('./gastos-personal.util')
 
 const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/
 const POR_PAGINA_DEFECTO = 50
@@ -71,10 +82,21 @@ const conRango = (campo, rango) => (Object.keys(rango).length ? { [campo]: rango
 
 /** Ingresos por pagos de expensas y extraordinarios, y gastos, dentro de un rango (o de todo). */
 async function totales(filtros) {
-  const [recibos, extraordinarios] = await Promise.all([
+  const [recibos, extraordinarios, nominasPagadas, anticipos] = await Promise.all([
     prisma.recibo.aggregate({ where: conRango('fechaPago', filtros.recibos), _sum: { montoTotal: true }, _count: { _all: true } }),
     prisma.movimientoFinanciero.groupBy({
       by: ['tipo'],
+      where: conRango('fecha', filtros.movimientos),
+      _sum: { monto: true },
+      _count: { _all: true }
+    }),
+    // Gastos de personal: la nomina se ubica por su fecha de pago (instante) y el anticipo por su dia.
+    prisma.nomina.aggregate({
+      where: { estado: 'PAGADA', montoPagado: { gt: 0 }, ...conRango('fechaPago', filtros.recibos) },
+      _sum: { montoPagado: true },
+      _count: { _all: true }
+    }),
+    prisma.anticipoSalarial.aggregate({
       where: conRango('fecha', filtros.movimientos),
       _sum: { monto: true },
       _count: { _all: true }
@@ -84,12 +106,17 @@ async function totales(filtros) {
   const pagosDeExpensas = new Decimal(recibos._sum.montoTotal ?? 0)
   const ingresosExtraordinarios = new Decimal(extra('INGRESO')?._sum.monto ?? 0)
   const gastosExtraordinarios = new Decimal(extra('EGRESO')?._sum.monto ?? 0)
+  const gastosPersonal = calcularGastosPersonal({
+    nominas: { monto: nominasPagadas._sum.montoPagado, cantidad: nominasPagadas._count._all },
+    anticipos: { monto: anticipos._sum.monto, cantidad: anticipos._count._all }
+  })
   return {
     pagosDeExpensas,
     ingresosExtraordinarios,
     gastosExtraordinarios,
     totalIngresos: pagosDeExpensas.plus(ingresosExtraordinarios),
-    totalGastos: gastosExtraordinarios,
+    gastosPersonal,
+    totalGastos: sumarGastos(gastosExtraordinarios, gastosPersonal),
     cantidadPagos: recibos._count._all,
     cantidadIngresosExtraordinarios: extra('INGRESO')?._count._all ?? 0,
     cantidadGastos: extra('EGRESO')?._count._all ?? 0
@@ -191,8 +218,23 @@ async function obtener({ desde, hasta, tipo, pagina, porPagina } = {}) {
     ...(tipoFiltro === 'GASTO' ? { tipo: 'EGRESO' } : {})
   }
   const incluirPagos = tipoFiltro !== 'GASTO' // los pagos de expensas siempre son ingresos
+  const incluirPersonal = tipoFiltro !== 'INGRESO' // los gastos de personal siempre son gastos
+  const whereNominas = { estado: 'PAGADA', montoPagado: { gt: 0 }, ...conRango('fechaPago', filtrosPeriodo.recibos) }
+  const whereAnticipos = conRango('fecha', filtrosPeriodo.movimientos)
 
-  const [delPeriodo, acumulado, recibos, extraordinarios, cantidadRecibos, cantidadExtraordinarios, pendiente] = await Promise.all([
+  const [
+    delPeriodo,
+    acumulado,
+    recibos,
+    extraordinarios,
+    cantidadRecibos,
+    cantidadExtraordinarios,
+    pendiente,
+    nominas,
+    anticiposRegistrados,
+    cantidadNominas,
+    cantidadAnticipos
+  ] = await Promise.all([
     totales(filtrosPeriodo),
     inicio ? totales(filtrosAcumulado) : null,
     // Del historial solo se leen los (pagina * tamanio) mas recientes de cada fuente; se mezclan despues.
@@ -216,15 +258,38 @@ async function obtener({ desde, hasta, tipo, pagina, porPagina } = {}) {
     }),
     incluirPagos ? prisma.recibo.count({ where: whereRecibos }) : 0,
     prisma.movimientoFinanciero.count({ where: whereMovimientos }),
-    informativo()
+    informativo(),
+    incluirPersonal
+      ? prisma.nomina.findMany({
+          where: whereNominas,
+          include: { empleado: { select: { nombres: true, apellidos: true } } },
+          orderBy: [{ fechaPago: 'desc' }, { id: 'asc' }],
+          take: descartar + tamanio
+        })
+      : [],
+    incluirPersonal
+      ? prisma.anticipoSalarial.findMany({
+          where: whereAnticipos,
+          include: { empleado: { select: { nombres: true, apellidos: true } } },
+          orderBy: [{ fecha: 'desc' }, { createdAt: 'desc' }],
+          take: descartar + tamanio
+        })
+      : [],
+    incluirPersonal ? prisma.nomina.count({ where: whereNominas }) : 0,
+    incluirPersonal ? prisma.anticipoSalarial.count({ where: whereAnticipos }) : 0
   ])
 
   const base = acumulado ?? delPeriodo
-  const historial = [...recibos.map(movimientoDePago), ...extraordinarios.map(movimientoExtraordinario)]
+  const historial = [
+    ...recibos.map(movimientoDePago),
+    ...extraordinarios.map(movimientoExtraordinario),
+    ...nominas.map(movimientoDeNomina),
+    ...anticiposRegistrados.map(movimientoDeAnticipo)
+  ]
     .sort(masReciente)
     .slice(descartar, descartar + tamanio)
     .map(({ _marca, ...movimiento }) => movimiento)
-  const total = cantidadRecibos + cantidadExtraordinarios
+  const total = cantidadRecibos + cantidadExtraordinarios + cantidadNominas + cantidadAnticipos
 
   return {
     rango: { desde: inicio, hasta: fin },
@@ -241,8 +306,11 @@ async function obtener({ desde, hasta, tipo, pagina, porPagina } = {}) {
     },
     gastos: {
       extraordinarios: dinero(delPeriodo.gastosExtraordinarios),
-      cantidad: delPeriodo.cantidadGastos
+      cantidad: delPeriodo.cantidadGastos,
+      personal: dinero(delPeriodo.gastosPersonal.total)
     },
+    // Aditivo (HU8): nominas pagadas + anticipos salariales. Ya estan incluidos en totalGastos.
+    gastosPersonal: gastosPersonalParaCliente(delPeriodo.gastosPersonal),
     // Informativo: lo que deben los residentes NO es parte del saldo del edificio.
     pendienteDeCobro: pendiente,
     movimientos: historial,

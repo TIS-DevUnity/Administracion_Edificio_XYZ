@@ -18,6 +18,13 @@ function camposPublicos() {
     clase: true,
     piso: true,
     areaM2: true,
+    descripcion: true,
+    parqueoId: true,
+    bauleraId: true,
+    parqueo: { select: { id: true, codigo: true, activo: true } },
+    baulera: { select: { id: true, codigo: true, activo: true } },
+    esParqueoDe: { select: { id: true, codigo: true } },
+    esBauleraDe: { select: { id: true, codigo: true } },
     activo: true,
     cuotaMensual: true,
     tipoInmuebleId: true,
@@ -38,12 +45,13 @@ function camposPublicos() {
  *
  * Tambien agrega `cargoMensual`: lo que el inmueble suma cada mes a la cuenta de quien lo
  * ocupa. En un departamento es la expensa fija de su tipo; en baulera y parqueo es su
- * `cuotaMensual` propia o, si no tiene, la tarifa de su clase (0 = no se cobra).
+ * En baulera y parqueo siempre es cero (son informativos).
  * `tarifas` es el mapa de obtenerMapa().
  */
 function presentar(inmueble, tarifas) {
-  const { _count, ...resto } = inmueble;
+  const { _count, esParqueoDe, esBauleraDe, ...resto } = inmueble;
   const esDepartamento = resto.clase === "DEPARTAMENTO";
+  const departamentoAsociado = esParqueoDe ?? esBauleraDe ?? null;
   const cargoMensual = esDepartamento
     ? new Decimal(resto.tipoInmueble?.montoBase ?? 0)
     : montoEfectivo(resto, tarifas);
@@ -52,7 +60,8 @@ function presentar(inmueble, tarifas) {
     ...resto,
     cuotaMensual: resto.cuotaMensual === null ? null : new Decimal(resto.cuotaMensual).toFixed(2),
     cargoMensual: cargoMensual.toFixed(2),
-    asignado: (_count?.ocupaciones ?? 0) > 0,
+    asignado: esDepartamento ? (_count?.ocupaciones ?? 0) > 0 : Boolean(departamentoAsociado),
+    departamentoAsociado,
     tipoInmueble: resto.tipoInmueble ?? {
       id: null,
       nombre: ETIQUETA_CLASE[resto.clase] ?? resto.clase,
@@ -118,22 +127,72 @@ async function obtenerPorId(id) {
   return presentar(inmueble, tarifas);
 }
 
-/**
- * Monto propio de un inmueble (`cuotaMensual`): solo baulera y parqueo. Devuelve undefined si no
- * se envio (sin cambio), null para quitarlo (vuelve a la tarifa de su clase) o el Decimal.
- */
+/** En la DEMO, un accesorio nunca puede tener cuota adicional. */
 function parsearCuotaMensual(cuotaMensual, clase) {
   if (cuotaMensual === undefined) return undefined;
   if (cuotaMensual === null || cuotaMensual === "") return null;
   if (clase === "DEPARTAMENTO") {
-    throw errorValidacion(
-      "Un departamento no tiene cuotaMensual: su expensa fija sale de su tipo (A, B, C...)"
-    );
+    throw errorValidacion("La cuota fija de un departamento depende de su tipo");
   }
-  return validarMonto(cuotaMensual, "cuotaMensual");
+  const cuota = validarMonto(cuotaMensual, "cuotaMensual");
+  if (cuota.gt(0)) {
+    throw errorValidacion("Parqueos y bauleras son informativos: no tienen cuota mensual en DEMO");
+  }
+  return cuota;
 }
 
-async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, areaM2, cuotaMensual, actorId, ip }) {
+/** Normaliza el texto y limita su extension para evitar carga accidental de datos personales. */
+function validarDescripcion(descripcion, clase) {
+  if (descripcion === undefined) return undefined;
+  if (clase !== "DEPARTAMENTO") {
+    if (descripcion !== null && String(descripcion).trim()) {
+      throw errorValidacion("La descripcion solo se admite para departamentos");
+    }
+    return null;
+  }
+  if (descripcion === null || descripcion === "") return null;
+  if (typeof descripcion !== "string" || descripcion.trim().length > 1000) {
+    throw errorValidacion("La descripcion debe ser texto de hasta 1000 caracteres");
+  }
+  return descripcion.trim() || null;
+}
+
+async function validarAccesorio(id, clase, departamentoId) {
+  if (id === undefined) return undefined;
+  if (id === null || id === "") return null;
+  if (typeof id !== "string") throw errorValidacion(`El id del ${clase.toLowerCase()} es invalido`);
+  const accesorio = await prisma.inmueble.findUnique({
+    where: { id },
+    select: {
+      id: true, clase: true, activo: true,
+      esParqueoDe: { select: { id: true } },
+      esBauleraDe: { select: { id: true } },
+    },
+  });
+  if (!accesorio) {
+    throw Object.assign(new Error(`${clase} no encontrado`), { status: 404 });
+  }
+  if (accesorio.clase !== clase) {
+    throw errorValidacion(`El inmueble seleccionado no es ${clase.toLowerCase()}`);
+  }
+  if (!accesorio.activo) {
+    throw Object.assign(new Error(`${clase} inactivo: no puede asignarse`), { status: 409 });
+  }
+  const asignado = clase === "PARQUEO" ? accesorio.esParqueoDe : accesorio.esBauleraDe;
+  if (asignado && asignado.id !== departamentoId) {
+    throw Object.assign(new Error(`${clase} ya esta asignado a otro departamento`), { status: 409 });
+  }
+  return id;
+}
+
+function errorUnicidadAccesorio(error) {
+  if (error?.code === "P2002") {
+    return Object.assign(new Error("Codigo o accesorio ya utilizado por otro inmueble"), { status: 409 });
+  }
+  return error;
+}
+
+async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, areaM2, cuotaMensual, descripcion, parqueoId, bauleraId, actorId, ip }) {
   validarClase(clase);
 
   const existente = await prisma.inmueble.findUnique({ where: { codigo } });
@@ -141,44 +200,41 @@ async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, are
     throw Object.assign(new Error("Ya existe un inmueble con ese codigo"), { status: 409 });
   }
 
-  // Solo el departamento tiene tipo (A, B, C...). Baulera y parqueo no.
   if (clase === "DEPARTAMENTO") {
-    if (!tipoInmuebleId) {
-      throw errorValidacion("tipoInmuebleId es requerido para un departamento");
-    }
+    if (!tipoInmuebleId) throw errorValidacion("tipoInmuebleId es requerido para un departamento");
     await obtenerTipoInmueble(tipoInmuebleId);
-  } else if (tipoInmuebleId) {
-    throw errorValidacion("Baulera y parqueo no tienen tipo: no envie tipoInmuebleId");
+    if (!parqueoId || !bauleraId) {
+      throw errorValidacion("Cada departamento debe tener un parqueo y una baulera asignados");
+    }
+  } else {
+    if (tipoInmuebleId) throw errorValidacion("Baulera y parqueo no tienen tipo: no envie tipoInmuebleId");
+    if (parqueoId || bauleraId) throw errorValidacion("Solo un departamento puede tener parqueo y baulera");
   }
 
   const cuota = parsearCuotaMensual(cuotaMensual, clase);
+  const texto = validarDescripcion(descripcion, clase);
+  const parqueo = clase === "DEPARTAMENTO" ? await validarAccesorio(parqueoId, "PARQUEO", null) : null;
+  const baulera = clase === "DEPARTAMENTO" ? await validarAccesorio(bauleraId, "BAULERA", null) : null;
 
-  const inmueble = await prisma.inmueble.create({
-    data: {
-      codigo,
-      clase,
-      tipoInmuebleId: clase === "DEPARTAMENTO" ? tipoInmuebleId : null,
-      piso,
-      areaM2,
-      cuotaMensual: cuota ?? null,
-    },
-    select: camposPublicos(),
-  });
+  let inmueble;
+  try {
+    inmueble = await prisma.inmueble.create({
+      data: {
+        codigo, clase, tipoInmuebleId: clase === "DEPARTAMENTO" ? tipoInmuebleId : null,
+        piso, areaM2, cuotaMensual: cuota ?? null,
+        descripcion: texto ?? null, parqueoId: parqueo ?? null, bauleraId: baulera ?? null,
+      },
+      select: camposPublicos(),
+    });
+  } catch (error) {
+    throw errorUnicidadAccesorio(error);
+  }
 
   await registrarAuditoria({
-    usuarioId: actorId,
-    accion: "CREATE",
-    entidad: "Inmueble",
-    entidadId: inmueble.id,
-    detalle: {
-      codigo,
-      clase,
-      tipoInmuebleId: inmueble.tipoInmuebleId,
-      piso,
-      areaM2,
-      cuotaMensual: cuota ? cuota.toFixed(2) : null,
-    },
-    ip,
+    usuarioId: actorId, accion: "CREATE", entidad: "Inmueble", entidadId: inmueble.id,
+    detalle: { codigo, clase, tipoInmuebleId: inmueble.tipoInmuebleId, piso, areaM2,
+      cuotaMensual: cuota ? cuota.toFixed(2) : null, descripcion: texto ?? null,
+      parqueoId: parqueo ?? null, bauleraId: baulera ?? null }, ip,
   });
 
   return presentar(inmueble, await obtenerMapa());
@@ -186,7 +242,7 @@ async function crear({ codigo, clase = "DEPARTAMENTO", tipoInmuebleId, piso, are
 
 async function actualizar(
   id,
-  { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual },
+  { codigo, clase, tipoInmuebleId, piso, areaM2, activo, cuotaMensual, descripcion, parqueoId, bauleraId },
   { actorId, ip }
 ) {
   const antes = await obtenerPorId(id);
@@ -201,57 +257,66 @@ async function actualizar(
   const claseFinal = clase ?? antes.clase;
   validarClase(claseFinal);
 
-  // El tipo resultante debe ser coherente con la clase: departamento con tipo, resto sin tipo.
+  if (claseFinal !== antes.clase) {
+    if (antes.parqueoId || antes.bauleraId || antes.departamentoAsociado) {
+      throw Object.assign(new Error("Desasigne los accesorios antes de cambiar la clase del inmueble"), { status: 409 });
+    }
+    const ocupantes = await prisma.ocupanteInmueble.count({ where: { inmuebleId: id, fechaFin: null } });
+    if (ocupantes > 0) {
+      throw Object.assign(new Error("Retire las personas vigentes antes de cambiar la clase"), { status: 409 });
+    }
+  }
+
   let tipoFinal = null;
   if (claseFinal === "DEPARTAMENTO") {
     tipoFinal = tipoInmuebleId || antes.tipoInmuebleId;
-    if (!tipoFinal) {
-      throw errorValidacion("Un departamento necesita tipo: envie tipoInmuebleId");
-    }
-    if (tipoFinal !== antes.tipoInmuebleId) {
-      await obtenerTipoInmueble(tipoFinal);
+    if (!tipoFinal) throw errorValidacion("Un departamento necesita tipo: envie tipoInmuebleId");
+    if (tipoFinal !== antes.tipoInmuebleId) await obtenerTipoInmueble(tipoFinal);
+    const parqueoFinal = parqueoId === undefined ? antes.parqueoId : parqueoId;
+    const bauleraFinal = bauleraId === undefined ? antes.bauleraId : bauleraId;
+    if (!parqueoFinal || !bauleraFinal) {
+      throw errorValidacion("Cada departamento debe tener un parqueo y una baulera asignados");
     }
   } else if (tipoInmuebleId) {
     throw errorValidacion("Baulera y parqueo no tienen tipo: no envie tipoInmuebleId");
   }
 
-  // El monto propio solo existe en baulera y parqueo: al pasar a departamento se quita.
+  if (claseFinal !== "DEPARTAMENTO" && (parqueoId || bauleraId)) {
+    throw errorValidacion("Solo un departamento puede tener parqueo y baulera");
+  }
+
   const cuota = parsearCuotaMensual(cuotaMensual, claseFinal);
   const cuotaFinal = claseFinal === "DEPARTAMENTO" ? null : cuota;
+  const texto = validarDescripcion(descripcion, claseFinal);
+  const parqueo = claseFinal === "DEPARTAMENTO"
+    ? await validarAccesorio(parqueoId, "PARQUEO", id) : null;
+  const baulera = claseFinal === "DEPARTAMENTO"
+    ? await validarAccesorio(bauleraId, "BAULERA", id) : null;
 
-  const inmueble = await prisma.inmueble.update({
-    where: { id },
-    data: {
-      codigo,
-      clase: claseFinal,
-      tipoInmuebleId: tipoFinal,
-      piso,
-      areaM2,
-      activo,
-      cuotaMensual: cuotaFinal,
-    },
-    select: camposPublicos(),
-  });
+  let inmueble;
+  try {
+    inmueble = await prisma.inmueble.update({
+      where: { id },
+      data: {
+        codigo, clase: claseFinal, tipoInmuebleId: tipoFinal,
+        piso, areaM2, activo, cuotaMensual: cuotaFinal,
+        descripcion: claseFinal === "DEPARTAMENTO" ? texto : null,
+        parqueoId: parqueo, bauleraId: baulera,
+      },
+      select: camposPublicos(),
+    });
+  } catch (error) {
+    throw errorUnicidadAccesorio(error);
+  }
 
   const despues = presentar(inmueble, await obtenerMapa());
-
   await registrarAuditoria({
-    usuarioId: actorId,
-    accion: "UPDATE",
-    entidad: "Inmueble",
-    entidadId: inmueble.id,
+    usuarioId: actorId, accion: "UPDATE", entidad: "Inmueble", entidadId: id,
     detalle: diferencias(antes, despues, [
-      "codigo",
-      "clase",
-      "tipoInmuebleId",
-      "piso",
-      "areaM2",
-      "activo",
-      "cuotaMensual",
-    ]),
-    ip,
+      "codigo", "clase", "tipoInmuebleId", "piso", "areaM2", "activo", "cuotaMensual",
+      "descripcion", "parqueoId", "bauleraId",
+    ]), ip,
   });
-
   return despues;
 }
 
@@ -267,6 +332,9 @@ async function listarOcupantes(inmuebleId) {
 
 async function asignarOcupante(inmuebleId, { copropietarioId, esPropietario, fechaInicio }, { actorId, ip }) {
   const inmueble = await obtenerPorId(inmuebleId);
+  if (inmueble.clase !== "DEPARTAMENTO") {
+    throw errorValidacion("Propietarios e inquilinos solo se asignan a departamentos. Asocie el accesorio desde su departamento.");
+  }
   if (!inmueble.activo) {
     throw Object.assign(
       new Error(`El inmueble ${inmueble.codigo} esta inactivo: no se le puede asignar una persona`),

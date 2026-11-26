@@ -5,7 +5,7 @@ const { diferencias } = require("../../../utils/diferencias");
 
 const Decimal = Prisma.Decimal;
 
-// Solo baulera y parqueo tienen tarifa por clase: el departamento cobra la de su tipo (A, B, C...).
+// La tabla de tarifas por clase se conserva por compatibilidad, pero los accesorios no se cobran en DEMO.
 const CLASES_CON_TARIFA = ["PARQUEO", "BAULERA"];
 const MONTO_MAXIMO = new Decimal("99999999.99"); // limite de DECIMAL(10,2)
 
@@ -56,16 +56,9 @@ function tieneTarifa(clase) {
   return CLASES_CON_TARIFA.includes(clase);
 }
 
-/**
- * Monto mensual que paga un inmueble que no es departamento: su monto propio si lo tiene
- * (0 = exento), si no la tarifa de su clase. Un departamento devuelve 0: su cuota es la del tipo.
- */
-function montoEfectivo(inmueble, tarifas) {
-  if (!tieneTarifa(inmueble.clase)) return new Decimal(0);
-  if (inmueble.cuotaMensual !== null && inmueble.cuotaMensual !== undefined) {
-    return new Decimal(inmueble.cuotaMensual);
-  }
-  return tarifas[inmueble.clase] ?? new Decimal(0);
+/** DEMO: parqueos y bauleras son inventario informativo; siempre Bs 0. */
+function montoEfectivo(_inmueble, _tarifas) {
+  return new Decimal(0);
 }
 
 async function listar() {
@@ -90,6 +83,9 @@ async function listar() {
 async function actualizar(claseRecibida, { monto }, { actorId, ip }) {
   const clase = validarClase(claseRecibida);
   const nuevoMonto = validarMonto(monto);
+  if (nuevoMonto.gt(0)) {
+    throw errorValidacion("En DEMO el parqueo y la baulera no generan cobros; su tarifa debe ser Bs 0");
+  }
 
   const antes = await prisma.tarifaClase.findUnique({ where: { clase } });
   const tarifa = await prisma.tarifaClase.upsert({

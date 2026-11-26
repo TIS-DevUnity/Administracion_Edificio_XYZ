@@ -1,0 +1,101 @@
+name: Restaurar Backup en BD de Prueba
+
+on:
+  workflow_dispatch: # Ejecución manual con botón
+
+jobs:
+  # ==========================================
+  # JOB 1: RESTAURAR BASE DE DATOS (.SQL)
+  # ==========================================
+  restore-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Instalar cliente de PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          sudo sh -c 'echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: 2. Descargar el último artefacto de backup de BD
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: db-backup.yml
+          name_is_regexp: true
+          name: backup-completo-.*
+          path: ./backup_downloaded
+
+      - name: 3. Restaurar en la BD de prueba
+        env:
+          TEST_DB_URL: ${{ secrets.SUPABASE_TEST_DB_URL }}
+        run: |
+          # Localiza el .sql.gz dentro de la subcarpeta del artefacto
+          SQL_GZ=$(find ./backup_downloaded -name "*.sql.gz" | head -n 1)
+
+          if [ -z "$SQL_GZ" ]; then
+            echo "Error: No se encontró ningún archivo .sql.gz descargado."
+            exit 1
+          fi
+
+          echo "Descomprimiendo: $SQL_GZ"
+          gunzip -f "$SQL_GZ"
+          SQL_FILE="${SQL_GZ%.gz}"
+
+          # set +e evita que los WARNINGS de permisos del esquema auth detengan el job
+          set +e
+          /usr/lib/postgresql/17/bin/psql "$TEST_DB_URL" -f "$SQL_FILE"
+          set -e
+
+          echo "Restauración de base de datos completada."
+
+  # ==========================================
+  # JOB 2: RESTAURAR ARCHIVOS (STORAGE)
+  # ==========================================
+  restore-storage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: 3. Instalar dependencias del backend
+        working-directory: ./server
+        run: npm ci
+
+      - name: 4. Descargar el último artefacto de Storage
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: db-backup.yml
+          name_is_regexp: true
+          name: backup-storage-.*
+          path: ./storage_downloaded
+
+      - name: 5. Descomprimir y Restaurar Storage
+        working-directory: ./server
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+        run: |
+          # Localiza el .tar.gz dentro de la subcarpeta del artefacto
+          TAR_FILE=$(find ../storage_downloaded -name "*.tar.gz" | head -n 1)
+
+          if [ -z "$TAR_FILE" ]; then
+            echo "Error: No se encontró ningún archivo .tar.gz descargado."
+            exit 1
+          fi
+
+          echo "Descomprimiendo: $TAR_FILE"
+          mkdir -p ../extracted_storage
+          tar -zxvf "$TAR_FILE" -C ../extracted_storage
+
+          # Apunta directo a la raíz extraída (donde están acta, contrato, etc.)
+          export RESTORE_SOURCE_DIR=$(realpath ../extracted_storage)
+          node scripts/restore-storage.js

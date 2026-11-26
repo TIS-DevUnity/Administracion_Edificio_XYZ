@@ -1,4 +1,5 @@
 import axios from "axios";
+import { fechaSimuladaActiva } from "@/lib/simulacion/almacen";
 import type { ConfiguracionMoraDTO, ExpensaDTO } from "@/types/finance";
 
 export function formatCurrency(amount: number) {
@@ -25,6 +26,11 @@ export function formatearFechaCalendario(valor: string) {
 }
 
 export function fechaHoyBolivia(): string {
+  return fechaSimuladaActiva() ?? fechaRealBolivia();
+}
+
+/** La fecha de verdad, sin importar la simulación. */
+export function fechaRealBolivia(): string {
   const partes = new Intl.DateTimeFormat("en-US", {
     year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/La_Paz",
   }).formatToParts(new Date());
@@ -55,6 +61,11 @@ export function estaEnPeriodoGracia(exp: ExpensaDTO, historial: ConfiguracionMor
 
 export function periodoActual(): string {
   return fechaHoyBolivia().slice(0, 7);
+}
+
+/** Una expensa pagada solo admite cargar el agua si todavía no la tiene (el saldo a favor pudo cubrirla antes). */
+export function pagadaConAguaCargada(exp: ExpensaDTO): boolean {
+  return exp.estado === "PAGADA" && Boolean(exp.aguaRegistradaEn);
 }
 
 export function tieneMoraAplicada(exp: ExpensaDTO): boolean {

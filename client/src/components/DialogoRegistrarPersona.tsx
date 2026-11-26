@@ -45,7 +45,8 @@ export function ListaInmueblesSeleccionables({
   idsDeshabilitados?: Set<string>;
   bolError?: boolean;
 }) {
-  const activos = inmuebles.filter((inmueble) => inmueble.activo);
+  // La persona se asigna al departamento; parqueos y bauleras se vinculan desde su ficha.
+  const activos = inmuebles.filter((inmueble) => inmueble.activo && inmueble.clase === "DEPARTAMENTO");
 
   function alternar(strId: string) {
     const next = new Set(seleccionados);

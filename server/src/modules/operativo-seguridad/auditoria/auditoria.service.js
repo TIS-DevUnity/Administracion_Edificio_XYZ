@@ -6,12 +6,16 @@ const MODULOS = {
   // "FacturaAgua" ya no existe, pero se conserva para agrupar los eventos historicos que dejo.
   Financiero: [
     "Expensa", "Pago", "Recibo", "MovimientoSaldo", "ConfiguracionMora", "MoraExpensa", "FacturaAgua",
-    "MovimientoFinanciero", "CategoriaMovimiento", "PlanPago", "CuotaPlan",
+    "MovimientoFinanciero", "CategoriaMovimiento", "PlanPago", "CuotaPlan", "Empleado", "Nomina", "AnticipoSalarial",
+    "CuentaBancaria", "MovimientoCaja", "CierreCaja", "PagoInformado",
+    "ReporteFinanciero",
   ],
   Seguridad: ["Usuario"],
   Copropietarios: ["Copropietario"],
   Inmuebles: ["Inmueble", "OcupanteInmueble", "TipoInmueble", "TarifaClase"],
   Documentos: ["Documento"],
+  Comunicados: ["Comunicado"],
+  "Areas comunes": ["AreaComun", "HorarioAreaComun", "BloqueoAreaComun", "ReservaAreaComun"],
 };
 
 const MODULO_POR_ENTIDAD = Object.fromEntries(
